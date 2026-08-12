@@ -401,6 +401,7 @@ function fromRow(r) {
     recipientNotes: r.recipient_notes||[],
     shared: r.shared||false, sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
+    recipientFollowUpDate: r.recipient_follow_up_date||'',
     deleted: r.deleted||false, deletedAt: r.deleted_at||''
   };
 }
@@ -509,6 +510,7 @@ function fromJVRow(r) {
     shared: r.shared||false,
     sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
+    recipientFollowUpDate: r.recipient_follow_up_date||'',
     deleted: r.deleted||false, deletedAt: r.deleted_at||''
   };
 }
@@ -1806,7 +1808,7 @@ function renderSentOutTab(){
     : '<div class="table-container"><div class="table-wrap"><table>'
       +'<thead><tr>'
       +'<th style="width:34px;text-align:center"><input type="checkbox" '+(allSelected?'checked':'')+' onclick="sentOutToggleSelectAll(this.checked)" title="Select all"></th>'
-      +'<th>Type</th><th>Property</th><th>Phone</th><th>Offer</th><th>Status</th><th>Score</th><th>Sent To</th><th>Signed By</th><th>Sent On</th><th>Follow-Up</th><th style="text-align:center">Delete</th>'
+      +'<th>Type</th><th>Property</th><th>Phone</th><th>Offer</th><th>Status</th><th>Score</th><th>Sent To</th><th>Signed By</th><th>Sent On</th><th>Team Follow-Up</th><th>Recipient Follow-Up</th><th style="text-align:center">Delete</th>'
       +'</tr></thead><tbody>'
       + combined.map(l=>`
         <tr onclick="${l.kind==='task'?'openJVDetail('+l.id+')':'openDetail('+l.id+')'}">
@@ -1821,6 +1823,7 @@ function renderSentOutTab(){
           <td id="signer-${l.kind}-${l.id}" style="font-size:12px">${String(l.agreementStatus||'').toLowerCase()==='accepted'?'<span style="color:#1a7f43;font-weight:600">Signed</span>':'<span style="color:var(--text4)">Awaiting signature</span>'}</td>
           <td style="font-size:12px;color:var(--text3)">${l.sharedAt?new Date(l.sharedAt).toLocaleDateString():''}</td>
           <td>${l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
+          <td>${l.recipientFollowUpDate?followUpChip(l.recipientFollowUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
           <td style="text-align:center" onclick="event.stopPropagation()"><button onclick="sentOutDeleteOne('${l.kind}',${l.id})" title="Remove from Sent Out (keeps the lead)" style="background:var(--red-bg);border:1px solid #fca5a5;color:var(--red);border-radius:5px;padding:2px 8px;cursor:pointer;font-size:12px">&#128465;</button></td>
         </tr>`).join('')
       +'</tbody></table></div></div>';
@@ -3354,7 +3357,8 @@ function renderSharedLeadView(l) {
               <div class="form-field"><label class="form-label">Marketing Type</label><select id="shared-mkt" class="form-select">${mktOpts}</select></div>
               <div class="form-field"><label class="form-label">Status</label><select id="shared-status" class="form-select">${statusOpts}</select></div>
               <div class="form-field"><label class="form-label">Lead Temperature</label><select id="shared-score" class="form-select"><option value="" ${!l.score?'selected':''}>&#8212; Not set &#8212;</option><option value="Hot" ${l.score==='Hot'?'selected':''}>&#128308; Hot</option><option value="Warm" ${l.score==='Warm'?'selected':''}>&#128993; Warm</option><option value="Cold" ${l.score==='Cold'?'selected':''}>&#128309; Cold</option></select></div>
-              <div class="form-field"><label class="form-label">Follow-Up Date</label><input id="shared-followup" type="date" class="form-input" value="${l.followUpDate||''}"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared('shared-followup','${esc(l.address||'Lead')}');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div>
+              <div class="form-field"><label class="form-label">Team Follow-Up Date</label><input type="date" class="form-input" value="${l.followUpDate||''}" disabled style="opacity:.7;background:var(--bg2,#f2f2f4);cursor:not-allowed"><div class="field-hint" style="color:var(--text4)">Set by the M-Estate team &middot; read-only</div></div>
+              <div class="form-field"><label class="form-label">&#128197; Your Follow-Up Date</label><input id="shared-recip-followup" type="date" class="form-input" value="${l.recipientFollowUpDate||''}"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared('shared-recip-followup','${esc(l.address||'Lead')}');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div>
             </div>
           </div>
           <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
@@ -3373,7 +3377,7 @@ async function saveSharedLead(id) {
     marketing_type: document.getElementById('shared-mkt').value,
     status: document.getElementById('shared-status').value,
     score: document.getElementById('shared-score').value,
-    follow_up_date: document.getElementById('shared-followup').value,
+    recipient_follow_up_date: document.getElementById('shared-recip-followup').value,
     updated_by: (getSharedName() || 'Shared Link'), updated_at: today()
   };
   var statusEl = document.getElementById('shared-save-status');
@@ -3419,7 +3423,8 @@ function renderSharedTaskView(l) {
             <div class="form-grid">
               <div class="form-field"><label class="form-label">Status</label><select id="shared-jv-status" class="form-select"><option value="">&#8212; Select &#8212;</option>${statusOpts}</select></div>
               <div class="form-field"><label class="form-label">Lead Temperature</label><select id="shared-jv-score" class="form-select"><option value="" ${!l.score?'selected':''}>&#8212; Not set &#8212;</option><option value="Hot" ${l.score==='Hot'?'selected':''}>&#128308; Hot</option><option value="Warm" ${l.score==='Warm'?'selected':''}>&#128993; Warm</option><option value="Cold" ${l.score==='Cold'?'selected':''}>&#128309; Cold</option></select></div>
-              <div class="form-field"><label class="form-label">Follow-Up Date</label><input id="shared-jv-followup" type="date" class="form-input" value="${l.followUpDate||''}"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared('shared-jv-followup','${esc(l.name||'Lead')}');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div>
+              <div class="form-field"><label class="form-label">Team Follow-Up Date</label><input type="date" class="form-input" value="${l.followUpDate||''}" disabled style="opacity:.7;background:var(--bg2,#f2f2f4);cursor:not-allowed"><div class="field-hint" style="color:var(--text4)">Set by the M-Estate team &middot; read-only</div></div>
+              <div class="form-field"><label class="form-label">&#128197; Your Follow-Up Date</label><input id="shared-jv-recip-followup" type="date" class="form-input" value="${l.recipientFollowUpDate||''}"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared('shared-jv-recip-followup','${esc(l.name||'Lead')}');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div>
             </div>
           </div>
           <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
@@ -3436,7 +3441,7 @@ async function saveSharedTask(id) {
   var body = {
     jv_status: document.getElementById('shared-jv-status').value,
     score: document.getElementById('shared-jv-score').value,
-    follow_up_date: document.getElementById('shared-jv-followup').value
+    recipient_follow_up_date: document.getElementById('shared-jv-recip-followup').value
   };
   var statusEl = document.getElementById('shared-save-status');
   try {
