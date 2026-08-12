@@ -239,6 +239,14 @@ const GHL_BASE = "https://app.gohighlevel.com/v2/location/gF9BSz3b2ZNux9RPKYAG";
 const GHL_CONTACTS_URL = 'https://app.gohighlevel.com/v2/location/' + GHL_LOCATION_ID + '/contacts/';
 const GHL_LOOKUP_URL = SUPABASE_URL + '/functions/v1/ghl-lookup';
 
+// ===== Lead Protection / Non-Circumvention Agreement =====
+// Recipients must accept this agreement before any protected lead data is returned.
+// Enforcement lives in the 'lead-agreement' edge function (service role); the shared
+// page never fetches protected fields with the anon key -- it only gets data back
+// AFTER acceptance is recorded server-side and a per-lead token is issued.
+const AGREEMENT_FN_URL = SUPABASE_URL + '/functions/v1/lead-agreement';
+const AGREEMENT_VERSION = '1.0';
+
 // Pull the FIRST phone-shaped sequence out of a field that may carry trailing notes,
 // e.g. "(443) 880-1032 (Need $200K)" -> 4438801032. Last-10-digits breaks on those notes.
 function ghlNormPhone(p){
@@ -361,6 +369,7 @@ function toRow(l) {
     reached_by: l.reachedBy||'',
     ghl_contact_id: l.ghlContactId||'',
     score: l.score||'', activity_log: l.activityLog||[],
+    recipient_notes: l.recipientNotes||[],
     shared: l.shared||false, shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
     deleted: l.deleted||false, deleted_at: l.deletedAt||''
   };
@@ -379,7 +388,9 @@ function fromRow(r) {
     reachedBy: r.reached_by||'',
     ghlContactId: r.ghl_contact_id||'',
     score: r.score||'', activityLog: r.activity_log||[],
+    recipientNotes: r.recipient_notes||[],
     shared: r.shared||false, sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
+    agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
     deleted: r.deleted||false, deletedAt: r.deleted_at||''
   };
 }
@@ -471,7 +482,8 @@ function toJVRow(l) {
     location: l.location||'', asking_price: l.askingPrice||'', arv: l.arv||'',
     profit_est: l.profitEst||'', follow_up_date: l.followUpDate||'',
     jv_status: l.jvStatus||'', date_added: l.dateAdded||'',
-    activity_log: l.activityLog||[], shared: l.shared||false,
+    activity_log: l.activityLog||[], recipient_notes: l.recipientNotes||[],
+    shared: l.shared||false,
     shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
     deleted: l.deleted||false, deleted_at: l.deletedAt||''
   };
@@ -483,8 +495,10 @@ function fromJVRow(r) {
     location: r.location||'', askingPrice: r.asking_price||'', arv: r.arv||'',
     profitEst: r.profit_est||'', followUpDate: r.follow_up_date||'',
     jvStatus: r.jv_status||'', dateAdded: r.date_added||'',
-    activityLog: r.activity_log||[], shared: r.shared||false,
+    activityLog: r.activity_log||[], recipientNotes: r.recipient_notes||[],
+    shared: r.shared||false,
     sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
+    agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
     deleted: r.deleted||false, deletedAt: r.deleted_at||''
   };
 }
@@ -1451,7 +1465,8 @@ function renderDetailModal(){
               <div class="detail-item"><span class="detail-label">Follow-Up</span><span class="detail-val">${l.followUpDate?followUpChip(l.followUpDate)+' <a href="'+buildGCalUrl(l.followUpDate,'Follow up: '+(l.address||'Lead'),'Lead follow-up reminder for '+(l.address||''))+'" target="_blank" class="detail-link" style="font-size:11px">&#128197; Add to Calendar</a>':''}</span></div>
             </div>
           </div>
-          <div class="detail-section"><div class="detail-section-title">Notes</div>${l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>'}</div>
+          <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>'}</div>
+          ${(l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':''}
           <div class="detail-section"><div class="detail-section-title">Links</div>
             <div style="display:flex;flex-direction:column;gap:6px">
               ${l.address?'<div><span class="detail-label">Zillow</span>&nbsp;&nbsp;<a href="#" onclick="event.preventDefault();openZillow();" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="#" onclick="event.preventDefault();openRedfin();" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}
@@ -1460,6 +1475,7 @@ function renderDetailModal(){
             </div>
           </div>
           ${renderAttachmentsSection('dmv', l.id)}
+          ${agreementSectionHTML(l.id,'lead',l.agreementStatus,l.agreementAcceptedAt)}
           ${renderActivityLog('lead', l.id, l.activityLog)}
         </div>
         <div class="modal-footer">
@@ -1770,14 +1786,21 @@ function renderSentOutTab(){
     var da = a.sharedAt||'', db = b.sharedAt||'';
     return db > da ? 1 : db < da ? -1 : (b.id - a.id);
   });
+  // Drop any stale selections (records that are no longer shared / were removed).
+  var validKeys = {}; combined.forEach(function(l){ validKeys[l.kind+':'+l.id]=true; });
+  sentOutSelected.forEach(function(k){ if(!validKeys[k]) sentOutSelected.delete(k); });
+  var allSelected = combined.length>0 && combined.every(function(l){ return sentOutSelected.has(l.kind+':'+l.id); });
+
   const rows = combined.length===0
     ? '<div class="empty"><div class="empty-icon">&#128231;</div><h3>No leads sent out yet</h3><p>Use "Send to Team" on a saved lead or task to share it with a teammate</p></div>'
     : '<div class="table-container"><div class="table-wrap"><table>'
       +'<thead><tr>'
-      +'<th>Type</th><th>Property</th><th>Phone</th><th>Offer</th><th>Status</th><th>Score</th><th>Sent To</th><th>Sent On</th><th>Follow-Up</th>'
+      +'<th style="width:34px;text-align:center"><input type="checkbox" '+(allSelected?'checked':'')+' onclick="sentOutToggleSelectAll(this.checked)" title="Select all"></th>'
+      +'<th>Type</th><th>Property</th><th>Phone</th><th>Offer</th><th>Status</th><th>Score</th><th>Sent To</th><th>Signed By</th><th>Sent On</th><th>Follow-Up</th><th style="text-align:center">Delete</th>'
       +'</tr></thead><tbody>'
       + combined.map(l=>`
         <tr onclick="${l.kind==='task'?'openJVDetail('+l.id+')':'openDetail('+l.id+')'}">
+          <td style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" ${sentOutSelected.has(l.kind+':'+l.id)?'checked':''} onclick="sentOutToggleSelect('${l.kind}',${l.id},this.checked)"></td>
           <td>${l.kind==='task'?'<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 5px">TASK</span>':'<span style="font-size:9px;font-weight:900;color:#dc2626;background:#fee2e2;border:1px solid #fca5a5;border-radius:4px;padding:1px 5px">DMV</span>'}</td>
           <td><div class="address-cell">${esc(l.kind==='task'?(l.location||l.name):l.address)||''}</div></td>
           <td><div class="phone-cell">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>':''}</div></td>
@@ -1785,21 +1808,93 @@ function renderSentOutTab(){
           <td>${l.kind==='task'?statusBadge(l.jvStatus):statusBadge(l.status)}</td>
           <td>${leadScoreBadgeHTML(l.score)}</td>
           <td style="font-size:12px;color:var(--text2)">${esc(l.sharedWith)||''}</td>
+          <td id="signer-${l.kind}-${l.id}" style="font-size:12px">${String(l.agreementStatus||'').toLowerCase()==='accepted'?'<span style="color:#1a7f43;font-weight:600">Signed</span>':'<span style="color:var(--text4)">Awaiting signature</span>'}</td>
           <td style="font-size:12px;color:var(--text3)">${l.sharedAt?new Date(l.sharedAt).toLocaleDateString():''}</td>
           <td>${l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
+          <td style="text-align:center" onclick="event.stopPropagation()"><button onclick="sentOutDeleteOne('${l.kind}',${l.id})" title="Remove from Sent Out (keeps the lead)" style="background:var(--red-bg);border:1px solid #fca5a5;color:var(--red);border-radius:5px;padding:2px 8px;cursor:pointer;font-size:12px">&#128465;</button></td>
         </tr>`).join('')
       +'</tbody></table></div></div>';
 
+  const selCount = sentOutSelected.size;
+  const bulkBar = selCount>0
+    ? `<button class="btn btn-danger btn-sm" onclick="sentOutDeleteSelected()">&#128465; Delete Selected (${selCount})</button>
+       <button class="btn btn-secondary btn-sm" onclick="sentOutClearSelection()">Clear</button>`
+    : '';
+
   document.getElementById('tab-content').innerHTML=`
     <div style="padding:16px 24px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap">
         <div>
           <h2 style="font-size:16px;font-weight:700">&#128231; Sent Out</h2>
-          <p style="font-size:12px;color:var(--text3);margin-top:3px">${combined.length} lead${combined.length!==1?'s':''} shared via email</p>
+          <p style="font-size:12px;color:var(--text3);margin-top:3px">${combined.length} lead${combined.length!==1?'s':''} shared via email &middot; deleting here only removes the Sent Out record, the lead stays in the CRM</p>
         </div>
+        <div style="display:flex;gap:6px;align-items:center">${bulkBar}</div>
       </div>
       ${rows}
     </div>`;
+  hydrateSentOutSigners(combined);
+}
+// Pull the actual signer name(s) from the acceptance ledger and drop them into the
+// "Signed By" cells. Keeps the Sent Out list current even if a recipient signs while
+// the CRM is open. Read-only; failures are silent (cells keep their status fallback).
+async function hydrateSentOutSigners(list){
+  var groups={lead:[],task:[]};
+  (list||[]).forEach(function(x){ if(groups[x.kind]) groups[x.kind].push(x.id); });
+  for(var kind in groups){
+    var ids=groups[kind];
+    if(!ids.length) continue;
+    try{
+      var accs=await sbFetch('lead_agreements?kind=eq.'+kind+'&lead_id=in.('+ids.join(',')+')&order=accepted_at.desc&select=lead_id,first_name,last_name');
+      var seen={};
+      (accs||[]).forEach(function(r){
+        if(seen[r.lead_id]) return;      // rows are newest-first, so keep the first per lead
+        seen[r.lead_id]=true;
+        var cell=document.getElementById('signer-'+kind+'-'+r.lead_id);
+        if(cell){ cell.innerHTML='<span style="color:#1a7f43;font-weight:600">'+esc(((r.first_name||'')+' '+(r.last_name||'')).trim())+'</span>'; }
+      });
+    }catch(e){}
+  }
+}
+// ===== Sent Out selection + delete =====
+// "Delete" here = un-share (set shared=false). The lead/task itself is NEVER removed from the CRM.
+var sentOutSelected = new Set();
+function sentOutToggleSelect(kind,id,checked){ var k=kind+':'+id; if(checked) sentOutSelected.add(k); else sentOutSelected.delete(k); renderSentOutTab(); }
+function sentOutToggleSelectAll(checked){
+  var soLeads = leads.filter(function(l){return !l.deleted&&l.shared;});
+  var soTasks = jvLeads.filter(function(l){return !l.deleted&&l.shared;});
+  sentOutSelected.clear();
+  if(checked){ soLeads.forEach(function(l){ sentOutSelected.add('lead:'+l.id); }); soTasks.forEach(function(l){ sentOutSelected.add('task:'+l.id); }); }
+  renderSentOutTab();
+}
+function sentOutClearSelection(){ sentOutSelected.clear(); renderSentOutTab(); }
+function unshareRecord(kind,id){
+  if(kind==='task'){
+    var t = jvLeads.find(function(x){return x.id===id;});
+    if(!t) return;
+    t.shared=false; t.sharedAt=''; t.sharedWith='';
+    saveJV(); saveJVToSupabase(t);
+  } else {
+    var l = leads.find(function(x){return x.id===id;});
+    if(!l) return;
+    l.shared=false; l.sharedAt=''; l.sharedWith='';
+    localStorage.setItem('crm_leads', JSON.stringify(leads)); saveLeadToSupabase(l);
+  }
+}
+function sentOutDeleteOne(kind,id){
+  if(!confirm('Remove this lead from Sent Out?\n\nThis only removes the Sent Out record — the lead stays in your CRM.')) return;
+  unshareRecord(kind,id);
+  sentOutSelected.delete(kind+':'+id);
+  renderSentOutTab();
+  showToast('Removed from Sent Out','success');
+}
+function sentOutDeleteSelected(){
+  var n = sentOutSelected.size;
+  if(n===0){ showToast('Nothing selected','error'); return; }
+  if(!confirm('Delete '+n+' selected record'+(n===1?'':'s')+' from Sent Out?\n\nThis only removes the Sent Out record'+(n===1?'':'s')+' — the lead'+(n===1?'':'s')+' stay in your CRM.')) return;
+  sentOutSelected.forEach(function(k){ var parts=k.split(':'); unshareRecord(parts[0], parseInt(parts[1],10)); });
+  sentOutSelected.clear();
+  renderSentOutTab();
+  showToast(n+' removed from Sent Out','success');
 }
 
 var nwShowFollowUps = false;
@@ -2123,7 +2218,9 @@ function openJVDetail(id){
     +'<div class="form-field"><label class="form-label">&#128197; Follow-Up Date</label><input type="date" id="jv-fu-date" class="form-input" value="'+(l.followUpDate||'')+'"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared(\'jv-fu-date\',\''+esc(l.name||'Task')+'\');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div></div>'
     +'<button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="saveJVDetail('+l.id+')">&#128190; Save Changes</button>'
     +'</div>'
-    +'<div class="detail-section"><div class="detail-section-title">Notes</div>'+(l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>')+'</div>'
+    +'<div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>'+(l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>')+'</div>'
+    +((l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':'')
+    +agreementSectionHTML(l.id,'task',l.agreementStatus,l.agreementAcceptedAt)
     +renderAttachmentsSection('task', l.id)
     +renderActivityLog('task', l.id, l.activityLog)
     +'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
@@ -2139,9 +2236,12 @@ async function saveJVDetail(id){
     l.activityLog.push({type:'Follow-Up Set',by:currentUser.name,at:new Date().toISOString(),note:'Follow-up scheduled for '+l.followUpDate});
   }
   saveJV();renderJVLeadsTab();
-  var ok = await saveJVToSupabase(l);
-  if(ok){ showToast('Saved!','success'); closeModal(); }
-  else{ showToast('Cloud sync failed -- check your connection and try Save again','error'); }
+  // Same fix as saveEditTask: save locally + close immediately, sync in background.
+  showToast('Saved!','success');
+  closeModal();
+  saveJVToSupabase(l).then(function(ok){
+    if(!ok) showToast('Saved on this device — cloud sync failed, it will retry automatically','warning');
+  });
 }
 function saveJVFollowUp(id){
   var date=document.getElementById('jv-fu-date').value;
@@ -2287,9 +2387,14 @@ async function saveEditTask(id){
   }
   saveJV();
   renderJVLeadsTab();
-  var ok = await saveJVToSupabase(l);
-  if(ok){ showToast('Task updated!','success'); closeModal(); }
-  else{ showToast('Cloud sync failed -- check your connection and try Save again','error'); }
+  // Persist locally and close immediately so the change shows right away and never needs a
+  // second Save click. Cloud sync runs in the background; pendingSaves (inside saveJVToSupabase)
+  // still blocks the 30s auto-refresh poll from stomping this write while it's in flight.
+  showToast('Task updated!','success');
+  closeModal();
+  saveJVToSupabase(l).then(function(ok){
+    if(!ok) showToast('Saved on this device — cloud sync failed, it will retry automatically','warning');
+  });
 }
 
 function openAddTask(){
@@ -2511,6 +2616,57 @@ function deleteActivityEntry(kind, id, index){
 function activityIcon(type){
   return type==='Called' ? '&#128222;' : type==='Texted' ? '&#128172;' : type==='Emailed' ? '&#128231;' : type==='Follow-Up Set' ? '&#128197;' : type==='Followed Up' ? '&#9989;' : '&#128221;';
 }
+// ===== Agreement acceptance display (team side, inside lead/task detail) =====
+function agreementSectionHTML(id, kind, status, acceptedAt){
+  var accepted = String(status||'').toLowerCase()==='accepted';
+  var badge = accepted
+    ? '<span style="background:#e6f7ec;color:#1a7f43;border:1px solid #b7e4c7;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700">&#10004; Agreement Accepted</span>'
+    : '<span style="background:#f2f2f4;color:#8a8a90;border:1px solid #e0e0e5;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700">Agreement Not Accepted</span>';
+  var btnStyle = 'font-size:12px;padding:5px 10px;border:1px solid var(--border,#d9d9de);background:var(--bg,#fff);color:var(--text2,#333);border-radius:7px;cursor:pointer';
+  return '<div class="detail-section"><div class="detail-section-title">&#128274; Lead Protection Agreement</div>'
+    + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+    + badge
+    + (accepted && acceptedAt ? '<span style="color:var(--text3);font-size:12px">Accepted '+esc(acceptedAt)+'</span>' : '')
+    + '<button style="'+btnStyle+'" onclick="loadAgreementList('+id+',\''+kind+'\')">&#128065; View acceptances</button>'
+    + '<button style="'+btnStyle+'" onclick="downloadAgreementCSV('+id+',\''+kind+'\')">&#11015; Download CSV</button>'
+    + '</div>'
+    + '<div id="agree-list-'+kind+'-'+id+'" style="margin-top:8px"></div>'
+    + '</div>';
+}
+async function fetchAgreements(id, kind){
+  return await sbFetch('lead_agreements?lead_id=eq.'+id+'&kind=eq.'+kind+'&order=accepted_at.desc&select=*');
+}
+async function loadAgreementList(id, kind){
+  var el=document.getElementById('agree-list-'+kind+'-'+id);
+  if(!el) return;
+  el.innerHTML='<span style="color:var(--text3);font-size:12px">Loading&#8230;</span>';
+  try {
+    var rows = await fetchAgreements(id, kind);
+    if(!rows || !rows.length){ el.innerHTML='<span style="color:var(--text4);font-size:12px">No acceptances recorded yet.</span>'; return; }
+    el.innerHTML = rows.map(function(r){
+      var when = r.accepted_at ? new Date(r.accepted_at).toLocaleString('en-US',{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+      return '<div style="border:1px solid var(--border,#e5e5ea);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px">'
+        + '<div><strong>'+esc(r.first_name)+' '+esc(r.last_name)+'</strong>'+(r.email?' &middot; '+esc(r.email):'')+'</div>'
+        + '<div style="color:var(--text3);margin-top:2px">'+esc(when)+' &middot; v'+esc(r.agreement_version||'')+' &middot; IP '+esc(r.ip||'n/a')+'</div>'
+        + '</div>';
+    }).join('');
+  } catch(e){ el.innerHTML='<span style="color:var(--red,#c00);font-size:12px">Could not load acceptances.</span>'; }
+}
+function downloadAgreementCSV(id, kind){
+  fetchAgreements(id, kind).then(function(rows){
+    rows = rows || [];
+    var cols=['first_name','last_name','email','lead_id','kind','property_address','agreement_version','status','ip','user_agent','accepted_at','revealed_at'];
+    var escCsv=function(v){ v=(v==null?'':String(v)); return '"'+v.replace(/"/g,'""')+'"'; };
+    var lines=[cols.join(',')];
+    rows.forEach(function(r){ lines.push(cols.map(function(c){return escCsv(r[c]);}).join(',')); });
+    var blob=new Blob([lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url; a.download='agreement_'+kind+'_'+id+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); },1000);
+  }).catch(function(){ alert('Could not download the acceptance CSV.'); });
+}
 function renderActivityLog(kind, id, log){
   log = log || [];
   var sorted = log.slice().sort(function(a,b){ return new Date(b.at) - new Date(a.at); });
@@ -2555,7 +2711,7 @@ function renderSharedActivityLog(){
       }).join('');
   return '<div class="detail-section"><div class="detail-section-title">Activity Log</div>'
     +'<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">'
-    +'<input id="shared-activity-name" class="form-input" placeholder="Your name" style="flex:1;min-width:100px;font-size:12px">'
+    +'<input id="shared-activity-name" class="form-input" placeholder="Your name" value="'+esc(getSharedName())+'" onchange="setSharedName(this.value)" style="flex:1;min-width:100px;font-size:12px">'
     +'<input id="shared-activity-note" class="form-input" placeholder="Optional note..." style="flex:1;min-width:120px;font-size:12px">'
     +'</div>'
     +'<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">'
@@ -2569,7 +2725,8 @@ function renderSharedActivityLog(){
 async function sharedLogActivity(type){
   var nameEl = document.getElementById('shared-activity-name');
   var noteEl = document.getElementById('shared-activity-note');
-  var by = (nameEl&&nameEl.value.trim()) || 'Shared Link';
+  var by = (nameEl&&nameEl.value.trim()) || getSharedName() || 'Shared Link';
+  setSharedName(by);
   var note = (noteEl&&noteEl.value.trim()) || '';
   sharedActivityLog.push({type:type, by:by, at:new Date().toISOString(), note:note});
   await sharedPersistActivity();
@@ -2595,6 +2752,53 @@ async function sharedPersistActivity(){
 function refreshSharedActivitySection(){
   var el = document.getElementById('shared-activity-section');
   if(el) el.outerHTML = renderSharedActivityLog();
+}
+
+// ===== Recipient identity (shared link) — remembers the recipient's name so they don't
+// re-type it every time, and can change it if a different teammate takes over. =====
+function getSharedName(){ return localStorage.getItem('crm_shared_name') || ''; }
+function setSharedName(n){ if(n && n.trim()) localStorage.setItem('crm_shared_name', n.trim()); }
+
+// ===== Recipient Notes — a notes stream that belongs to the person the lead was sent to.
+// Kept completely separate from the original lead Notes so the original is never overwritten.
+// Each entry is stamped with who wrote it + date + time. Reusable read-only renderer used on
+// both the shared link page and the main CRM detail views. =====
+function recipientNotesListHTML(entries){
+  entries = entries || [];
+  if(entries.length===0) return '<div style="font-size:12px;color:var(--text3);padding:6px 0">No recipient notes yet.</div>';
+  var sorted = entries.slice().sort(function(a,b){ return new Date(b.at) - new Date(a.at); });
+  return sorted.map(function(e){
+    var when = e.at ? new Date(e.at).toLocaleString() : '';
+    return '<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:12px">'
+      +'<div style="white-space:pre-wrap">'+esc(e.text)+'</div>'
+      +'<div style="color:var(--text3);font-size:11px;margin-top:2px">&#128100; '+esc(e.by||'Recipient')+(when?' &middot; '+when:'')+'</div>'
+      +'</div>';
+  }).join('');
+}
+// Editable Recipient Notes block for the shared page.
+var sharedRecipientNotes = [];
+function renderSharedRecipientNotes(){
+  return '<div id="shared-recipient-section" class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes <span style="font-weight:400;color:var(--text3);font-size:11px">(your notes — separate from the original)</span></div>'
+    +'<div style="max-height:180px;overflow-y:auto;margin-bottom:8px">'+recipientNotesListHTML(sharedRecipientNotes)+'</div>'
+    +'<textarea id="shared-recipient-note-input" class="form-textarea" placeholder="Add your own note (e.g. Spoke with seller, willing to negotiate)..." style="min-height:60px"></textarea>'
+    +'<button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="sharedAddRecipientNote()">&#10133; Add Recipient Note</button>'
+    +'</div>';
+}
+async function sharedAddRecipientNote(){
+  var nameEl = document.getElementById('shared-activity-name');
+  var by = (nameEl && nameEl.value.trim()) || getSharedName() || 'Recipient';
+  setSharedName(by);
+  var input = document.getElementById('shared-recipient-note-input');
+  var text = input ? input.value.trim() : '';
+  if(!text){ showToast('Write a note first','error'); return; }
+  sharedRecipientNotes.push({by:by, at:new Date().toISOString(), text:text});
+  var table = sharedActivityKind==='task' ? 'jv_leads' : 'leads';
+  try { await sbFetch(table + '?id=eq.' + sharedActivityId, 'PATCH', {recipient_notes: sharedRecipientNotes}); }
+  catch(e) { showToast('Could not save note — please try again','error'); return; }
+  if(input) input.value='';
+  var el = document.getElementById('shared-recipient-section');
+  if(el) el.outerHTML = renderSharedRecipientNotes();
+  showToast('Recipient note added','success');
 }
 
 let activityCheckpoint = localStorage.getItem('crm_activity_checkpoint') || '1970-01-01T00:00:00.000Z';
@@ -2792,34 +2996,36 @@ function sendLeadEmailNow(kind, id, memberIdx){
       address = (document.getElementById('f-address')||{}).value || '';
     }
   }
-  var subject = 'New Property Lead from M Estate' + (address ? ' — ' + address : '');
-  var todayFormatted = new Date().toLocaleDateString('en-US', {year:'numeric', month:'long', day:'numeric'});
-  var body = 'Hi,\n\n'
-    + 'M Estate has a new property lead for you to review and follow up on.\n\n'
-    + 'Date: ' + todayFormatted + '\n'
-    + 'Name: ' + (name||'') + '\n'
-    + 'Phone: ' + (phone||'') + '\n'
-    + 'Asking Price: ' + (askingPrice||'') + '\n'
-    + 'Address: ' + (address||'');
+  // NOTE: the outreach email deliberately contains NO seller name/phone/price/address.
+  // All lead details stay behind the Lead Protection Agreement gate on the link below.
+  var subject = 'New Lead from the Team of M-Estate';
+  var body = 'Hello ' + (m.name||'') + ',\n\n'
+    + 'Here is a new lead from the Team of M-Estate. The link below contains all of the lead information — property, phone, notes, and more.\n\n'
+    + 'Before the lead is revealed, you will be asked to review and accept a short Lead Protection & Non-Circumvention Agreement and enter your first and last name. Once you agree, the full lead will be shown to you.';
   if(kind==='lead' && id!==null){
     var baseUrl = GITHUB_PAGES_URL;
-    body += '\n\nUpdate this lead directly: ' + baseUrl + '?shared=lead&id=' + id;
+    body += '\n\nOpen your lead here: ' + baseUrl + '?shared=lead&id=' + id;
     var sharedLead = leads.find(function(x){return x.id===id;});
     if(sharedLead){
       sharedLead.shared = true;
       sharedLead.sharedAt = new Date().toISOString();
       sharedLead.sharedWith = m.email;
+      // Record the send against THIS lead so there's a trail of who emailed it and to whom.
+      if(!sharedLead.activityLog) sharedLead.activityLog=[];
+      sharedLead.activityLog.push({type:'Emailed', by:(currentUser&&currentUser.name)||'Team', at:new Date().toISOString(), note:'Sent to '+m.name+' ('+m.email+')'});
       localStorage.setItem('crm_leads', JSON.stringify(leads));
       saveLeadToSupabase(sharedLead);
     }
   } else if(kind==='task' && id!==null){
     var baseUrlT = GITHUB_PAGES_URL;
-    body += '\n\nUpdate this lead directly: ' + baseUrlT + '?shared=task&id=' + id;
+    body += '\n\nOpen your lead here: ' + baseUrlT + '?shared=task&id=' + id;
     var sharedTask = jvLeads.find(function(x){return x.id===id;});
     if(sharedTask){
       sharedTask.shared = true;
       sharedTask.sharedAt = new Date().toISOString();
       sharedTask.sharedWith = m.email;
+      if(!sharedTask.activityLog) sharedTask.activityLog=[];
+      sharedTask.activityLog.push({type:'Emailed', by:(currentUser&&currentUser.name)||'Team', at:new Date().toISOString(), note:'Sent to '+m.name+' ('+m.email+')'});
       saveJV();
       saveJVToSupabase(sharedTask);
     }
@@ -2827,6 +3033,7 @@ function sendLeadEmailNow(kind, id, memberIdx){
   var mailto = 'mailto:' + encodeURIComponent(m.email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
   window.location.href = mailto;
   var menu = document.getElementById('send-team-menu'); if(menu) menu.remove();
+  showToast('Email drafted to ' + m.name + ' (' + m.email + ') — check your mail app', 'success');
 }
 
 function onGlobalSearch(q){
@@ -2956,18 +3163,100 @@ async function initFullApp() {
 // A restricted link (?shared=lead&id=123) that shows ONLY that one lead -- no other tabs,
 // no other leads, no login. Recipient can view details/links and adjust Marketing Type,
 // Status, Follow-Up Date, and Notes only. Saves go straight to Supabase by that lead's id.
-async function initSharedLeadView(id) {
-  document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading lead...</div>';
-  var lead = null;
+// ---- Agreement gate helpers (recipient side) ----
+// The token is proof-of-acceptance for ONE lead. Stored per-lead so a refresh or a
+// return visit does not re-prompt, but accepting Lead A never unlocks Lead B.
+function agreementToken(kind, id){ try { return localStorage.getItem('agree_'+kind+'_'+id)||''; } catch(e){ return ''; } }
+function setAgreementToken(kind, id, token){ try { localStorage.setItem('agree_'+kind+'_'+id, token); } catch(e){} }
+
+async function agreementCall(body){
+  var r = await fetch(AGREEMENT_FN_URL, {
+    method:'POST',
+    headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY, 'Content-Type':'application/json' },
+    body: JSON.stringify(body)
+  });
+  var txt = await r.text();
+  var data = txt ? JSON.parse(txt) : {};
+  if(!r.ok) throw new Error((data && data.error) || ('HTTP '+r.status));
+  return data;
+}
+function agreementNotFound(){
+  document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)"><h2>Lead not found</h2><p>This link may be out of date. Please ask for a new one.</p></div>';
+}
+function checkAgreeReady(){
+  var f=((document.getElementById('agree-first')||{}).value||'').trim();
+  var l=((document.getElementById('agree-last')||{}).value||'').trim();
+  var chk=document.getElementById('agree-check');
+  var reviewed = chk ? chk.checked : false;
+  var btn=document.getElementById('agree-btn');
+  if(btn) btn.disabled = !(f && l && reviewed);
+}
+async function submitAgreement(id, kind){
+  var first=((document.getElementById('agree-first')||{}).value||'').trim();
+  var last=((document.getElementById('agree-last')||{}).value||'').trim();
+  var chk=document.getElementById('agree-check');
+  var errEl0=document.getElementById('agree-err');
+  if(!first || !last){ if(errEl0) errEl0.textContent='First and last name are required.'; checkAgreeReady(); return; }
+  if(!chk || !chk.checked){ if(errEl0) errEl0.textContent='Please check the box to confirm you reviewed and agree.'; checkAgreeReady(); return; }
+  var btn=document.getElementById('agree-btn');
+  var errEl=document.getElementById('agree-err');
+  if(btn){ btn.disabled=true; btn.textContent='Recording your acceptance…'; }
+  if(errEl) errEl.textContent='';
   try {
-    var rows = await sbFetch('leads?id=eq.' + id + '&select=*');
-    if(rows && rows.length > 0) lead = fromRow(rows[0]);
-  } catch(e) {}
-  if(!lead) {
-    document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)"><h2>Lead not found</h2><p>This link may be out of date. Please ask for a new one.</p></div>';
-    return;
+    var data = await agreementCall({ action:'accept', leadId:id, kind:kind, firstName:first, lastName:last });
+    setAgreementToken(kind, id, data.token);
+    if(kind==='task') renderSharedTaskView(fromJVRow(data.lead));
+    else renderSharedLeadView(fromRow(data.lead));
+  } catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='✅ Submit & Reveal Lead'; }
+    if(errEl) errEl.textContent='Something went wrong. Please try again.';
   }
-  renderSharedLeadView(lead);
+}
+function renderAgreementGate(id, kind){
+  document.getElementById('app').innerHTML = `
+    <div class="header"><div class="logo">&#127968; Property Update</div></div>
+    <div style="max-width:640px;margin:24px auto;padding:0 16px">
+      <div class="modal" style="position:static;box-shadow:var(--shadow-md)">
+        <div class="modal-header"><div>
+          <div class="modal-title">Lead Protection &amp; Non-Circumvention Agreement</div>
+          <div class="modal-subtitle">Please review and accept before the lead is revealed</div>
+        </div></div>
+        <div class="modal-body">
+          <div style="background:var(--bg2,#f7f7f9);border:1px solid var(--border,#e5e5ea);border-radius:10px;padding:16px 18px;font-size:13px;line-height:1.55;color:var(--text2,#333);max-height:340px;overflow:auto">
+            <p style="margin:0 0 10px">By clicking &ldquo;Submit &amp; Reveal Lead,&rdquo; you acknowledge and agree to the following terms:</p>
+            <p style="margin:0 0 6px"><strong>1. Lead Ownership.</strong> The property and/or seller information being provided was sourced and introduced by Hiredwise LLC / Mestate Investment Group and its associates (&ldquo;Source&rdquo;).</p>
+            <p style="margin:0 0 6px"><strong>2. Non-Circumvention.</strong> You agree not to bypass, circumvent, or otherwise pursue the property or seller independently, including making an offer, entering into a contract, purchasing the property, or facilitating a transaction with the seller, without the prior written consent of Source. This restriction applies whether the transaction is completed directly or through an affiliate, partner, LLC, agent, representative, or other third party.</p>
+            <p style="margin:0 0 6px"><strong>3. Compensation.</strong> Any assignment fee, JV fee, profit split, commission, or other compensation will be separately agreed upon in writing by the applicable parties before closing or completion of the transaction.</p>
+            <p style="margin:0 0 6px"><strong>4. Breach.</strong> If you or anyone acting on your behalf circumvents Source and completes or facilitates a transaction involving the protected lead, Source reserves the right to pursue $25,000 in liquidated damages or the actual damages/compensation lost, whichever is greater, to the extent permitted by applicable law, together with any other remedies available by law.</p>
+            <p style="margin:0 0 0"><strong>5. Electronic Acceptance.</strong> By clicking &ldquo;Submit &amp; Reveal Lead,&rdquo; you confirm that you have read, understood, and agreed to these terms. Your electronic acceptance will constitute your agreement to these terms and may be retained as evidence of your acceptance.</p>
+          </div>
+          <div class="detail-section" style="margin-top:16px"><div class="detail-section-title">Recipient Information</div>
+            <div class="detail-grid">
+              <div class="form-field"><label class="form-label">First Name <span style="color:var(--red,#c00)">*</span></label><input id="agree-first" class="form-input" type="text" autocomplete="given-name" oninput="checkAgreeReady()"></div>
+              <div class="form-field"><label class="form-label">Last Name <span style="color:var(--red,#c00)">*</span></label><input id="agree-last" class="form-input" type="text" autocomplete="family-name" oninput="checkAgreeReady()"></div>
+            </div>
+          </div>
+          <label style="display:flex;align-items:flex-start;gap:8px;margin-top:14px;font-size:13px;color:var(--text2,#333);cursor:pointer">
+            <input type="checkbox" id="agree-check" onchange="checkAgreeReady()" style="margin-top:2px;width:16px;height:16px;flex-shrink:0">
+            <span>I have <strong>reviewed</strong> and <strong>agree</strong> to the Lead Protection &amp; Non-Circumvention Agreement above.</span>
+          </label>
+          <div id="agree-err" style="color:var(--red,#c00);font-size:12px;margin:6px 0 0;min-height:14px"></div>
+          <button id="agree-btn" class="btn btn-primary" style="width:100%;margin-top:10px;padding:12px" disabled onclick="submitAgreement(${id},'${kind}')">&#9989; Submit &amp; Reveal Lead</button>
+          <p style="color:var(--text3);font-size:11px;text-align:center;margin:10px 0 0">Agreement Version ${AGREEMENT_VERSION}. Your acceptance, name, date, time, and technical details are recorded.</p>
+        </div>
+      </div>
+    </div>`;
+  checkAgreeReady();
+}
+
+async function initSharedLeadView(id) {
+  document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading&#8230;</div>';
+  try {
+    var data = await agreementCall({ action:'get', leadId:id, kind:'lead', token: agreementToken('lead', id) });
+    if(data.needsAgreement){ renderAgreementGate(id, 'lead'); return; }
+    if(!data.lead){ agreementNotFound(); return; }
+    renderSharedLeadView(fromRow(data.lead));
+  } catch(e){ renderAgreementGate(id, 'lead'); }
 }
 function renderSharedLeadView(l) {
   var dd = getDropdowns();
@@ -2978,11 +3267,12 @@ function renderSharedLeadView(l) {
   sharedActivityKind = 'lead';
   sharedActivityId = l.id;
   sharedActivityLog = l.activityLog || [];
+  sharedRecipientNotes = l.recipientNotes || [];
   document.getElementById('app').innerHTML = `
     <div class="header"><div class="logo">&#127968; Property Update</div></div>
     <div style="max-width:640px;margin:24px auto;padding:0 16px">
       <div class="modal" style="position:static;box-shadow:var(--shadow-md)">
-        <div class="modal-header"><div><div class="modal-title">${esc(l.address)||'No Address'}</div><div class="modal-subtitle">Lead #${l.id}${l.date?' &middot; '+l.date:''}</div></div></div>
+        <div class="modal-header"><div><div class="modal-title">${esc(l.address)||'No Address'}</div><div class="modal-subtitle">Lead #${l.id}${l.date?' &middot; '+l.date:''}</div>${l.address?'<div style="margin-top:4px;font-size:12px"><a href="'+zillowUrl+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+redfinUrl+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}</div></div>
         <div class="modal-body">
           <div class="detail-section"><div class="detail-section-title">Property &amp; Contact</div>
             <div class="detail-grid">
@@ -3002,10 +3292,12 @@ function renderSharedLeadView(l) {
             <div class="form-grid">
               <div class="form-field"><label class="form-label">Marketing Type</label><select id="shared-mkt" class="form-select">${mktOpts}</select></div>
               <div class="form-field"><label class="form-label">Status</label><select id="shared-status" class="form-select">${statusOpts}</select></div>
+              <div class="form-field"><label class="form-label">Lead Temperature</label><select id="shared-score" class="form-select"><option value="" ${!l.score?'selected':''}>&#8212; Not set &#8212;</option><option value="Hot" ${l.score==='Hot'?'selected':''}>&#128308; Hot</option><option value="Warm" ${l.score==='Warm'?'selected':''}>&#128993; Warm</option><option value="Cold" ${l.score==='Cold'?'selected':''}>&#128309; Cold</option></select></div>
               <div class="form-field"><label class="form-label">Follow-Up Date</label><input id="shared-followup" type="date" class="form-input" value="${l.followUpDate||''}"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared('shared-followup','${esc(l.address||'Lead')}');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div>
             </div>
-            <div class="form-field" style="margin-top:10px"><label class="form-label">Notes</label><textarea id="shared-notes" class="form-textarea" placeholder="Notes, conversation details, next steps...">${esc(l.notes)}</textarea></div>
           </div>
+          <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
+          ${renderSharedRecipientNotes()}
           <div id="shared-save-status" style="font-size:12px;color:var(--green);margin-bottom:8px"></div>
           <div id="shared-activity-section">${renderSharedActivityLog()}</div>
         </div>
@@ -3014,12 +3306,14 @@ function renderSharedLeadView(l) {
     </div>`;
 }
 async function saveSharedLead(id) {
+  // NOTE: original `notes` is intentionally NOT written here — recipients edit their own
+  // Recipient Notes (recipient_notes) instead, so the original lead notes are never overwritten.
   var body = {
     marketing_type: document.getElementById('shared-mkt').value,
     status: document.getElementById('shared-status').value,
+    score: document.getElementById('shared-score').value,
     follow_up_date: document.getElementById('shared-followup').value,
-    notes: document.getElementById('shared-notes').value.trim(),
-    updated_by: 'Shared Link', updated_at: today()
+    updated_by: (getSharedName() || 'Shared Link'), updated_at: today()
   };
   var statusEl = document.getElementById('shared-save-status');
   try {
@@ -3031,17 +3325,13 @@ async function saveSharedLead(id) {
 }
 
 async function initSharedTaskView(id) {
-  document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading...</div>';
-  var task = null;
+  document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading&#8230;</div>';
   try {
-    var rows = await sbFetch('jv_leads?id=eq.' + id + '&select=*');
-    if(rows && rows.length > 0) task = fromJVRow(rows[0]);
-  } catch(e) {}
-  if(!task) {
-    document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)"><h2>Not found</h2><p>This link may be out of date. Please ask for a new one.</p></div>';
-    return;
-  }
-  renderSharedTaskView(task);
+    var data = await agreementCall({ action:'get', leadId:id, kind:'task', token: agreementToken('task', id) });
+    if(data.needsAgreement){ renderAgreementGate(id, 'task'); return; }
+    if(!data.lead){ agreementNotFound(); return; }
+    renderSharedTaskView(fromJVRow(data.lead));
+  } catch(e){ renderAgreementGate(id, 'task'); }
 }
 function renderSharedTaskView(l) {
   var statuses = getJVStatuses();
@@ -3049,11 +3339,12 @@ function renderSharedTaskView(l) {
   sharedActivityKind = 'task';
   sharedActivityId = l.id;
   sharedActivityLog = l.activityLog || [];
+  sharedRecipientNotes = l.recipientNotes || [];
   document.getElementById('app').innerHTML = `
     <div class="header"><div class="logo">&#127968; Property Update</div></div>
     <div style="max-width:640px;margin:24px auto;padding:0 16px">
       <div class="modal" style="position:static;box-shadow:var(--shadow-md)">
-        <div class="modal-header"><div><div class="modal-title">${esc(l.name)||'Lead'}</div><div class="modal-subtitle">${esc(l.location)||''}</div></div></div>
+        <div class="modal-header"><div><div class="modal-title">${esc(l.name)||'Lead'}</div><div class="modal-subtitle">${esc(l.location)||''}</div>${l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}</div></div>
         <div class="modal-body">
           <div class="detail-section"><div class="detail-section-title">Details</div>
             <div class="detail-grid">
@@ -3066,10 +3357,12 @@ function renderSharedTaskView(l) {
           <div class="form-section"><div class="form-section-title">Update This Lead</div>
             <div class="form-grid">
               <div class="form-field"><label class="form-label">Status</label><select id="shared-jv-status" class="form-select"><option value="">&#8212; Select &#8212;</option>${statusOpts}</select></div>
+              <div class="form-field"><label class="form-label">Lead Temperature</label><select id="shared-jv-score" class="form-select"><option value="" ${!l.score?'selected':''}>&#8212; Not set &#8212;</option><option value="Hot" ${l.score==='Hot'?'selected':''}>&#128308; Hot</option><option value="Warm" ${l.score==='Warm'?'selected':''}>&#128993; Warm</option><option value="Cold" ${l.score==='Cold'?'selected':''}>&#128309; Cold</option></select></div>
               <div class="form-field"><label class="form-label">Follow-Up Date</label><input id="shared-jv-followup" type="date" class="form-input" value="${l.followUpDate||''}"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared('shared-jv-followup','${esc(l.name||'Lead')}');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div>
             </div>
-            <div class="form-field" style="margin-top:10px"><label class="form-label">Notes</label><textarea id="shared-jv-notes" class="form-textarea" placeholder="Notes, conversation details, next steps...">${esc(l.notes)}</textarea></div>
           </div>
+          <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
+          ${renderSharedRecipientNotes()}
           <div id="shared-save-status" style="font-size:12px;color:var(--green);margin-bottom:8px"></div>
           <div id="shared-activity-section">${renderSharedActivityLog()}</div>
         </div>
@@ -3078,10 +3371,11 @@ function renderSharedTaskView(l) {
     </div>`;
 }
 async function saveSharedTask(id) {
+  // original `notes` intentionally NOT written — recipient uses their own Recipient Notes.
   var body = {
     jv_status: document.getElementById('shared-jv-status').value,
-    follow_up_date: document.getElementById('shared-jv-followup').value,
-    notes: document.getElementById('shared-jv-notes').value.trim()
+    score: document.getElementById('shared-jv-score').value,
+    follow_up_date: document.getElementById('shared-jv-followup').value
   };
   var statusEl = document.getElementById('shared-save-status');
   try {
