@@ -380,6 +380,8 @@ function toRow(l) {
     ghl_contact_id: l.ghlContactId||'',
     score: l.score||'', activity_log: l.activityLog||[],
     recipient_notes: l.recipientNotes||[],
+    beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
+    review_sent_by: l.reviewSentBy||'', review_sent_at: l.reviewSentAt||'',
     shared: l.shared||false, shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
     deleted: l.deleted||false, deleted_at: l.deletedAt||''
   };
@@ -399,6 +401,8 @@ function fromRow(r) {
     ghlContactId: r.ghl_contact_id||'',
     score: r.score||'', activityLog: r.activity_log||[],
     recipientNotes: r.recipient_notes||[],
+    beds: r.beds||'', baths: r.baths||'', sqft: r.sqft||'',
+    reviewSentBy: r.review_sent_by||'', reviewSentAt: r.review_sent_at||'',
     shared: r.shared||false, sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
     recipientFollowUpDate: r.recipient_follow_up_date||'',
@@ -494,6 +498,8 @@ function toJVRow(l) {
     profit_est: l.profitEst||'', follow_up_date: l.followUpDate||'',
     jv_status: l.jvStatus||'', date_added: l.dateAdded||'',
     activity_log: l.activityLog||[], recipient_notes: l.recipientNotes||[],
+    beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
+    review_sent_by: l.reviewSentBy||'', review_sent_at: l.reviewSentAt||'',
     shared: l.shared||false,
     shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
     deleted: l.deleted||false, deleted_at: l.deletedAt||''
@@ -507,6 +513,8 @@ function fromJVRow(r) {
     profitEst: r.profit_est||'', followUpDate: r.follow_up_date||'',
     jvStatus: r.jv_status||'', dateAdded: r.date_added||'',
     activityLog: r.activity_log||[], recipientNotes: r.recipient_notes||[],
+    beds: r.beds||'', baths: r.baths||'', sqft: r.sqft||'',
+    reviewSentBy: r.review_sent_by||'', reviewSentAt: r.review_sent_at||'',
     shared: r.shared||false,
     sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
@@ -944,10 +952,14 @@ function renderReviewTab(){
   var rows = items.length===0
     ? '<div class="empty"><div class="empty-icon">&#128269;</div><h3>Nothing needs review</h3></div>'
     : '<div class="table-container"><div class="table-wrap"><table>'
-      +'<thead><tr><th>Lead</th><th>Offer</th><th>ARV</th><th>Follow-Up</th><th>Status</th><th></th></tr></thead><tbody>'
+      +'<thead><tr><th>Lead</th><th>Sent By</th><th>Sent</th><th>Offer</th><th>ARV</th><th>Follow-Up</th><th>Status</th><th></th></tr></thead><tbody>'
       + items.map(function(l){
+          var sentBy = l.reviewSentBy ? esc(l.reviewSentBy) : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
+          var sentAt = l.reviewSentAt ? new Date(l.reviewSentAt).toLocaleString() : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           return '<tr>'
             +'<td onclick="openDetail('+l.id+')" style="cursor:pointer"><div class="address-cell">'+esc(l.address||l.name||'Untitled')+'</div></td>'
+            +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
+            +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
             +'<td><span class="money-val">'+formatMoney(l.offer)+'</span></td>'
             +'<td><span class="arv-val">'+formatMoney(l.arv)+'</span></td>'
             +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
@@ -962,8 +974,20 @@ function renderReviewTab(){
       +'</tbody></table></div></div>';
   document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
     +'<div style="margin-bottom:16px"><h2 style="font-size:16px;font-weight:700">&#128269; Review Queue</h2>'
-    +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Nationwide leads flagged Needs Review. This is a work queue -- leads stay in the Nationwide database either way.</p></div>'
+    +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Leads flagged Needs Review or added here when sent out. Sent By / Sent shows who sent it and when. This is a work queue -- leads stay in their database either way.</p></div>'
     +rows+'</div>';
+}
+// Add a lead/task to the Review queue and stamp who sent it + when (used by the Review button on Send and the footer Review button).
+async function sendToReview(kind, id){
+  var arr = kind==='task' ? jvLeads : leads;
+  var l = arr.find(function(x){return x.id===id;});
+  if(!l) return;
+  l.needsReview = true;
+  l.reviewSentBy = (currentUser && currentUser.name) || 'Team';
+  l.reviewSentAt = new Date().toISOString();
+  if(kind==='task'){ saveJV(); render(); await saveJVToSupabase(l); }
+  else { localStorage.setItem('crm_leads', JSON.stringify(leads)); render(); await saveLeadToSupabase(l); }
+  showToast('Added to Review queue','success');
 }
 async function clearReviewComplete(id){
   var l = leads.find(function(x){return x.id===id;});
@@ -1472,6 +1496,9 @@ function renderDetailModal(){
               <div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':''}</span></div>
               <div class="detail-item"><span class="detail-label">Offer</span><span class="detail-val" style="color:var(--accent);font-weight:700;font-size:15px">${formatMoney(l.offer)}</span></div>
               <div class="detail-item"><span class="detail-label">ARV</span><span class="detail-val" style="color:var(--green);font-weight:700;font-size:15px">${formatMoney(l.arv)}</span></div>
+              <div class="detail-item"><span class="detail-label">Beds</span><span class="detail-val">${esc(l.beds||'')||'&#8212;'}</span></div>
+              <div class="detail-item"><span class="detail-label">Baths</span><span class="detail-val">${esc(l.baths||'')||'&#8212;'}</span></div>
+              <div class="detail-item"><span class="detail-label">Sqft</span><span class="detail-val">${esc(l.sqft||'')||'&#8212;'}</span></div>
               <div class="detail-item"><span class="detail-label">Marketing</span><span class="detail-val">${esc(l.marketingType)||''}</span></div>
               <div class="detail-item"><span class="detail-label">Entry Date</span><span class="detail-val">${l.date||''}</span></div>
               <div class="detail-item"><span class="detail-label">Follow-Up</span><span class="detail-val">${l.followUpDate?followUpChip(l.followUpDate)+' <a href="'+buildGCalUrl(l.followUpDate,'Follow up: '+(l.address||'Lead'),'Lead follow-up reminder for '+(l.address||''))+'" target="_blank" class="detail-link" style="font-size:11px">&#128197; Add to Calendar</a>':''}</span></div>
@@ -1492,6 +1519,7 @@ function renderDetailModal(){
         </div>
         <div class="modal-footer">
           <button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>
+          <button class="btn btn-secondary btn-sm" onclick="sendToReview('lead',${l.id})">&#128203; Review</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,'lead',${l.id})">&#128231; Send to Team</button>
           <button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button>
           <button class="btn btn-primary" onclick="switchToEdit()">&#9999;&#65039; Edit</button>
@@ -1537,6 +1565,13 @@ function renderEditModal(){
               <div class="form-field"><label class="form-label">ARV</label><input id="f-arv" class="form-input" value="${esc(l.arv)}" placeholder="450000"></div>
             </div>
           </div>
+          <div class="form-section"><div class="form-section-title">Property Details</div>
+            <div class="form-grid cols-3">
+              <div class="form-field"><label class="form-label">Beds</label><input id="f-beds" class="form-input" value="${esc(l.beds||'')}" placeholder="3"></div>
+              <div class="form-field"><label class="form-label">Baths</label><input id="f-baths" class="form-input" value="${esc(l.baths||'')}" placeholder="2"></div>
+              <div class="form-field"><label class="form-label">Sqft</label><input id="f-sqft" class="form-input" value="${esc(l.sqft||'')}" placeholder="1500"></div>
+            </div>
+          </div>
           <div class="form-section"><div class="form-section-title">Classification &amp; Dates</div>
             <div class="form-grid cols-3">
               <div class="form-field"><label class="form-label">Marketing Type</label><select id="f-mkt" class="form-select" onchange="onMktChange(this.value)">${mo}</select></div>
@@ -1574,6 +1609,7 @@ function renderEditModal(){
         </div>
         <div class="modal-footer">
           ${!isNew?'<button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>':''}
+          ${!isNew?'<button class="btn btn-secondary btn-sm" onclick="sendToReview(\'lead\','+l.id+')">&#128203; Review</button>':''}
           <button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,'lead',${isNew?'null':l.id})">&#128231; Send to Team</button>
           <button class="btn btn-secondary btn-sm" onclick="${isNew?'closeModal()':'renderDetailModal()'}">Cancel</button>
           <button class="btn btn-primary" onclick="saveLead()">&#128190; Save Lead</button>
@@ -1716,6 +1752,9 @@ async function saveLead(){
   l.webLink=document.getElementById('f-link').value.trim();l.comps=document.getElementById('f-comps').value.trim();
   l.notes=document.getElementById('f-notes').value.trim();
   l.score=document.getElementById('f-score').value;
+  var bedsEl=document.getElementById('f-beds'); if(bedsEl) l.beds=bedsEl.value.trim();
+  var bathsEl=document.getElementById('f-baths'); if(bathsEl) l.baths=bathsEl.value.trim();
+  var sqftEl=document.getElementById('f-sqft'); if(sqftEl) l.sqft=sqftEl.value.trim();
   var nrEl=document.getElementById('f-needs-review');
   l.needsReview = (l.nationwide==='Yes' && nrEl) ? nrEl.checked : false;
   l.updatedBy=currentUser.name;l.updatedAt=today();
@@ -2627,7 +2666,7 @@ function deleteActivityEntry(kind, id, index){
   showToast('Log entry removed','success');
 }
 function activityIcon(type){
-  return type==='Called' ? '&#128222;' : type==='Texted' ? '&#128172;' : type==='Emailed' ? '&#128231;' : type==='Follow-Up Set' ? '&#128197;' : type==='Followed Up' ? '&#9989;' : '&#128221;';
+  return type==='Called Answered' ? '&#128222;' : type==='Called No Answer' ? '&#128244;' : type==='SMS Sent' ? '&#128172;' : type==='Email Sent' ? '&#128231;' : type==='Called' ? '&#128222;' : type==='Texted' ? '&#128172;' : type==='Emailed' ? '&#128231;' : type==='Follow-Up Set' ? '&#128197;' : type==='Followed Up' ? '&#9989;' : '&#128221;';
 }
 // ===== Agreement acceptance display (team side, inside lead/task detail) =====
 function agreementSectionHTML(id, kind, status, acceptedAt){
@@ -2748,9 +2787,10 @@ function renderActivityLog(kind, id, log){
   return '<div class="detail-section"><div class="detail-section-title">Activity Log</div>'
     +'<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">'
     +'<input id="'+noteId+'" class="form-input" placeholder="Optional note..." style="flex:1;min-width:120px;font-size:12px">'
-    +'<button class="btn btn-secondary btn-sm" onclick="logActivity(\''+kind+'\','+id+',\'Called\',document.getElementById(\''+noteId+'\').value)">&#128222; Log Call</button>'
-    +'<button class="btn btn-secondary btn-sm" onclick="logActivity(\''+kind+'\','+id+',\'Texted\',document.getElementById(\''+noteId+'\').value)">&#128172; Log Text</button>'
-    +'<button class="btn btn-secondary btn-sm" onclick="logActivity(\''+kind+'\','+id+',\'Emailed\',document.getElementById(\''+noteId+'\').value)">&#128231; Log Email</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="logActivity(\''+kind+'\','+id+',\'Called Answered\',document.getElementById(\''+noteId+'\').value)">&#128222; Called Answered</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="logActivity(\''+kind+'\','+id+',\'Called No Answer\',document.getElementById(\''+noteId+'\').value)">&#128244; Called No Answer</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="logActivity(\''+kind+'\','+id+',\'SMS Sent\',document.getElementById(\''+noteId+'\').value)">&#128172; SMS Sent</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="logActivity(\''+kind+'\','+id+',\'Email Sent\',document.getElementById(\''+noteId+'\').value)">&#128231; Email Sent</button>'
     +'</div>'
     +'<div style="max-height:180px;overflow-y:auto">'+list+'</div>'
     +'</div>';
@@ -2779,9 +2819,10 @@ function renderSharedActivityLog(){
     +'<input id="shared-activity-note" class="form-input" placeholder="Optional note..." style="flex:1;min-width:120px;font-size:12px">'
     +'</div>'
     +'<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">'
-    +'<button class="btn btn-secondary btn-sm" onclick="sharedLogActivity(\'Called\')">&#128222; Log Call</button>'
-    +'<button class="btn btn-secondary btn-sm" onclick="sharedLogActivity(\'Texted\')">&#128172; Log Text</button>'
-    +'<button class="btn btn-secondary btn-sm" onclick="sharedLogActivity(\'Emailed\')">&#128231; Log Email</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="sharedLogActivity(\'Called Answered\')">&#128222; Called Answered</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="sharedLogActivity(\'Called No Answer\')">&#128244; Called No Answer</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="sharedLogActivity(\'SMS Sent\')">&#128172; SMS Sent</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="sharedLogActivity(\'Email Sent\')">&#128231; Email Sent</button>'
     +'</div>'
     +'<div style="max-height:180px;overflow-y:auto">'+list+'</div>'
     +'</div>';
@@ -3077,6 +3118,10 @@ function sendLeadEmailNow(kind, id, memberIdx){
       // Record the send against THIS lead so there's a trail of who emailed it and to whom.
       if(!sharedLead.activityLog) sharedLead.activityLog=[];
       sharedLead.activityLog.push({type:'Emailed', by:(currentUser&&currentUser.name)||'Team', at:new Date().toISOString(), note:'Sent to '+m.name+' ('+m.email+')'});
+      // Feature C: sending a lead also puts it in the Review queue, stamped with who sent it + when.
+      sharedLead.needsReview = true;
+      sharedLead.reviewSentBy = (currentUser&&currentUser.name)||'Team';
+      sharedLead.reviewSentAt = new Date().toISOString();
       localStorage.setItem('crm_leads', JSON.stringify(leads));
       saveLeadToSupabase(sharedLead);
     }
