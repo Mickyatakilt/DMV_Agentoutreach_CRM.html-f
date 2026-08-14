@@ -1011,7 +1011,7 @@ function render(){
       <div class="tab ${activeTab==='followups'?'active':''}" onclick="setTab('followups')">&#128197; Follow-Ups ${urgentBadge}</div>
       <div class="tab ${activeTab==='jvleads'?'active':''}" onclick="setTab('jvleads')">&#9989; Tasks <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${jvLeads.length}</span></div>
       <div class="tab ${activeTab==='nationwide'?'active':''}" onclick="setTab('nationwide')" style="${activeTab==='nationwide'?'':''}">&#127758; Nationwide <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.nationwide==='Yes').length}</span></div>
-      <div class="tab ${activeTab==='sentout'?'active':''}" onclick="setTab('sentout')">&#128231; Sent Out <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.shared).length + jvLeads.filter(l=>!l.deleted&&l.shared).length}</span></div>
+      <div class="tab ${activeTab==='sentout'?'active':''}" onclick="setTab('sentout')">&#128231; Sent Out <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.shared).length + jvLeads.filter(l=>!l.deleted&&l.shared).length}</span>${(function(){var n=recipientFUAlertCount();return n>0?' <span title="Recipient follow-ups overdue or due today" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">&#10071;'+n+'</span>':'';})()}</div>
       <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
     </div>
     <div id="tab-content"></div>`;
@@ -1943,6 +1943,77 @@ function exportCSV(){
   showToast('Exported '+filtered.length+' leads','success');
 }
 
+// Count of recipient follow-ups that are overdue or due today (used for the Sent Out tab alert).
+function recipientFUAlertCount(){
+  var n=0;
+  function tally(l){ if(!l.deleted && l.shared && l.recipientFollowUpDate){ var st=getFUStatus(l.recipientFollowUpDate); if(st==='overdue'||st==='today') n++; } }
+  leads.forEach(tally); jvLeads.forEach(tally);
+  return n;
+}
+// Dashboard of RECIPIENT follow-up dates (the date the person we emailed the lead to set on
+// THEIR side). Same Overdue / Due Today / Next 3 Days / All Upcoming layout as the team
+// Follow-Up tab, but driven by recipientFollowUpDate and badged as an emailed lead (&#128231;).
+function buildRecipientFUHTML(){
+  var items=[];
+  function collect(l,kind){
+    if(l.deleted || !l.shared || !l.recipientFollowUpDate) return;
+    items.push({lead:l, kind:kind, date:l.recipientFollowUpDate});
+  }
+  leads.forEach(function(l){ collect(l,'lead'); });
+  jvLeads.forEach(function(l){ collect(l,'task'); });
+  items.sort(function(a,b){ return a.date>b.date?1:-1; });
+
+  var overdue  = items.filter(function(x){ return getFUStatus(x.date)==='overdue'; });
+  var dueToday = items.filter(function(x){ return getFUStatus(x.date)==='today'; });
+  var soon     = items.filter(function(x){ return getFUStatus(x.date)==='soon'; });
+  var future   = items.filter(function(x){ return getFUStatus(x.date)==='future'; });
+
+  function fuItem(x){
+    var l=x.lead;
+    var d=daysDiff(x.date);
+    var lbl = d<0 ? Math.abs(d)+'d overdue' : d===0 ? 'Today' : d===1 ? 'Tomorrow' : 'In '+d+'d';
+    var fn = x.kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
+    var title = (x.kind==='task' ? (l.address||l.location||l.name) : l.address) || l.name || '&#8212;';
+    var badge = x.kind==='task' ? (l.score?scoreBadgeHTML(l.score):jvStatusBadge(l.jvStatus||'')) : statusBadge(l.status);
+    var recip = l.sharedWith ? esc(l.sharedWith) : 'Recipient';
+    return '<div class="followup-item" onclick="'+fn+'" style="cursor:pointer">'
+      + '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">'
+      + '<span style="font-size:10px;margin-right:2px" title="Sent out by email">&#128231;</span>'
+      + '<div class="followup-item-addr" style="margin:0">'+esc(title)+'</div>'
+      + '</div>'
+      + '<div class="followup-item-meta">'+badge
+      + '<span style="font-size:9px;font-weight:800;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 5px">&#128100; '+recip+'</span>'
+      + '</div>'
+      + '<div class="followup-item-date">'+x.date+' &middot; '+lbl+' <span style="color:var(--text4)">(recipient)</span></div>'
+      + '</div>';
+  }
+  function fuCard(title, arr, hColor, hBg, icon){
+    var rows = arr.length===0 ? '<div class="followup-empty">None</div>' : arr.map(fuItem).join('');
+    return '<div class="followup-group">'
+      + '<div class="followup-group-header" style="background:'+hBg+';color:'+hColor+'">'
+      + '<span>'+icon+' '+title+'</span>'
+      + '<span style="background:'+hColor+';color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">'+arr.length+'</span>'
+      + '</div><div style="max-height:320px;overflow-y:auto">'+rows+'</div></div>';
+  }
+  var total = items.length;
+  if(total===0) return '';
+  var futureRows = future.length===0 ? '<div class="followup-empty">No upcoming recipient follow-ups</div>' : future.map(fuItem).join('');
+  return '<div class="followup-container" style="padding:0;margin-bottom:20px">'
+    + '<div style="margin-bottom:10px">'
+    + '<h3 style="font-size:14px;font-weight:700">&#128231; Recipient Follow-Ups</h3>'
+    + '<p style="font-size:12px;color:var(--text3);margin-top:2px">Follow-up dates the people you emailed leads to set on their side &middot; '+total+' total</p></div>'
+    + '<div class="followup-grid">'
+    + fuCard('Overdue', overdue, '#dc2626', '#fee2e2', '&#128308;')
+    + fuCard('Due Today', dueToday, '#b45309', '#fef3c7', '&#128993;')
+    + fuCard('Next 3 Days', soon, '#0d9488', '#f0fdfa', '&#128994;')
+    + '</div>'
+    + '<div class="followup-group" style="margin-top:14px">'
+    + '<div class="followup-group-header" style="background:var(--surface3);color:var(--text2)">'
+    + '<span>&#128198; All Upcoming</span>'
+    + '<span style="background:var(--text3);color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">'+future.length+'</span>'
+    + '</div><div style="max-height:400px;overflow-y:auto">'+futureRows+'</div></div>'
+    + '</div>';
+}
 function renderSentOutTab(){
   const soLeads = leads.filter(l=>!l.deleted&&l.shared).map(function(l){ return Object.assign({kind:'lead'}, l); });
   const soTasks = jvLeads.filter(l=>!l.deleted&&l.shared).map(function(l){ return Object.assign({kind:'task'}, l); });
@@ -1995,6 +2066,7 @@ function renderSentOutTab(){
         </div>
         <div style="display:flex;gap:6px;align-items:center">${bulkBar}</div>
       </div>
+      ${buildRecipientFUHTML()}
       ${rows}
     </div>`;
   hydrateSentOutSigners(combined);
