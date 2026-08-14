@@ -493,7 +493,7 @@ function toRow(l) {
     score: l.score||'', activity_log: l.activityLog||[],
     recipient_notes: l.recipientNotes||[],
     beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
-    review_sent_by: l.reviewSentBy||'', review_sent_at: l.reviewSentAt||'',
+    review_sent_by: l.reviewSentBy||'', review_sent_at: l.reviewSentAt||'', review_note: l.reviewNote||'',
     shared: l.shared||false, shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
     deleted: l.deleted||false, deleted_at: l.deletedAt||''
   };
@@ -514,7 +514,7 @@ function fromRow(r) {
     score: r.score||'', activityLog: r.activity_log||[],
     recipientNotes: r.recipient_notes||[],
     beds: r.beds||'', baths: r.baths||'', sqft: r.sqft||'',
-    reviewSentBy: r.review_sent_by||'', reviewSentAt: r.review_sent_at||'',
+    reviewSentBy: r.review_sent_by||'', reviewSentAt: r.review_sent_at||'', reviewNote: r.review_note||'',
     shared: r.shared||false, sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
     recipientFollowUpDate: r.recipient_follow_up_date||'',
@@ -611,7 +611,7 @@ function toJVRow(l) {
     jv_status: l.jvStatus||'', date_added: l.dateAdded||'',
     activity_log: l.activityLog||[], recipient_notes: l.recipientNotes||[],
     beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
-    review_sent_by: l.reviewSentBy||'', review_sent_at: l.reviewSentAt||'',
+    review_sent_by: l.reviewSentBy||'', review_sent_at: l.reviewSentAt||'', review_note: l.reviewNote||'',
     shared: l.shared||false,
     shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
     deleted: l.deleted||false, deleted_at: l.deletedAt||''
@@ -626,7 +626,7 @@ function fromJVRow(r) {
     jvStatus: r.jv_status||'', dateAdded: r.date_added||'',
     activityLog: r.activity_log||[], recipientNotes: r.recipient_notes||[],
     beds: r.beds||'', baths: r.baths||'', sqft: r.sqft||'',
-    reviewSentBy: r.review_sent_by||'', reviewSentAt: r.review_sent_at||'',
+    reviewSentBy: r.review_sent_by||'', reviewSentAt: r.review_sent_at||'', reviewNote: r.review_note||'',
     shared: r.shared||false,
     sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
@@ -1012,7 +1012,7 @@ function render(){
       <div class="tab ${activeTab==='jvleads'?'active':''}" onclick="setTab('jvleads')">&#9989; Tasks <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${jvLeads.length}</span></div>
       <div class="tab ${activeTab==='nationwide'?'active':''}" onclick="setTab('nationwide')" style="${activeTab==='nationwide'?'':''}">&#127758; Nationwide <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.nationwide==='Yes').length}</span></div>
       <div class="tab ${activeTab==='sentout'?'active':''}" onclick="setTab('sentout')">&#128231; Sent Out <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.shared).length + jvLeads.filter(l=>!l.deleted&&l.shared).length}</span>${(function(){var n=recipientFUAlertCount();return n>0?' <span title="Recipient follow-ups overdue or due today" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">&#10071;'+n+'</span>':'';})()}</div>
-      <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
+      <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
     </div>
     <div id="tab-content"></div>`;
   if(activeTab==='leads') renderLeadsTab();
@@ -1060,34 +1060,43 @@ function buildTempScoreViewHTML(score){
 }
 
 function renderReviewTab(){
-  var items = leads.filter(function(l){ return !l.deleted && l.needsReview; })
-    .sort(function(a,b){ return (b.updatedAt||'') > (a.updatedAt||'') ? 1 : -1; });
+  var items = leads.filter(function(l){ return !l.deleted && l.needsReview; }).map(function(l){ return {kind:'lead', l:l}; })
+    .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview; }).map(function(t){ return {kind:'task', l:t}; }))
+    .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
   var rows = items.length===0
     ? '<div class="empty"><div class="empty-icon">&#128269;</div><h3>Nothing needs review</h3></div>'
     : '<div class="table-container"><div class="table-wrap"><table>'
-      +'<thead><tr><th>Lead</th><th>Sent By</th><th>Sent</th><th>Offer</th><th>ARV</th><th>Follow-Up</th><th>Status</th><th></th></tr></thead><tbody>'
-      + items.map(function(l){
+      +'<thead><tr><th>Lead</th><th>Sent By</th><th>Sent</th><th>Review Note</th><th>Offer</th><th>ARV</th><th>Follow-Up</th><th>Status</th><th></th></tr></thead><tbody>'
+      + items.map(function(it){
+          var l=it.l, kind=it.kind;
+          var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
+          var title = kind==='task' ? (l.location||l.name||'Untitled') : (l.address||l.name||'Untitled');
+          var offer = kind==='task' ? l.askingPrice : l.offer;
+          var status = kind==='task' ? l.jvStatus : l.status;
           var sentBy = l.reviewSentBy ? esc(l.reviewSentBy) : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           var sentAt = l.reviewSentAt ? new Date(l.reviewSentAt).toLocaleString() : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
+          var note = l.reviewNote ? '<div style="font-size:12px;max-width:240px;white-space:pre-wrap;color:var(--text2)">'+esc(l.reviewNote)+'</div>' : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
+          var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
           return '<tr>'
-            +'<td onclick="openDetail('+l.id+')" style="cursor:pointer"><div class="address-cell">'+esc(l.address||l.name||'Untitled')+'</div></td>'
+            +'<td onclick="'+openFn+'" style="cursor:pointer"><div class="address-cell">'+typeTag+esc(title)+'</div></td>'
             +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
             +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
-            +'<td><span class="money-val">'+formatMoney(l.offer)+'</span></td>'
+            +'<td>'+note+'</td>'
+            +'<td><span class="money-val">'+formatMoney(offer)+'</span></td>'
             +'<td><span class="arv-val">'+formatMoney(l.arv)+'</span></td>'
             +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
-            +'<td>'+statusBadge(l.status)+'</td>'
+            +'<td>'+statusBadge(status)+'</td>'
             +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
-              +'<button class="btn btn-secondary btn-sm" onclick="openDetail('+l.id+')">Open</button> '
-              +'<button class="btn btn-green btn-sm" onclick="completeReview('+l.id+')">&#9989; Complete</button> '
-              +'<button class="btn btn-danger btn-sm" onclick="removeFromReview('+l.id+')">Remove</button>'
+              +'<button class="btn btn-secondary btn-sm" onclick="'+openFn+'">Open</button> '
+              +'<button class="btn btn-green btn-sm" onclick="completeReview(\''+kind+'\','+l.id+')">&#9989; Complete</button> '
+              +'<button class="btn btn-danger btn-sm" onclick="removeFromReview(\''+kind+'\','+l.id+')">Remove</button>'
             +'</td>'
             +'</tr>';
         }).join('')
       +'</tbody></table></div></div>';
   document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
     +'<div style="margin-bottom:16px"><h2 style="font-size:16px;font-weight:700">&#128269; Review Queue</h2>'
-    +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Leads flagged Needs Review or added here when sent out. Sent By / Sent shows who sent it and when. This is a work queue -- leads stay in their database either way.</p></div>'
+    +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Leads flagged Needs Review (by the team or by a recipient) or added here when sent out. Sent By / Sent shows who flagged it and when; Review Note is their reason. This is a work queue -- leads stay in their database either way.</p></div>'
     +rows+'</div>';
 }
 // Add a lead/task to the Review queue and stamp who sent it + when (used by the Review button on Send and the footer Review button).
@@ -1110,21 +1119,27 @@ async function clearReviewComplete(id){
   var ok = await saveLeadToSupabase(l);
   if(!ok) showToast('Cloud sync failed -- check your connection','error');
 }
-async function completeReview(id){
-  var l = leads.find(function(x){return x.id===id;});
+async function completeReview(kind, id){
+  if(typeof id==='undefined'){ id=kind; kind='lead'; } // back-compat if called with just an id
+  var arr = kind==='task' ? jvLeads : leads;
+  var l = arr.find(function(x){return x.id===id;});
   if(!l) return;
   l.needsReview = false;
+  if(kind==='task'){ saveJV(); render(); var okT = await saveJVToSupabase(l); if(!okT) showToast('Cloud sync failed -- check your connection','error'); return; }
   l.status = l.status || 'Review Complete';
   save(); render();
   var ok = await saveLeadToSupabase(l);
   if(!ok) showToast('Cloud sync failed -- check your connection','error');
 }
-function removeFromReview(id){
-  // Only takes it off the Review queue -- the lead itself stays in the Nationwide database.
-  if(!confirm('Remove this lead from the Review queue?\n\nIt will stay in Nationwide Leads.')) return;
-  var l = leads.find(function(x){return x.id===id;});
+function removeFromReview(kind, id){
+  if(typeof id==='undefined'){ id=kind; kind='lead'; }
+  // Only takes it off the Review queue -- the lead/task itself stays in its database.
+  if(!confirm('Remove this from the Review queue?\n\nThe lead/task stays in the CRM.')) return;
+  var arr = kind==='task' ? jvLeads : leads;
+  var l = arr.find(function(x){return x.id===id;});
   if(!l) return;
   l.needsReview = false;
+  if(kind==='task'){ saveJV(); render(); saveJVToSupabase(l).then(function(ok){ if(!ok) showToast('Cloud sync failed -- check your connection','error'); }); return; }
   save(); render();
   saveLeadToSupabase(l).then(function(ok){ if(!ok) showToast('Cloud sync failed -- check your connection','error'); });
 }
@@ -3507,7 +3522,8 @@ function applyRecipientPatchLocal(kind, id, patch){
   var map = { marketing_type:'marketingType', status:'status', score:'score',
     recipient_follow_up_date:'recipientFollowUpDate', recipient_notes:'recipientNotes',
     activity_log:'activityLog', jv_status:'jvStatus', beds:'beds', baths:'baths', sqft:'sqft',
-    updated_by:'updatedBy', updated_at:'updatedAt' };
+    updated_by:'updatedBy', updated_at:'updatedAt',
+    needs_review:'needsReview', review_sent_by:'reviewSentBy', review_sent_at:'reviewSentAt', review_note:'reviewNote' };
   for(var k in patch){ if(map[k]) l[map[k]] = patch[k]; }
 }
 function checkAgreeReady(){
@@ -3590,6 +3606,39 @@ async function initSharedLeadView(id) {
     renderSharedLeadView(fromRow(data.lead));
   } catch(e){ renderAgreementGate(id, 'lead'); }
 }
+// Recipient "Need Review" box: a checkbox that, when ticked, reveals a note field. Saving
+// flags the lead for the team's Review tab, stamped with who flagged it + their note.
+function renderNeedReviewSection(l){
+  var checked = l.needsReview ? 'checked' : '';
+  var display = l.needsReview ? '' : 'display:none';
+  return '<div class="detail-section"><div class="detail-section-title">&#128269; Review</div>'
+    + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer">'
+    + '<input type="checkbox" id="shared-needreview" '+checked+' onchange="toggleSharedReviewNote(this.checked)" style="width:16px;height:16px;margin-top:1px;flex-shrink:0">'
+    + '<span><b>Need Review</b> &mdash; <span style="color:var(--text3)">flag this lead for the M-Estate team to review</span></span></label>'
+    + '<div id="shared-review-note-wrap" style="margin-top:8px;'+display+'">'
+    + '<textarea id="shared-review-note" class="form-textarea" placeholder="Add a note for the team (e.g. Seller wants to counter, needs new photos, question on ARV)..." style="min-height:60px">'+esc(l.reviewNote||'')+'</textarea>'
+    + '</div></div>';
+}
+function toggleSharedReviewNote(on){ var w=document.getElementById('shared-review-note-wrap'); if(w) w.style.display = on?'':'none'; }
+// Fold the recipient's Need-Review checkbox + note into a save body (used by both shared saves).
+function applySharedReviewFields(body){
+  var nr = document.getElementById('shared-needreview');
+  var needs = nr ? nr.checked : false;
+  body.needs_review = needs;
+  if(needs){
+    body.review_note = ((document.getElementById('shared-review-note')||{}).value||'').trim();
+    body.review_sent_by = recipientDisplayName();
+    body.review_sent_at = new Date().toISOString();
+  } else {
+    body.review_note = '';
+  }
+}
+// Who is flagging this review (recipient) — portal uses their profile, email link uses the name they signed with.
+function recipientDisplayName(){
+  if(sharedViewMode==='portal' && typeof authProfile!=='undefined' && authProfile) return authProfile.name || authProfile.email || 'Recipient';
+  try { var n=getSharedName(); if(n) return n; } catch(e){}
+  return 'Recipient';
+}
 // Header for the shared detail view. In portal mode (signed-in recipient) it gets a
 // "back to my leads" button + sign-out; the anonymous emailed link keeps the plain header.
 function sharedDetailHeader(){
@@ -3644,6 +3693,7 @@ function renderSharedLeadView(l) {
           </div>
           <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
           ${renderSharedRecipientNotes()}
+          ${renderNeedReviewSection(l)}
           <div id="shared-save-status" style="font-size:12px;color:var(--green);margin-bottom:8px"></div>
           <div id="shared-activity-section">${renderSharedActivityLog()}</div>
         </div>
@@ -3664,6 +3714,7 @@ async function saveSharedLead(id) {
     sqft: document.getElementById('shared-sqft').value.trim(),
     updated_by: (getSharedName() || 'Shared Link'), updated_at: today()
   };
+  applySharedReviewFields(body);
   var statusEl = document.getElementById('shared-save-status');
   try {
     await recipientEdgeSave('lead', id, body);
@@ -3717,6 +3768,7 @@ function renderSharedTaskView(l) {
           </div>
           <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
           ${renderSharedRecipientNotes()}
+          ${renderNeedReviewSection(l)}
           <div id="shared-save-status" style="font-size:12px;color:var(--green);margin-bottom:8px"></div>
           <div id="shared-activity-section">${renderSharedActivityLog()}</div>
         </div>
@@ -3734,6 +3786,7 @@ async function saveSharedTask(id) {
     baths: document.getElementById('shared-jv-baths').value.trim(),
     sqft: document.getElementById('shared-jv-sqft').value.trim()
   };
+  applySharedReviewFields(body);
   var statusEl = document.getElementById('shared-save-status');
   try {
     await recipientEdgeSave('task', id, body);
