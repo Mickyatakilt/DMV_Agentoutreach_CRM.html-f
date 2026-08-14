@@ -2985,6 +2985,9 @@ function renderActivityLog(kind, id, log){
 // log their own Call/Text/Email directly, without needing access to the full CRM =====
 var sharedActivityKind = null;   // 'lead' or 'task'
 var sharedActivityId = null;
+// How the shared detail view was reached: 'link' = anonymous emailed link (saves via
+// acceptance token), 'portal' = signed-in recipient (saves via portal_save + their JWT).
+var sharedViewMode = 'link';
 var sharedActivityLog = [];
 function renderSharedActivityLog(){
   var sorted = sharedActivityLog.slice().sort(function(a,b){ return new Date(b.at) - new Date(a.at); });
@@ -3479,7 +3482,33 @@ function agreementNotFound(){
 // function gated on this lead's acceptance token, so it keeps working after anon write
 // access to leads/jv_leads is locked down. Only whitelisted columns are applied server-side.
 async function recipientEdgeSave(kind, id, patch){
+  // Signed-in recipient (portal): save via portal_save with their JWT, no acceptance token needed.
+  if(sharedViewMode==='portal'){
+    await authRefreshIfNeeded();
+    var r = await fetch(AGREEMENT_FN_URL, {
+      method:'POST',
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+      body: JSON.stringify({ action:'portal_save', kind:kind, leadId:id, patch:patch })
+    });
+    var data = await r.json().catch(function(){ return {}; });
+    if(!r.ok || data.error) throw new Error(data.error || ('HTTP '+r.status));
+    applyRecipientPatchLocal(kind, id, patch); // keep in-memory record in sync for the dashboard/list
+    return data;
+  }
+  // Anonymous emailed link: token-gated recipient_save.
   return await agreementCall({ action:'recipient_save', kind:kind, leadId:id, token: agreementToken(kind, id), patch: patch });
+}
+// Map a saved snake_case patch back onto the in-memory (camelCase) lead/task so the portal
+// dashboard and list reflect edits without a full reload.
+function applyRecipientPatchLocal(kind, id, patch){
+  var arr = kind==='task'?jvLeads:leads;
+  var l = arr.find(function(x){return x.id===id;});
+  if(!l) return;
+  var map = { marketing_type:'marketingType', status:'status', score:'score',
+    recipient_follow_up_date:'recipientFollowUpDate', recipient_notes:'recipientNotes',
+    activity_log:'activityLog', jv_status:'jvStatus', beds:'beds', baths:'baths', sqft:'sqft',
+    updated_by:'updatedBy', updated_at:'updatedAt' };
+  for(var k in patch){ if(map[k]) l[map[k]] = patch[k]; }
 }
 function checkAgreeReady(){
   var f=((document.getElementById('agree-first')||{}).value||'').trim();
@@ -3503,6 +3532,10 @@ async function submitAgreement(id, kind){
   try {
     var data = await agreementCall({ action:'accept', leadId:id, kind:kind, firstName:first, lastName:last });
     setAgreementToken(kind, id, data.token);
+    // Keep the in-memory record in sync so the portal list/dashboard unlock this lead on return.
+    var arr = kind==='task'?jvLeads:leads;
+    var mem = arr && arr.find ? arr.find(function(x){return x.id===id;}) : null;
+    if(mem){ mem.agreementStatus='Accepted'; mem.agreementAcceptedAt=(data.acceptedAt||'').slice(0,10); }
     if(kind==='task') renderSharedTaskView(fromJVRow(data.lead));
     else renderSharedLeadView(fromRow(data.lead));
   } catch(e){
@@ -3512,7 +3545,7 @@ async function submitAgreement(id, kind){
 }
 function renderAgreementGate(id, kind){
   document.getElementById('app').innerHTML = `
-    <div class="header"><div class="logo">&#127968; Property Update</div></div>
+    ${sharedDetailHeader()}
     <div style="max-width:640px;margin:24px auto;padding:0 16px">
       <div class="modal" style="position:static;box-shadow:var(--shadow-md)">
         <div class="modal-header"><div>
@@ -3548,6 +3581,7 @@ function renderAgreementGate(id, kind){
 }
 
 async function initSharedLeadView(id) {
+  sharedViewMode = 'link';
   document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading&#8230;</div>';
   try {
     var data = await agreementCall({ action:'get', leadId:id, kind:'lead', token: agreementToken('lead', id) });
@@ -3555,6 +3589,16 @@ async function initSharedLeadView(id) {
     if(!data.lead){ agreementNotFound(); return; }
     renderSharedLeadView(fromRow(data.lead));
   } catch(e){ renderAgreementGate(id, 'lead'); }
+}
+// Header for the shared detail view. In portal mode (signed-in recipient) it gets a
+// "back to my leads" button + sign-out; the anonymous emailed link keeps the plain header.
+function sharedDetailHeader(){
+  if(sharedViewMode==='portal'){
+    return '<div class="header" style="display:flex;align-items:center;justify-content:space-between;gap:12px">'
+      + '<div style="display:flex;align-items:center;gap:12px"><button class="btn btn-secondary btn-sm" onclick="renderRecipientPortal()">&#8592; My Leads</button><div class="logo">&#127968; Property Update</div></div>'
+      + '<button class="btn btn-secondary btn-sm" onclick="authSignOut()">Sign Out</button></div>';
+  }
+  return '<div class="header"><div class="logo">&#127968; Property Update</div></div>';
 }
 function renderSharedLeadView(l) {
   var dd = getDropdowns();
@@ -3567,7 +3611,7 @@ function renderSharedLeadView(l) {
   sharedActivityLog = l.activityLog || [];
   sharedRecipientNotes = l.recipientNotes || [];
   document.getElementById('app').innerHTML = `
-    <div class="header"><div class="logo">&#127968; Property Update</div></div>
+    ${sharedDetailHeader()}
     <div style="max-width:640px;margin:24px auto;padding:0 16px">
       <div class="modal" style="position:static;box-shadow:var(--shadow-md)">
         <div class="modal-header"><div><div class="modal-title">${esc(l.address)||'No Address'}</div><div class="modal-subtitle">Lead #${l.id}${l.date?' &middot; '+l.date:''}</div>${l.address?'<div style="margin-top:4px;font-size:12px"><a href="'+zillowUrl+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+redfinUrl+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}</div></div>
@@ -3593,6 +3637,9 @@ function renderSharedLeadView(l) {
               <div class="form-field"><label class="form-label">Lead Temperature</label><select id="shared-score" class="form-select"><option value="" ${!l.score?'selected':''}>&#8212; Not set &#8212;</option><option value="Hot" ${l.score==='Hot'?'selected':''}>&#128308; Hot</option><option value="Warm" ${l.score==='Warm'?'selected':''}>&#128993; Warm</option><option value="Cold" ${l.score==='Cold'?'selected':''}>&#128309; Cold</option></select></div>
               <div class="form-field"><label class="form-label">Team Follow-Up Date</label><input type="date" class="form-input" value="${l.followUpDate||''}" disabled style="opacity:.7;background:var(--bg2,#f2f2f4);cursor:not-allowed"><div class="field-hint" style="color:var(--text4)">Set by the M-Estate team &middot; read-only</div></div>
               <div class="form-field"><label class="form-label">&#128197; Your Follow-Up Date</label><input id="shared-recip-followup" type="date" class="form-input" value="${l.recipientFollowUpDate||''}"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared('shared-recip-followup','${esc(l.address||'Lead')}');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div>
+              <div class="form-field"><label class="form-label">Beds</label><input id="shared-beds" class="form-input" value="${esc(l.beds||'')}" placeholder="3"></div>
+              <div class="form-field"><label class="form-label">Baths</label><input id="shared-baths" class="form-input" value="${esc(l.baths||'')}" placeholder="2"></div>
+              <div class="form-field"><label class="form-label">Sqft</label><input id="shared-sqft" class="form-input" value="${esc(l.sqft||'')}" placeholder="1500"></div>
             </div>
           </div>
           <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
@@ -3612,6 +3659,9 @@ async function saveSharedLead(id) {
     status: document.getElementById('shared-status').value,
     score: document.getElementById('shared-score').value,
     recipient_follow_up_date: document.getElementById('shared-recip-followup').value,
+    beds: document.getElementById('shared-beds').value.trim(),
+    baths: document.getElementById('shared-baths').value.trim(),
+    sqft: document.getElementById('shared-sqft').value.trim(),
     updated_by: (getSharedName() || 'Shared Link'), updated_at: today()
   };
   var statusEl = document.getElementById('shared-save-status');
@@ -3624,6 +3674,7 @@ async function saveSharedLead(id) {
 }
 
 async function initSharedTaskView(id) {
+  sharedViewMode = 'link';
   document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading&#8230;</div>';
   try {
     var data = await agreementCall({ action:'get', leadId:id, kind:'task', token: agreementToken('task', id) });
@@ -3640,7 +3691,7 @@ function renderSharedTaskView(l) {
   sharedActivityLog = l.activityLog || [];
   sharedRecipientNotes = l.recipientNotes || [];
   document.getElementById('app').innerHTML = `
-    <div class="header"><div class="logo">&#127968; Property Update</div></div>
+    ${sharedDetailHeader()}
     <div style="max-width:640px;margin:24px auto;padding:0 16px">
       <div class="modal" style="position:static;box-shadow:var(--shadow-md)">
         <div class="modal-header"><div><div class="modal-title">${esc(l.name)||'Lead'}</div><div class="modal-subtitle">${esc(l.location)||''}</div>${l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}</div></div>
@@ -3659,6 +3710,9 @@ function renderSharedTaskView(l) {
               <div class="form-field"><label class="form-label">Lead Temperature</label><select id="shared-jv-score" class="form-select"><option value="" ${!l.score?'selected':''}>&#8212; Not set &#8212;</option><option value="Hot" ${l.score==='Hot'?'selected':''}>&#128308; Hot</option><option value="Warm" ${l.score==='Warm'?'selected':''}>&#128993; Warm</option><option value="Cold" ${l.score==='Cold'?'selected':''}>&#128309; Cold</option></select></div>
               <div class="form-field"><label class="form-label">Team Follow-Up Date</label><input type="date" class="form-input" value="${l.followUpDate||''}" disabled style="opacity:.7;background:var(--bg2,#f2f2f4);cursor:not-allowed"><div class="field-hint" style="color:var(--text4)">Set by the M-Estate team &middot; read-only</div></div>
               <div class="form-field"><label class="form-label">&#128197; Your Follow-Up Date</label><input id="shared-jv-recip-followup" type="date" class="form-input" value="${l.recipientFollowUpDate||''}"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared('shared-jv-recip-followup','${esc(l.name||'Lead')}');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div>
+              <div class="form-field"><label class="form-label">Beds</label><input id="shared-jv-beds" class="form-input" value="${esc(l.beds||'')}" placeholder="3"></div>
+              <div class="form-field"><label class="form-label">Baths</label><input id="shared-jv-baths" class="form-input" value="${esc(l.baths||'')}" placeholder="2"></div>
+              <div class="form-field"><label class="form-label">Sqft</label><input id="shared-jv-sqft" class="form-input" value="${esc(l.sqft||'')}" placeholder="1500"></div>
             </div>
           </div>
           <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
@@ -3675,7 +3729,10 @@ async function saveSharedTask(id) {
   var body = {
     jv_status: document.getElementById('shared-jv-status').value,
     score: document.getElementById('shared-jv-score').value,
-    recipient_follow_up_date: document.getElementById('shared-jv-recip-followup').value
+    recipient_follow_up_date: document.getElementById('shared-jv-recip-followup').value,
+    beds: document.getElementById('shared-jv-beds').value.trim(),
+    baths: document.getElementById('shared-jv-baths').value.trim(),
+    sqft: document.getElementById('shared-jv-sqft').value.trim()
   };
   var statusEl = document.getElementById('shared-save-status');
   try {
@@ -3785,15 +3842,60 @@ function recipientScopeLabel(){
   if(authProfile.scope_emailed) parts.push('Leads emailed to you');
   return parts.length?parts.join(' · '):'No leads assigned yet';
 }
-function renderRecipientPortal(){
-  var mine = leads.filter(recipientCanSeeLead);
-  var myTasks = jvLeads.filter(function(t){
+// The set of leads/tasks this signed-in recipient may see.
+function recipientMyLeads(){ return leads.filter(recipientCanSeeLead); }
+function recipientMyTasks(){
+  return jvLeads.filter(function(t){
     if(t.deleted) return false;
     if(authProfile.scope_emailed && (t.sharedWith||'').toLowerCase()===(authProfile.email||'').toLowerCase()) return true;
     return false; // tasks are only surfaced via the emailed scope
   });
+}
+// Recipient's follow-up dashboard: their OWN follow-up dates (recipientFollowUpDate),
+// grouped by urgency, each item clickable into the full lead detail.
+function buildPortalFUHTML(mine, myTasks){
+  var items=[];
+  mine.forEach(function(l){ if(l.recipientFollowUpDate && leadAgreementAccepted(l)) items.push({lead:l, kind:'lead', date:l.recipientFollowUpDate}); });
+  myTasks.forEach(function(l){ if(l.recipientFollowUpDate && leadAgreementAccepted(l)) items.push({lead:l, kind:'task', date:l.recipientFollowUpDate}); });
+  if(items.length===0) return '';
+  items.sort(function(a,b){ return a.date>b.date?1:-1; });
+  var overdue=items.filter(function(x){return getFUStatus(x.date)==='overdue';});
+  var dueToday=items.filter(function(x){return getFUStatus(x.date)==='today';});
+  var soon=items.filter(function(x){return getFUStatus(x.date)==='soon';});
+  var future=items.filter(function(x){return getFUStatus(x.date)==='future';});
+  function fuItem(x){
+    var l=x.lead, d=daysDiff(x.date);
+    var lbl = d<0 ? Math.abs(d)+'d overdue' : d===0 ? 'Today' : d===1 ? 'Tomorrow' : 'In '+d+'d';
+    var title = (x.kind==='task'?(l.location||l.name):l.address) || l.name || '&#8212;';
+    var badge = l.score?leadScoreBadgeHTML(l.score):'';
+    return '<div class="followup-item" onclick="openPortalLead(\''+x.kind+'\','+l.id+')" style="cursor:pointer">'
+      + '<div class="followup-item-addr" style="margin:0 0 3px">'+esc(title)+'</div>'
+      + '<div class="followup-item-meta">'+badge+'</div>'
+      + '<div class="followup-item-date">'+x.date+' &middot; '+lbl+'</div>'
+      + '</div>';
+  }
+  function fuCard(title, arr, hColor, hBg, icon){
+    var rows = arr.length===0 ? '<div class="followup-empty">None</div>' : arr.map(fuItem).join('');
+    return '<div class="followup-group"><div class="followup-group-header" style="background:'+hBg+';color:'+hColor+'"><span>'+icon+' '+title+'</span><span style="background:'+hColor+';color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">'+arr.length+'</span></div><div style="max-height:300px;overflow-y:auto">'+rows+'</div></div>';
+  }
+  var futureRows = future.length===0 ? '<div class="followup-empty">No upcoming follow-ups</div>' : future.map(fuItem).join('');
+  return '<div class="followup-container" style="padding:0;margin-bottom:22px">'
+    + '<div style="margin-bottom:10px"><h3 style="font-size:14px;font-weight:700">&#128197; Your Follow-Up Dashboard</h3>'
+    + '<p style="font-size:12px;color:var(--text3);margin-top:2px">Today is '+today()+' &middot; '+items.length+' scheduled</p></div>'
+    + '<div class="followup-grid">'
+    + fuCard('Overdue', overdue, '#dc2626', '#fee2e2', '&#128308;')
+    + fuCard('Due Today', dueToday, '#b45309', '#fef3c7', '&#128993;')
+    + fuCard('Next 3 Days', soon, '#0d9488', '#f0fdfa', '&#128994;')
+    + '</div>'
+    + '<div class="followup-group" style="margin-top:14px"><div class="followup-group-header" style="background:var(--surface3);color:var(--text2)"><span>&#128198; All Upcoming</span><span style="background:var(--text3);color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">'+future.length+'</span></div><div style="max-height:360px;overflow-y:auto">'+futureRows+'</div></div>'
+    + '</div>';
+}
+function renderRecipientPortal(){
+  sharedViewMode = 'portal';
+  var mine = recipientMyLeads();
+  var myTasks = recipientMyTasks();
   var header = `
-    <div style="background:var(--surface2,#fff);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <div style="background:var(--surface2,#fff);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:10">
       <div style="font-size:22px">&#127968;</div>
       <div style="flex:1">
         <div style="font-weight:700;font-size:15px">Your Leads</div>
@@ -3801,42 +3903,64 @@ function renderRecipientPortal(){
       </div>
       <button class="btn btn-secondary btn-sm" onclick="authSignOut()">Sign Out</button>
     </div>`;
-  function card(kind, l){
+  // Compact, clickable lead row — opens the full detail (same info as the emailed link).
+  // Leads the recipient has NOT signed the agreement for show LOCKED (no seller data) until agreed.
+  function row(kind, l){
+    if(!leadAgreementAccepted(l)){
+      var when = l.sharedAt ? new Date(l.sharedAt).toLocaleDateString() : '';
+      return `<div onclick="openPortalLead('${kind}',${l.id})" style="cursor:pointer;border:1px dashed #fca5a5;border-radius:10px;padding:14px 16px;margin-bottom:10px;background:var(--red-bg,#fee2e2)" onmouseover="this.style.boxShadow='var(--shadow-md)'" onmouseout="this.style.boxShadow='none'">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+          <div style="font-weight:700;font-size:14px;color:var(--red,#dc2626)">&#128274; New Protected Lead</div>
+          ${when?'<div style="font-size:11px;color:var(--text3)">Sent '+when+'</div>':''}
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px">Agreement required &#8212; tap to review &amp; unlock the lead details.</div>
+        <div style="margin-top:8px;text-align:right"><span style="font-size:12px;color:var(--red,#dc2626);font-weight:700">Review &amp; Unlock &#8594;</span></div>
+      </div>`;
+    }
     var addr = kind==='task' ? (l.location||l.name||'Untitled') : (l.address||l.name||'Untitled');
-    var rfu = l.recipientFollowUpDate || '';
     var scoreBadge = l.score ? leadScoreBadgeHTML(l.score) : '';
-    var beds = (kind==='task') ? (l.beds||'') : (l.beds||'');
+    var statusB = statusBadge(kind==='task' ? (l.jvStatus||'') : (l.status||'')) || '';
     var pd = [];
     if(l.beds) pd.push(esc(l.beds)+' bd'); if(l.baths) pd.push(esc(l.baths)+' ba'); if(l.sqft) pd.push(esc(l.sqft)+' sqft');
-    return `<div style="border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;background:var(--surface,#fff)">
-      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    var rfu = l.recipientFollowUpDate ? followUpChip(l.recipientFollowUpDate) : '<span style="color:var(--text4);font-size:12px">not set</span>';
+    return `<div onclick="openPortalLead('${kind}',${l.id})" style="cursor:pointer;border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;background:var(--surface,#fff)" onmouseover="this.style.boxShadow='var(--shadow-md)'" onmouseout="this.style.boxShadow='none'">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
         <div style="font-weight:700;font-size:14px">${esc(addr)}</div>
-        <div>${scoreBadge}${statusBadge(l.status||'')}</div>
+        <div style="display:flex;gap:6px;align-items:center">${scoreBadge}${statusB}</div>
       </div>
-      ${pd.length?'<div style="font-size:12px;color:var(--text3);margin-top:4px">'+pd.join(' · ')+'</div>':''}
-      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:13px">
-        ${(kind==='lead'&&l.offer)?'<div><span style="color:var(--text3)">Offer</span> <b>'+formatMoney(l.offer)+'</b></div>':''}
-        ${l.arv?'<div><span style="color:var(--text3)">ARV</span> <b>'+formatMoney(l.arv)+'</b></div>':''}
-        ${l.phone?'<div><span style="color:var(--text3)">Phone</span> '+esc(l.phone)+'</div>':''}
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:var(--text3)">
+        ${(kind==='lead'&&l.offer)?'<span>Offer <b style="color:var(--accent)">'+formatMoney(l.offer)+'</b></span>':''}
+        ${l.arv?'<span>ARV <b style="color:var(--green)">'+formatMoney(l.arv)+'</b></span>':''}
+        ${pd.length?'<span>'+pd.join(' &middot; ')+'</span>':''}
       </div>
-      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <label style="font-size:12px;color:var(--text3)">Your Follow-Up</label>
-        <input type="date" class="form-input" style="max-width:170px;font-size:12px" value="${rfu}" onchange="recipientSetFollowUp('${kind}',${l.id},this.value)">
-      </div>
-      ${(l.recipientNotes&&l.recipientNotes.length)?'<div style="margin-top:10px"><div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:4px">Your Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':''}
-      <div style="margin-top:8px;display:flex;gap:6px">
-        <input id="recip-note-${kind}-${l.id}" class="form-input" placeholder="Add a note…" style="flex:1;font-size:12px">
-        <button class="btn btn-secondary btn-sm" onclick="recipientAddNote('${kind}',${l.id})">Add Note</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <div style="font-size:12px;color:var(--text3)">Your follow-up: ${rfu}</div>
+        <span style="font-size:12px;color:var(--accent);font-weight:700">Open &#8594;</span>
       </div>
     </div>`;
   }
-  var body = '';
+  var body;
   if(mine.length===0 && myTasks.length===0){
     body = '<div class="empty" style="padding:60px;text-align:center;color:var(--text3)"><div style="font-size:40px">&#128237;</div><h3>No leads yet</h3><p>When your team assigns leads to you, they will appear here.</p></div>';
   } else {
-    body = mine.map(function(l){return card('lead',l);}).join('') + myTasks.map(function(t){return card('task',t);}).join('');
+    body = '<div style="font-size:13px;font-weight:700;margin-bottom:10px">Your Leads (' + (mine.length+myTasks.length) + ') &middot; <span style="font-weight:400;color:var(--text3)">tap any lead to view details &amp; set your follow-up</span></div>'
+      + mine.map(function(l){return row('lead',l);}).join('') + myTasks.map(function(t){return row('task',t);}).join('');
   }
-  document.getElementById('app').innerHTML = header + '<div style="max-width:820px;margin:0 auto;padding:18px 16px">'+body+'</div>';
+  document.getElementById('app').innerHTML = header + '<div style="max-width:960px;margin:0 auto;padding:18px 16px">' + buildPortalFUHTML(mine, myTasks) + body + '</div>';
+}
+// Has this lead's Non-Circumvention Agreement been accepted (signed)?
+function leadAgreementAccepted(l){ return String((l&&l.agreementStatus)||'').toLowerCase()==='accepted'; }
+// Open a lead for a signed-in recipient. If the agreement isn't signed yet, show the SAME
+// agreement gate the emailed link uses (no seller data revealed until they agree). Once signed,
+// reuse the rich shared detail view; saves route through portal_save via recipientEdgeSave.
+function openPortalLead(kind, id){
+  var arr = kind==='task'?jvLeads:leads;
+  var l = arr.find(function(x){return x.id===id;});
+  if(!l) return;
+  sharedViewMode = 'portal';
+  window.scrollTo(0,0);
+  if(!leadAgreementAccepted(l)){ renderAgreementGate(id, kind); return; }
+  if(kind==='task') renderSharedTaskView(l); else renderSharedLeadView(l);
 }
 async function recipientSetFollowUp(kind, id, val){
   var arr = kind==='task'?jvLeads:leads;
@@ -3859,6 +3983,17 @@ async function recipientAddNote(kind, id){
   await recipientWrite(kind, id, { recipient_notes: l.recipientNotes });
   if(el) el.value='';
   renderRecipientPortal();
+}
+async function recipientSaveDetails(kind, id){
+  var arr = kind==='task'?jvLeads:leads;
+  var l = arr.find(function(x){return x.id===id;});
+  if(!l) return;
+  var beds = (document.getElementById('recip-beds-'+kind+'-'+id)||{}).value || '';
+  var baths = (document.getElementById('recip-baths-'+kind+'-'+id)||{}).value || '';
+  var sqft = (document.getElementById('recip-sqft-'+kind+'-'+id)||{}).value || '';
+  l.beds = beds.trim(); l.baths = baths.trim(); l.sqft = sqft.trim();
+  await recipientWrite(kind, id, { beds: l.beds, baths: l.baths, sqft: l.sqft });
+  showToast('Property details saved','success');
 }
 // Central recipient-portal write helper. Routes through the lead-agreement edge function's
 // `portal_save` action, which verifies the recipient's session, confirms the lead is in THEIR
