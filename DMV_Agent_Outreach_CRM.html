@@ -3802,10 +3802,11 @@ function routeByRole(){
 function recipientCanSeeLead(l){
   if(!authProfile) return false;
   if(l.deleted) return false; // cascade: deleted leads disappear from the recipient view too
-  var email = (authProfile.email||'').toLowerCase();
+  var email = (authProfile.email||'').trim().toLowerCase();
   if(authProfile.scope_nationwide && l.nationwide==='Yes') return true;
   if(authProfile.scope_dmv && l.nationwide!=='Yes') return true;
-  if(authProfile.scope_emailed && (l.sharedWith||'').toLowerCase()===email) return true;
+  // Emailed scope: any lead already sent to this recipient's email (past or new) shows up.
+  if(authProfile.scope_emailed && (l.sharedWith||'').trim().toLowerCase()===email && email) return true;
   return false;
 }
 async function initRecipientPortal(){
@@ -3845,9 +3846,10 @@ function recipientScopeLabel(){
 // The set of leads/tasks this signed-in recipient may see.
 function recipientMyLeads(){ return leads.filter(recipientCanSeeLead); }
 function recipientMyTasks(){
+  var email = (authProfile.email||'').trim().toLowerCase();
   return jvLeads.filter(function(t){
     if(t.deleted) return false;
-    if(authProfile.scope_emailed && (t.sharedWith||'').toLowerCase()===(authProfile.email||'').toLowerCase()) return true;
+    if(authProfile.scope_emailed && email && (t.sharedWith||'').trim().toLowerCase()===email) return true;
     return false; // tasks are only surfaced via the emailed scope
   });
 }
