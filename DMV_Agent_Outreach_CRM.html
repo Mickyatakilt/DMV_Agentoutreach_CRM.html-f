@@ -4093,13 +4093,39 @@ async function mtCreate(){
     scope_nationwide: !!(document.getElementById('mt-nw')||{}).checked,
     scope_emailed: !!(document.getElementById('mt-emailed')||{}).checked
   };
+  var newName = body.name, newEmail = body.email;
   try {
     var res = await adminUsersCall(body);
+    var issuedKey = (res && res.access_key) ? res.access_key : body.access_key;
     ['mt-name','mt-email','mt-key'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; });
     await mtRefresh();
     if(res && res.access_key){ mtShowKey('Account created', res.access_key); }
     else { showToast('Account created','success'); }
+    // Email the new person their login the same way leads are sent (opens a mail draft).
+    if(newEmail && issuedKey){ emailLoginInvite(newName, newEmail, issuedKey); }
   } catch(e){ if(err) err.textContent = e.message; }
+}
+// Draft a "your account is ready" email (login URL + access key) to a newly created user,
+// using the same mailto: mechanism as Send-to-Team lead emails.
+function emailLoginInvite(name, email, key){
+  var url = GITHUB_PAGES_URL;
+  var sender = (currentUser && currentUser.name) || 'M-Estate Team';
+  var subject = 'Your DMV Agent Outreach CRM login';
+  var bodyLines = [
+    'Hi ' + (name || 'there') + ',',
+    '',
+    'Your account for the DMV Agent Outreach CRM has been created.',
+    '',
+    'Log in here: ' + url,
+    'Your access key: ' + key,
+    '',
+    'Just enter your access key on the login screen — no email or password needed. Keep this key private.',
+    '',
+    '— ' + sender
+  ];
+  var mailto = 'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(bodyLines.join('\n'));
+  window.location.href = mailto;
+  showToast('Login email drafted to ' + email + ' — check your mail app', 'success');
 }
 // Prominently show a newly generated key so the admin can copy it before it scrolls away.
 function mtShowKey(title, key){
