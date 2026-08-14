@@ -232,6 +232,118 @@ const SUPABASE_URL = "https://jwctfsapxrdzznjaaufo.supabase.co";
 const GITHUB_PAGES_URL = "https://mickyatakilt.github.io/DMV_Agentoutreach_CRM.html-f/DMV_Agent_Outreach_CRM.html";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3Y3Rmc2FweHJkenpuamFhdWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNTg0ODksImV4cCI6MjA5NjYzNDQ4OX0._9XUgB2K2O_JlDJgWM_Br_KLqJRVKxKnct7dR-pvMHk";
 
+// ===== AUTH (per-person Supabase Auth logins) =====================================
+// SAFE ROLLOUT FLAG. While false, the app behaves exactly as before (name-prompt login,
+// anon key for all reads/writes) -- so this code can ship live without locking anyone out.
+// Flip to true ONLY after: (1) Mike's admin account exists in Supabase Auth (password set
+// by Mike himself in the dashboard), and (2) at least the core team has accounts. Flipping
+// the database RLS to authenticated-only is a SEPARATE, even-later step.
+const AUTH_ENABLED = false;
+const ADMIN_FN_URL = SUPABASE_URL + '/functions/v1/admin-users';
+const KEY_LOGIN_FN_URL = SUPABASE_URL + '/functions/v1/key-login';
+
+// Session shape: { access_token, refresh_token, expires_at (unix seconds), user:{id,email} }
+let authSession = null;
+let authProfile = null; // { id, email, name, role, scope_dmv, scope_nationwide, scope_emailed, disabled }
+try { authSession = JSON.parse(localStorage.getItem('crm_auth')||'null'); } catch(e){ authSession = null; }
+try { authProfile = JSON.parse(localStorage.getItem('crm_auth_profile')||'null'); } catch(e){ authProfile = null; }
+
+function saveAuthSession(s){ authSession = s; localStorage.setItem('crm_auth', JSON.stringify(s)); }
+function saveAuthProfile(p){ authProfile = p; localStorage.setItem('crm_auth_profile', JSON.stringify(p)); }
+function clearAuth(){ authSession=null; authProfile=null; localStorage.removeItem('crm_auth'); localStorage.removeItem('crm_auth_profile'); }
+function isAdmin(){ return AUTH_ENABLED && authProfile && authProfile.role==='admin'; }
+function isRecipient(){ return AUTH_ENABLED && authProfile && authProfile.role==='recipient'; }
+
+// Bearer token used for Supabase REST (PostgREST) calls. When auth is on and a session
+// exists, use the user's access token so RLS applies; otherwise fall back to the anon key.
+function sbAuthToken(){
+  if(AUTH_ENABLED && authSession && authSession.access_token) return authSession.access_token;
+  return SUPABASE_KEY;
+}
+
+// POST /auth/v1/token?grant_type=password
+async function authSignIn(email, password){
+  var r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+    method:'POST', headers:{'apikey':SUPABASE_KEY,'Content-Type':'application/json'},
+    body: JSON.stringify({ email: String(email||'').trim().toLowerCase(), password: password||'' })
+  });
+  var data = await r.json();
+  if(!r.ok || !data.access_token){ throw new Error(data.error_description || data.msg || data.error || 'Invalid email or password.'); }
+  var expiresAt = Math.floor(Date.now()/1000) + (data.expires_in || 3600);
+  saveAuthSession({ access_token:data.access_token, refresh_token:data.refresh_token, expires_at:expiresAt, user:{ id:data.user&&data.user.id, email:data.user&&data.user.email } });
+  await loadAuthProfile();
+  return authProfile;
+}
+
+// Access-key login: send just the key to the key-login edge function, which verifies it and
+// returns a real session. No email typed by the user.
+async function authKeyLogin(key){
+  var r = await fetch(KEY_LOGIN_FN_URL, {
+    method:'POST', headers:{'apikey':SUPABASE_KEY,'Content-Type':'application/json'},
+    body: JSON.stringify({ key: String(key||'').trim() })
+  });
+  var data = await r.json().catch(function(){ return {}; });
+  if(!r.ok || !data.session || !data.session.access_token){ throw new Error(data.error || 'Invalid access key.'); }
+  var s = data.session;
+  var expiresAt = Math.floor(Date.now()/1000) + (s.expires_in || 3600);
+  saveAuthSession({ access_token:s.access_token, refresh_token:s.refresh_token, expires_at:expiresAt, user:{ id:s.user&&s.user.id, email:s.user&&s.user.email } });
+  if(data.profile){ saveAuthProfile(data.profile); } else { await loadAuthProfile(); }
+  return authProfile;
+}
+
+// Refresh the access token if it is about to expire. Returns false if refresh failed (session dead).
+async function authRefreshIfNeeded(){
+  if(!authSession || !authSession.refresh_token) return false;
+  var now = Math.floor(Date.now()/1000);
+  if(authSession.expires_at && authSession.expires_at - now > 120) return true; // still valid
+  try {
+    var r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+      method:'POST', headers:{'apikey':SUPABASE_KEY,'Content-Type':'application/json'},
+      body: JSON.stringify({ refresh_token: authSession.refresh_token })
+    });
+    var data = await r.json();
+    if(!r.ok || !data.access_token) return false;
+    var expiresAt = Math.floor(Date.now()/1000) + (data.expires_in || 3600);
+    saveAuthSession({ access_token:data.access_token, refresh_token:data.refresh_token, expires_at:expiresAt, user:{ id:data.user&&data.user.id, email:data.user&&data.user.email } });
+    return true;
+  } catch(e){ return false; }
+}
+
+// Load the caller's own profile row (RLS: they can only read their own).
+async function loadAuthProfile(){
+  var r = await fetch(SUPABASE_URL + '/rest/v1/app_users?select=*', {
+    headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken() }
+  });
+  var rows = await r.json();
+  if(Array.isArray(rows) && rows[0]){ saveAuthProfile(rows[0]); return rows[0]; }
+  saveAuthProfile(null); return null;
+}
+
+async function authSignOut(){
+  try {
+    if(authSession && authSession.access_token){
+      await fetch(SUPABASE_URL + '/auth/v1/logout', { method:'POST', headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+authSession.access_token} });
+    }
+  } catch(e){}
+  clearAuth();
+  currentUser = null; localStorage.removeItem('crm_user');
+  location.reload();
+}
+
+// Call the admin-users edge function (admin-gated server-side).
+async function adminUsersCall(body){
+  await authRefreshIfNeeded();
+  var r = await fetch(ADMIN_FN_URL, {
+    method:'POST',
+    headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+    body: JSON.stringify(body)
+  });
+  var data = await r.json();
+  if(!r.ok){ throw new Error(data.error || ('Request failed ('+r.status+')')); }
+  return data;
+}
+// ===== END AUTH ===================================================================
+
 // -- GoHighLevel Deep Links ---------------------------------------------------
 const GHL_LOCATION_ID = "gF9BSz3b2ZNux9RPKYAG";
 const GHL_BASE = "https://app.gohighlevel.com/v2/location/gF9BSz3b2ZNux9RPKYAG";
@@ -353,7 +465,7 @@ async function sbFetch(path, method, body) {
     method: method,
     headers: {
       'apikey': SUPABASE_KEY,
-      'Authorization': 'Bearer ' + SUPABASE_KEY,
+      'Authorization': 'Bearer ' + sbAuthToken(),
       'Content-Type': 'application/json',
       'Prefer': method === 'POST' ? 'return=representation' : ''
     }
@@ -467,7 +579,7 @@ async function saveLeadToSupabase(l) {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_KEY,
-        'Authorization': 'Bearer ' + SUPABASE_KEY,
+        'Authorization': 'Bearer ' + sbAuthToken(),
         'Content-Type': 'application/json',
         'Prefer': 'resolution=merge-duplicates,return=minimal'
       },
@@ -529,7 +641,7 @@ async function saveJVToSupabase(lead) {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_KEY,
-        'Authorization': 'Bearer ' + SUPABASE_KEY,
+        'Authorization': 'Bearer ' + sbAuthToken(),
         'Content-Type': 'application/json',
         'Prefer': 'resolution=merge-duplicates,return=minimal'
       },
@@ -543,14 +655,14 @@ async function deleteJVFromSupabase(id) {
   try {
     await fetch(SUPABASE_URL + '/rest/v1/jv_leads?id=eq.' + id, {
       method: 'DELETE',
-      headers: {'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY}
+      headers: {'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + sbAuthToken()}
     });
   } catch(e) { console.error('JV delete error:', e); }
 }
 async function loadJVFromSupabase() {
   try {
     var r = await fetch(SUPABASE_URL + '/rest/v1/jv_leads?select=*&order=id.desc&limit=1000', {
-      headers: {'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY}
+      headers: {'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + sbAuthToken()}
     });
     if(r.ok) {
       var rows = await r.json();
@@ -886,7 +998,8 @@ function render(){
         <button class="btn btn-white btn-sm" onclick="showTeamManager()">&#128101; Team</button>
         <button class="btn btn-white btn-sm" onclick="showTrash()">&#128465; Trash</button>
         <button class="btn btn-white btn-sm" onclick="exportCSV()">&#11015; CSV</button>
-        <div class="user-chip" onclick="switchUser()"><div class="user-avatar" style="background:${u.color}">${u.initials}</div>${u.name}</div>
+        ${isAdmin()?'<button class="btn btn-white btn-sm" onclick="showManageTeam()">&#128273; Manage Logins</button>':''}
+        <div class="user-chip" onclick="${AUTH_ENABLED?'authSignOut()':'switchUser()'}" title="${AUTH_ENABLED?'Sign out':'Switch user'}"><div class="user-avatar" style="background:${u.color||'#1e40af'}">${u.initials||'ME'}</div>${u.name}</div>
       </div>
     </div>
     <div style="background:#fff;border-bottom:1px solid var(--border);padding:4px 24px;display:flex;align-items:center;justify-content:space-between;font-size:11px;">
@@ -2849,9 +2962,8 @@ async function sharedDeleteActivity(index){
   refreshSharedActivitySection();
 }
 async function sharedPersistActivity(){
-  var table = sharedActivityKind==='task' ? 'jv_leads' : 'leads';
   try {
-    await sbFetch(table + '?id=eq.' + sharedActivityId, 'PATCH', {activity_log: sharedActivityLog});
+    await recipientEdgeSave(sharedActivityKind, sharedActivityId, {activity_log: sharedActivityLog});
   } catch(e) {}
 }
 function refreshSharedActivitySection(){
@@ -2897,8 +3009,7 @@ async function sharedAddRecipientNote(){
   var text = input ? input.value.trim() : '';
   if(!text){ showToast('Write a note first','error'); return; }
   sharedRecipientNotes.push({by:by, at:new Date().toISOString(), text:text});
-  var table = sharedActivityKind==='task' ? 'jv_leads' : 'leads';
-  try { await sbFetch(table + '?id=eq.' + sharedActivityId, 'PATCH', {recipient_notes: sharedRecipientNotes}); }
+  try { await recipientEdgeSave(sharedActivityKind, sharedActivityId, {recipient_notes: sharedRecipientNotes}); }
   catch(e) { showToast('Could not save note — please try again','error'); return; }
   if(input) input.value='';
   var el = document.getElementById('shared-recipient-section');
@@ -3292,6 +3403,12 @@ async function agreementCall(body){
 function agreementNotFound(){
   document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)"><h2>Lead not found</h2><p>This link may be out of date. Please ask for a new one.</p></div>';
 }
+// Recipient (anonymous shared-link) write path. Routes through the service-role edge
+// function gated on this lead's acceptance token, so it keeps working after anon write
+// access to leads/jv_leads is locked down. Only whitelisted columns are applied server-side.
+async function recipientEdgeSave(kind, id, patch){
+  return await agreementCall({ action:'recipient_save', kind:kind, leadId:id, token: agreementToken(kind, id), patch: patch });
+}
 function checkAgreeReady(){
   var f=((document.getElementById('agree-first')||{}).value||'').trim();
   var l=((document.getElementById('agree-last')||{}).value||'').trim();
@@ -3427,7 +3544,7 @@ async function saveSharedLead(id) {
   };
   var statusEl = document.getElementById('shared-save-status');
   try {
-    await sbFetch('leads?id=eq.' + id, 'PATCH', body);
+    await recipientEdgeSave('lead', id, body);
     if(statusEl) statusEl.textContent = '\u2713 Saved — thank you!';
   } catch(e) {
     if(statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = 'Could not save — please try again.'; }
@@ -3490,26 +3607,341 @@ async function saveSharedTask(id) {
   };
   var statusEl = document.getElementById('shared-save-status');
   try {
-    await sbFetch('jv_leads?id=eq.' + id, 'PATCH', body);
+    await recipientEdgeSave('task', id, body);
     if(statusEl) statusEl.textContent = '\u2713 Saved — thank you!';
   } catch(e) {
     if(statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = 'Could not save — please try again.'; }
   }
 }
 
-// ===== Route: shared single-lead link vs full app =====
-(function(){
+// ===== AUTH FRONTEND: login screen, role routing, recipient portal, admin manage-team =====
+
+// Access-key login screen (only shown when AUTH_ENABLED and no valid session).
+// One field: the person enters just their access key — no email.
+function renderAuthLogin(errMsg){
+  document.getElementById('app').innerHTML = '';
+  document.getElementById('modal-container').innerHTML = `
+    <div class="modal-overlay">
+      <div class="user-modal" style="max-width:380px">
+        <div style="font-size:36px;margin-bottom:6px">&#127968;</div>
+        <h2 style="margin-bottom:2px">DMV Agent Outreach CRM</h2>
+        <p style="margin-bottom:16px">Enter your access key</p>
+        <div style="text-align:left">
+          <label class="form-label">Access Key</label>
+          <input id="auth-key" class="form-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="e.g. K7PQ9M2XR4TJ" style="margin-bottom:6px;letter-spacing:1px;font-family:monospace" onkeydown="if(event.key==='Enter')doAuthLogin()">
+          <div id="auth-err" style="color:var(--red,#dc2626);font-size:12px;min-height:16px;margin-bottom:8px">${errMsg?esc(errMsg):''}</div>
+          <button id="auth-btn" class="btn btn-primary" style="width:100%" onclick="doAuthLogin()">Sign In</button>
+        </div>
+        <p style="font-size:11px;color:var(--text3);margin-top:14px">Your admin gives you an access key. Lost it? Ask your admin for a new one.</p>
+      </div>
+    </div>`;
+  setTimeout(function(){ var e=document.getElementById('auth-key'); if(e) e.focus(); }, 50);
+}
+async function doAuthLogin(){
+  var key = (document.getElementById('auth-key')||{}).value || '';
+  var btn = document.getElementById('auth-btn'); var err = document.getElementById('auth-err');
+  if(err) err.textContent='';
+  if(!key.trim()){ if(err) err.textContent='Enter your access key.'; return; }
+  if(btn){ btn.disabled=true; btn.textContent='Signing in…'; }
+  try {
+    var profile = await authKeyLogin(key);
+    if(!profile){ throw new Error('Your account has no profile. Ask your admin to set it up.'); }
+    if(profile.disabled){ clearAuth(); throw new Error('This account has been disabled.'); }
+    document.getElementById('modal-container').innerHTML='';
+    routeByRole();
+  } catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='Sign In'; }
+    if(err) err.textContent = e.message || 'Sign in failed.';
+  }
+}
+// After a valid session is established, send the user to the right experience.
+function routeByRole(){
+  if(!authProfile){ renderAuthLogin(); return; }
+  if(authProfile.role==='recipient'){
+    initRecipientPortal();
+  } else {
+    // admin or team -> full CRM. Bridge to the legacy currentUser the rest of the app expects.
+    var nm = authProfile.name || authProfile.email || 'User';
+    var initials = nm.trim().split(/\s+/).map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase() || 'ME';
+    currentUser = { id:authProfile.id, name:nm, role:(authProfile.role==='admin'?'Admin':'Team'), email:authProfile.email, color:(authProfile.role==='admin'?'#1e40af':'#16a34a'), initials:initials };
+    localStorage.setItem('crm_user', JSON.stringify(currentUser));
+    initFullApp();
+  }
+}
+
+// ---- Recipient portal: a logged-in recipient sees ONLY the leads in their scope ----
+function recipientCanSeeLead(l){
+  if(!authProfile) return false;
+  if(l.deleted) return false; // cascade: deleted leads disappear from the recipient view too
+  var email = (authProfile.email||'').toLowerCase();
+  if(authProfile.scope_nationwide && l.nationwide==='Yes') return true;
+  if(authProfile.scope_dmv && l.nationwide!=='Yes') return true;
+  if(authProfile.scope_emailed && (l.sharedWith||'').toLowerCase()===email) return true;
+  return false;
+}
+async function initRecipientPortal(){
+  document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading your leads…</div>';
+  await authRefreshIfNeeded();
+  // Load leads + tasks the recipient is allowed to see (RLS will also enforce this once locked down).
+  try {
+    var rows = await sbFetch('leads?select=*&order=id.desc&limit=1000');
+    leads = (rows||[]).map(fromRow);
+  } catch(e){ leads = []; }
+  try {
+    var jvRows = await sbFetch('jv_leads?select=*&order=id.desc&limit=1000');
+    jvLeads = (jvRows||[]).map(fromJVRow);
+  } catch(e){ jvLeads = []; }
+  renderRecipientPortal();
+  // gentle auto-refresh
+  if(!window.__recipPoll){
+    window.__recipPoll = setInterval(async function(){
+      try {
+        await authRefreshIfNeeded();
+        var rows = await sbFetch('leads?select=*&order=id.desc&limit=1000');
+        leads = (rows||[]).map(fromRow);
+        var jvRows = await sbFetch('jv_leads?select=*&order=id.desc&limit=1000');
+        jvLeads = (jvRows||[]).map(fromJVRow);
+        renderRecipientPortal();
+      } catch(e){}
+    }, 30000);
+  }
+}
+function recipientScopeLabel(){
+  var parts=[];
+  if(authProfile.scope_dmv) parts.push('DMV leads');
+  if(authProfile.scope_nationwide) parts.push('Nationwide leads');
+  if(authProfile.scope_emailed) parts.push('Leads emailed to you');
+  return parts.length?parts.join(' · '):'No leads assigned yet';
+}
+function renderRecipientPortal(){
+  var mine = leads.filter(recipientCanSeeLead);
+  var myTasks = jvLeads.filter(function(t){
+    if(t.deleted) return false;
+    if(authProfile.scope_emailed && (t.sharedWith||'').toLowerCase()===(authProfile.email||'').toLowerCase()) return true;
+    return false; // tasks are only surfaced via the emailed scope
+  });
+  var header = `
+    <div style="background:var(--surface2,#fff);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="font-size:22px">&#127968;</div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:15px">Your Leads</div>
+        <div style="font-size:12px;color:var(--text3)">Signed in as ${esc(authProfile.name||authProfile.email)} &middot; ${esc(recipientScopeLabel())}</div>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="authSignOut()">Sign Out</button>
+    </div>`;
+  function card(kind, l){
+    var addr = kind==='task' ? (l.location||l.name||'Untitled') : (l.address||l.name||'Untitled');
+    var rfu = l.recipientFollowUpDate || '';
+    var scoreBadge = l.score ? leadScoreBadgeHTML(l.score) : '';
+    var beds = (kind==='task') ? (l.beds||'') : (l.beds||'');
+    var pd = [];
+    if(l.beds) pd.push(esc(l.beds)+' bd'); if(l.baths) pd.push(esc(l.baths)+' ba'); if(l.sqft) pd.push(esc(l.sqft)+' sqft');
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;background:var(--surface,#fff)">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="font-weight:700;font-size:14px">${esc(addr)}</div>
+        <div>${scoreBadge}${statusBadge(l.status||'')}</div>
+      </div>
+      ${pd.length?'<div style="font-size:12px;color:var(--text3);margin-top:4px">'+pd.join(' · ')+'</div>':''}
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:13px">
+        ${(kind==='lead'&&l.offer)?'<div><span style="color:var(--text3)">Offer</span> <b>'+formatMoney(l.offer)+'</b></div>':''}
+        ${l.arv?'<div><span style="color:var(--text3)">ARV</span> <b>'+formatMoney(l.arv)+'</b></div>':''}
+        ${l.phone?'<div><span style="color:var(--text3)">Phone</span> '+esc(l.phone)+'</div>':''}
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:12px;color:var(--text3)">Your Follow-Up</label>
+        <input type="date" class="form-input" style="max-width:170px;font-size:12px" value="${rfu}" onchange="recipientSetFollowUp('${kind}',${l.id},this.value)">
+      </div>
+      ${(l.recipientNotes&&l.recipientNotes.length)?'<div style="margin-top:10px"><div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:4px">Your Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':''}
+      <div style="margin-top:8px;display:flex;gap:6px">
+        <input id="recip-note-${kind}-${l.id}" class="form-input" placeholder="Add a note…" style="flex:1;font-size:12px">
+        <button class="btn btn-secondary btn-sm" onclick="recipientAddNote('${kind}',${l.id})">Add Note</button>
+      </div>
+    </div>`;
+  }
+  var body = '';
+  if(mine.length===0 && myTasks.length===0){
+    body = '<div class="empty" style="padding:60px;text-align:center;color:var(--text3)"><div style="font-size:40px">&#128237;</div><h3>No leads yet</h3><p>When your team assigns leads to you, they will appear here.</p></div>';
+  } else {
+    body = mine.map(function(l){return card('lead',l);}).join('') + myTasks.map(function(t){return card('task',t);}).join('');
+  }
+  document.getElementById('app').innerHTML = header + '<div style="max-width:820px;margin:0 auto;padding:18px 16px">'+body+'</div>';
+}
+async function recipientSetFollowUp(kind, id, val){
+  var arr = kind==='task'?jvLeads:leads;
+  var l = arr.find(function(x){return x.id===id;});
+  if(!l) return;
+  l.recipientFollowUpDate = val;
+  // Reuse the same recipient-write path the shared link uses (routes to edge fn once rerouted).
+  await recipientWrite(kind, id, { recipient_follow_up_date: val });
+  showToast('Follow-up saved','success');
+}
+async function recipientAddNote(kind, id){
+  var el = document.getElementById('recip-note-'+kind+'-'+id);
+  var txt = el && el.value.trim();
+  if(!txt) return;
+  var arr = kind==='task'?jvLeads:leads;
+  var l = arr.find(function(x){return x.id===id;});
+  if(!l) return;
+  if(!l.recipientNotes) l.recipientNotes = [];
+  l.recipientNotes.push({ text:txt, by:(authProfile.name||authProfile.email), at:new Date().toISOString() });
+  await recipientWrite(kind, id, { recipient_notes: l.recipientNotes });
+  if(el) el.value='';
+  renderRecipientPortal();
+}
+// Central recipient-portal write helper. Routes through the lead-agreement edge function's
+// `portal_save` action, which verifies the recipient's session, confirms the lead is in THEIR
+// scope, and applies only the two portal-editable fields (follow-up + notes). This keeps the
+// portal working after leads/jv_leads writes are locked down — recipients never write directly.
+async function recipientWrite(kind, id, patch){
+  try {
+    await authRefreshIfNeeded();
+    var r = await fetch(AGREEMENT_FN_URL, {
+      method:'POST',
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+      body: JSON.stringify({ action:'portal_save', kind:kind, leadId:id, patch:patch })
+    });
+    var data = await r.json().catch(function(){ return {}; });
+    if(!r.ok || data.error){ throw new Error(data.error || ('HTTP '+r.status)); }
+  } catch(e){ showToast('Could not save — ' + (e.message||'check your connection'),'error'); }
+}
+
+// ---- Admin: Manage Team & Recipients ----
+async function showManageTeam(){
+  if(!isAdmin()){ showToast('Admin only','error'); return; }
+  document.getElementById('modal-container').innerHTML = `
+    <div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:720px">
+      <div class="modal-header"><div class="modal-title">&#128101; Manage Team & Recipients</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>
+      <div class="modal-body">
+        <div id="mt-list" style="margin-bottom:16px"><div style="color:var(--text3);font-size:13px">Loading…</div></div>
+        <div style="border-top:1px solid var(--border);padding-top:14px">
+          <div class="form-section-title" style="margin-bottom:8px">Add a new account</div>
+          <div class="form-grid cols-2" style="gap:8px">
+            <div class="form-field"><label class="form-label">Name</label><input id="mt-name" class="form-input"></div>
+            <div class="form-field"><label class="form-label">Email <span style="font-weight:400;color:var(--text3);font-size:11px">(for lead matching, not login)</span></label><input id="mt-email" class="form-input" type="email"></div>
+            <div class="form-field"><label class="form-label">Access Key <span style="font-weight:400;color:var(--text3);font-size:11px">(blank = auto-generate)</span></label><input id="mt-key" class="form-input" placeholder="Leave blank to generate" style="font-family:monospace"></div>
+            <div class="form-field"><label class="form-label">Role</label><select id="mt-role" class="form-select" onchange="mtToggleScope()"><option value="recipient">Recipient (limited)</option><option value="team">Team (full CRM)</option><option value="admin">Admin (full + manage)</option></select></div>
+          </div>
+          <div id="mt-scope" class="form-field" style="margin-top:6px">
+            <label class="form-label">Recipient can see</label>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">
+              <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mt-dmv"> DMV leads</label>
+              <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mt-nw"> Nationwide leads</label>
+              <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mt-emailed" checked> Only leads emailed to them</label>
+            </div>
+          </div>
+          <div id="mt-err" style="color:var(--red,#dc2626);font-size:12px;min-height:16px;margin-top:6px"></div>
+          <button class="btn btn-primary btn-sm" onclick="mtCreate()" style="margin-top:6px">Create Account</button>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button></div>
+    </div></div>`;
+  mtToggleScope();
+  await mtRefresh();
+}
+function mtToggleScope(){
+  var role = (document.getElementById('mt-role')||{}).value;
+  var sc = document.getElementById('mt-scope');
+  if(sc) sc.style.display = (role==='recipient') ? '' : 'none';
+}
+async function mtRefresh(){
+  var el = document.getElementById('mt-list'); if(!el) return;
+  try {
+    var res = await adminUsersCall({action:'list'});
+    var users = res.users||[];
+    if(users.length===0){ el.innerHTML = '<div style="color:var(--text3);font-size:13px">No accounts yet.</div>'; return; }
+    el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--text3)"><th style="padding:4px 6px">Name</th><th>Role</th><th>Scope</th><th>Access Key</th><th></th></tr></thead><tbody>'
+      + users.map(function(u){
+          var scope = u.role==='recipient'
+            ? [u.scope_dmv?'DMV':null,u.scope_nationwide?'NW':null,u.scope_emailed?'Emailed':null].filter(Boolean).join(', ')||'—'
+            : 'Full';
+          var keyCell = u.access_key
+            ? '<span style="font-family:monospace;background:var(--surface3,#f2f2f4);padding:1px 6px;border-radius:5px">'+esc(u.access_key)+'</span> <button class="btn btn-secondary btn-sm" title="Copy key" onclick="mtCopyKey(\''+esc(u.access_key)+'\')">Copy</button>'
+            : '<span style="color:var(--text4)">—</span>';
+          return '<tr style="border-top:1px solid var(--border)'+(u.disabled?';opacity:.5':'')+'">'
+            +'<td style="padding:6px">'+esc(u.name||'')+'<div style="color:var(--text4);font-size:11px">'+esc(u.email)+'</div></td>'
+            +'<td>'+esc(u.role)+'</td>'
+            +'<td>'+esc(scope)+'</td>'
+            +'<td>'+keyCell+'</td>'
+            +'<td style="white-space:nowrap">'
+              +'<button class="btn btn-secondary btn-sm" onclick="mtToggleDisabled(\''+u.id+'\','+(u.disabled?'false':'true')+')">'+(u.disabled?'Enable':'Disable')+'</button> '
+              +'<button class="btn btn-secondary btn-sm" onclick="mtResetKey(\''+u.id+'\')">New Key</button> '
+              +'<button class="btn btn-danger btn-sm" onclick="mtDelete(\''+u.id+'\',\''+esc(u.email)+'\')">Delete</button>'
+            +'</td></tr>';
+        }).join('') + '</tbody></table>';
+  } catch(e){ el.innerHTML = '<div style="color:var(--red);font-size:12px">'+esc(e.message)+'</div>'; }
+}
+function mtCopyKey(key){
+  try { navigator.clipboard.writeText(key); showToast('Access key copied','success'); }
+  catch(e){ showToast('Copy failed — key is '+key,'error'); }
+}
+async function mtCreate(){
+  var err = document.getElementById('mt-err'); if(err) err.textContent='';
+  var body = {
+    action:'create',
+    name:(document.getElementById('mt-name')||{}).value||'',
+    email:(document.getElementById('mt-email')||{}).value||'',
+    access_key:(document.getElementById('mt-key')||{}).value.trim()||'',
+    role:(document.getElementById('mt-role')||{}).value||'recipient',
+    scope_dmv: !!(document.getElementById('mt-dmv')||{}).checked,
+    scope_nationwide: !!(document.getElementById('mt-nw')||{}).checked,
+    scope_emailed: !!(document.getElementById('mt-emailed')||{}).checked
+  };
+  try {
+    var res = await adminUsersCall(body);
+    ['mt-name','mt-email','mt-key'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; });
+    await mtRefresh();
+    if(res && res.access_key){ mtShowKey('Account created', res.access_key); }
+    else { showToast('Account created','success'); }
+  } catch(e){ if(err) err.textContent = e.message; }
+}
+// Prominently show a newly generated key so the admin can copy it before it scrolls away.
+function mtShowKey(title, key){
+  var box = document.getElementById('mt-err');
+  if(box){
+    box.style.color = 'var(--green,#16a34a)';
+    box.innerHTML = title + ' — access key: <b style="font-family:monospace;font-size:13px">'+esc(key)+'</b> '
+      + '<button class="btn btn-secondary btn-sm" onclick="mtCopyKey(\''+esc(key)+'\')">Copy</button>';
+  }
+  showToast('Access key: '+key,'success');
+}
+async function mtToggleDisabled(id, disabled){
+  try { await adminUsersCall({action:'update', id:id, disabled:disabled}); await mtRefresh(); }
+  catch(e){ showToast(e.message,'error'); }
+}
+async function mtResetKey(id){
+  if(!confirm('Generate a NEW access key for this person?\n\nTheir old key stops working immediately.')) return;
+  try {
+    var res = await adminUsersCall({action:'reset_key', id:id});
+    await mtRefresh();
+    if(res && res.access_key){ mtShowKey('New key generated', res.access_key); }
+  } catch(e){ showToast(e.message,'error'); }
+}
+async function mtDelete(id, email){
+  if(!confirm('Delete the account for '+email+'?\n\nTheir login is removed. Leads are NOT deleted.')) return;
+  try { await adminUsersCall({action:'delete', id:id}); await mtRefresh(); showToast('Account deleted','success'); }
+  catch(e){ showToast(e.message,'error'); }
+}
+
+// ===== Route: shared link vs auth vs full app =====
+async function bootApp(){
   var params = new URLSearchParams(window.location.search);
   var sharedKind = params.get('shared');
   var sharedId = params.get('id');
-  if (sharedKind === 'lead' && sharedId) {
-    initSharedLeadView(parseInt(sharedId, 10));
-  } else if (sharedKind === 'task' && sharedId) {
-    initSharedTaskView(parseInt(sharedId, 10));
-  } else {
-    initFullApp();
+  if (sharedKind === 'lead' && sharedId) { initSharedLeadView(parseInt(sharedId, 10)); return; }
+  if (sharedKind === 'task' && sharedId) { initSharedTaskView(parseInt(sharedId, 10)); return; }
+
+  if (!AUTH_ENABLED) { initFullApp(); return; }
+
+  // Auth on: require a valid session.
+  var ok = await authRefreshIfNeeded();
+  if(ok && authSession){
+    try { await loadAuthProfile(); } catch(e){}
+    if(authProfile && !authProfile.disabled){ routeByRole(); return; }
   }
-})();
+  clearAuth();
+  renderAuthLogin();
+}
+bootApp();
 </script>
 </body>
 </html>
