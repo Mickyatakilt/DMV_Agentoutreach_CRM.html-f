@@ -3003,6 +3003,11 @@ var sharedActivityId = null;
 // How the shared detail view was reached: 'link' = anonymous emailed link (saves via
 // acceptance token), 'portal' = signed-in recipient (saves via portal_save + their JWT).
 var sharedViewMode = 'link';
+// Recipient portal navigation state: 'list' = the lead list/dashboard is showing, 'detail' =
+// an individual lead/task (or its agreement gate) is open. The 30s auto-refresh poll must NOT
+// re-render (which would slam the list back into #app and blow away an open lead + unsaved
+// input) while a lead is open — it only re-renders when portalView === 'list'.
+var portalView = 'list';
 var sharedActivityLog = [];
 function renderSharedActivityLog(){
   var sorted = sharedActivityLog.slice().sort(function(a,b){ return new Date(b.at) - new Date(a.at); });
@@ -3651,8 +3656,13 @@ function sharedDetailHeader(){
 }
 function renderSharedLeadView(l) {
   var dd = getDropdowns();
-  var mktOpts = dd.marketingTypes.map(function(m){ return '<option value="'+m+'" '+(l.marketingType===m?'selected':'')+'>'+m+'</option>'; }).join('');
-  var statusOpts = dd.statuses.map(function(s){ return '<option value="'+s+'" '+(l.status===s?'selected':'')+'>'+s+'</option>'; }).join('');
+  // Prepend a blank "— Not set —" option selected when the field is empty, so a recipient who
+  // saves without touching these dropdowns does NOT silently stamp the lead with the first option
+  // (that bug turned blank status into "Sold" and blank marketing into "Text").
+  var mktOpts = '<option value="" '+(!l.marketingType?'selected':'')+'>&#8212; Not set &#8212;</option>'
+    + dd.marketingTypes.map(function(m){ return '<option value="'+m+'" '+(l.marketingType===m?'selected':'')+'>'+m+'</option>'; }).join('');
+  var statusOpts = '<option value="" '+(!l.status?'selected':'')+'>&#8212; Not set &#8212;</option>'
+    + dd.statuses.map(function(s){ return '<option value="'+s+'" '+(l.status===s?'selected':'')+'>'+s+'</option>'; }).join('');
   var zillowUrl = buildZillowUrl(l.address);
   var redfinUrl = buildRedfinUrl(l.address);
   sharedActivityKind = 'lead';
@@ -3878,13 +3888,27 @@ async function initRecipientPortal(){
   // gentle auto-refresh
   if(!window.__recipPoll){
     window.__recipPoll = setInterval(async function(){
+      // Only refresh while the recipient is on the LIST view. If a lead is open (portalView
+      // === 'detail') we must NOT refetch/re-render — doing so would replace #app, closing the
+      // open lead and discarding beds/baths/notes typed but not yet saved. Also skip while a
+      // save is in flight so the poll can't stomp an edit mid-write.
+      if(portalView !== 'list') return;
+      if(typeof pendingSaves !== 'undefined' && pendingSaves > 0) return;
       try {
         await authRefreshIfNeeded();
+        // Bail again after the await — the user may have opened a lead while it was resolving.
+        if(portalView !== 'list') return;
         var rows = await sbFetch('leads?select=*&order=id.desc&limit=1000');
-        leads = (rows||[]).map(fromRow);
         var jvRows = await sbFetch('jv_leads?select=*&order=id.desc&limit=1000');
-        jvLeads = (jvRows||[]).map(fromJVRow);
-        renderRecipientPortal();
+        if(portalView !== 'list') return;
+        var newLeads = (rows||[]).map(fromRow);
+        var newJV = (jvRows||[]).map(fromJVRow);
+        // Only re-render if something actually changed (avoids flicker / lost scroll position).
+        var changed = JSON.stringify(newLeads) !== JSON.stringify(leads)
+                   || JSON.stringify(newJV) !== JSON.stringify(jvLeads);
+        leads = newLeads;
+        jvLeads = newJV;
+        if(changed) renderRecipientPortal();
       } catch(e){}
     }, 30000);
   }
@@ -3947,6 +3971,7 @@ function buildPortalFUHTML(mine, myTasks){
 }
 function renderRecipientPortal(){
   sharedViewMode = 'portal';
+  portalView = 'list'; // back on the list — the poll may refresh/re-render again
   var mine = recipientMyLeads();
   var myTasks = recipientMyTasks();
   var header = `
@@ -4013,6 +4038,7 @@ function openPortalLead(kind, id){
   var l = arr.find(function(x){return x.id===id;});
   if(!l) return;
   sharedViewMode = 'portal';
+  portalView = 'detail'; // lead is open — freeze the poll so it can't close it or lose input
   window.scrollTo(0,0);
   if(!leadAgreementAccepted(l)){ renderAgreementGate(id, kind); return; }
   if(kind==='task') renderSharedTaskView(l); else renderSharedLeadView(l);
