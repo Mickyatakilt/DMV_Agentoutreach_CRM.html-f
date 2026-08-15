@@ -995,10 +995,9 @@ function render(){
       </div>
       <div class="header-right">
         <button class="btn btn-white btn-sm" onclick="showDropdownManager()">&#9881;&#65039; Dropdowns</button>
-        <button class="btn btn-white btn-sm" onclick="showTeamManager()">&#128101; Team</button>
+        <button class="btn btn-white btn-sm" onclick="${isAdmin()?'showManageTeam()':'showTeamManager()'}">&#128101; Team</button>
         <button class="btn btn-white btn-sm" onclick="showTrash()">&#128465; Trash</button>
         <button class="btn btn-white btn-sm" onclick="exportCSV()">&#11015; CSV</button>
-        ${isAdmin()?'<button class="btn btn-white btn-sm" onclick="showManageTeam()">&#128273; Manage Logins</button>':''}
         <div class="user-chip" onclick="${AUTH_ENABLED?'authSignOut()':'switchUser()'}" title="${AUTH_ENABLED?'Sign out':'Switch user'}"><div class="user-avatar" style="background:${u.color||'#1e40af'}">${u.initials||'ME'}</div>${u.name}</div>
       </div>
     </div>
@@ -4136,6 +4135,7 @@ async function mtRefresh(){
   try {
     var res = await adminUsersCall({action:'list'});
     var users = res.users||[];
+    window.__mtUsers = users; // cache so the row Edit button can prefill without another round-trip
     if(users.length===0){ el.innerHTML = '<div style="color:var(--text3);font-size:13px">No accounts yet.</div>'; return; }
     el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--text3)"><th style="padding:4px 6px">Name</th><th>Role</th><th>Scope</th><th>Access Key</th><th></th></tr></thead><tbody>'
       + users.map(function(u){
@@ -4151,6 +4151,7 @@ async function mtRefresh(){
             +'<td>'+esc(scope)+'</td>'
             +'<td>'+keyCell+'</td>'
             +'<td style="white-space:nowrap">'
+              +'<button class="btn btn-primary btn-sm" onclick="mtEdit(\''+u.id+'\')">Edit</button> '
               +'<button class="btn btn-secondary btn-sm" onclick="mtToggleDisabled(\''+u.id+'\','+(u.disabled?'false':'true')+')">'+(u.disabled?'Enable':'Disable')+'</button> '
               +'<button class="btn btn-secondary btn-sm" onclick="mtResetKey(\''+u.id+'\')">New Key</button> '
               +'<button class="btn btn-danger btn-sm" onclick="mtDelete(\''+u.id+'\',\''+esc(u.email)+'\')">Delete</button>'
@@ -4231,9 +4232,64 @@ async function mtResetKey(id){
   } catch(e){ showToast(e.message,'error'); }
 }
 async function mtDelete(id, email){
-  if(!confirm('Delete the account for '+email+'?\n\nTheir login is removed. Leads are NOT deleted.')) return;
-  try { await adminUsersCall({action:'delete', id:id}); await mtRefresh(); showToast('Account deleted','success'); }
+  if(!confirm('Delete the account for '+email+'?\n\nTheir login is removed immediately and they can never sign in again. Leads are NOT deleted.')) return;
+  try { await adminUsersCall({action:'delete', id:id}); await mtRefresh(); showToast('Account deleted — their login is revoked','success'); }
   catch(e){ showToast(e.message,'error'); }
+}
+// Full inline editor for an existing account — admin can change name, email, role, scope, and key.
+function mtEdit(id){
+  var u = (window.__mtUsers||[]).find(function(x){return x.id===id;});
+  if(!u){ showToast('Account not found — reopen the list','error'); return; }
+  var el = document.getElementById('mt-list'); if(!el) return;
+  var roleOpt = function(v,label){ return '<option value="'+v+'" '+(u.role===v?'selected':'')+'>'+label+'</option>'; };
+  var keyDisp = u.access_key
+    ? '<span style="font-family:monospace;background:var(--surface3,#f2f2f4);padding:2px 8px;border-radius:5px">'+esc(u.access_key)+'</span> <button class="btn btn-secondary btn-sm" onclick="mtCopyKey(\''+esc(u.access_key)+'\')">Copy</button> <button class="btn btn-secondary btn-sm" onclick="mtResetKey(\''+u.id+'\')">New Key</button>'
+    : '<span style="color:var(--text4)">none</span> <button class="btn btn-secondary btn-sm" onclick="mtResetKey(\''+u.id+'\')">Generate Key</button>';
+  el.innerHTML = '<div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;background:var(--surface,#fff)">'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><button class="btn btn-secondary btn-sm" onclick="mtRefresh()">&#8592; Back to list</button><div style="font-weight:700;font-size:14px">Edit account</div>'+(u.disabled?'<span style="color:var(--red);font-size:12px">(disabled)</span>':'')+'</div>'
+    + '<div class="form-grid cols-2" style="gap:8px">'
+    +   '<div class="form-field"><label class="form-label">Name</label><input id="mte-name" class="form-input" value="'+esc(u.name||'')+'"></div>'
+    +   '<div class="form-field"><label class="form-label">Email <span style="font-weight:400;color:var(--text3);font-size:11px">(login + lead matching)</span></label><input id="mte-email" class="form-input" type="email" value="'+esc(u.email||'')+'"></div>'
+    +   '<div class="form-field"><label class="form-label">Role</label><select id="mte-role" class="form-select" onchange="mtEditToggleScope()">'+roleOpt('recipient','Recipient (limited)')+roleOpt('team','Team (full CRM)')+roleOpt('admin','Admin (full + manage)')+'</select></div>'
+    +   '<div class="form-field"><label class="form-label">Access Key</label><div style="padding-top:6px">'+keyDisp+'</div></div>'
+    + '</div>'
+    + '<div id="mte-scope" class="form-field" style="margin-top:6px;display:'+(u.role==='recipient'?'':'none')+'">'
+    +   '<label class="form-label">Recipient can see</label>'
+    +   '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">'
+    +     '<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mte-dmv" '+(u.scope_dmv?'checked':'')+'> DMV leads</label>'
+    +     '<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mte-nw" '+(u.scope_nationwide?'checked':'')+'> Nationwide leads</label>'
+    +     '<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mte-emailed" '+(u.scope_emailed?'checked':'')+'> Only leads emailed to them</label>'
+    +   '</div>'
+    + '</div>'
+    + '<div id="mte-err" style="color:var(--red,#dc2626);font-size:12px;min-height:16px;margin-top:6px"></div>'
+    + '<div style="display:flex;gap:8px;margin-top:8px">'
+    +   '<button class="btn btn-primary btn-sm" onclick="mtSaveEdit(\''+u.id+'\')">&#128190; Save changes</button>'
+    +   '<button class="btn btn-secondary btn-sm" onclick="mtRefresh()">Cancel</button>'
+    +   '<button class="btn btn-secondary btn-sm" onclick="mtToggleDisabled(\''+u.id+'\','+(u.disabled?'false':'true')+')">'+(u.disabled?'Enable login':'Disable login')+'</button>'
+    +   '<button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="mtDelete(\''+u.id+'\',\''+esc(u.email)+'\')">Delete account</button>'
+    + '</div></div>';
+}
+function mtEditToggleScope(){
+  var role=(document.getElementById('mte-role')||{}).value;
+  var sc=document.getElementById('mte-scope');
+  if(sc) sc.style.display = (role==='recipient') ? '' : 'none';
+}
+async function mtSaveEdit(id){
+  var err=document.getElementById('mte-err'); if(err) err.textContent='';
+  var role=(document.getElementById('mte-role')||{}).value||'recipient';
+  var body={ action:'update', id:id,
+    name:(document.getElementById('mte-name')||{}).value||'',
+    email:((document.getElementById('mte-email')||{}).value||'').trim(),
+    role:role };
+  if(!body.email){ if(err) err.textContent='Email cannot be blank.'; return; }
+  // Scope only applies to recipients; leave team/admin scope untouched.
+  if(role==='recipient'){
+    body.scope_dmv = !!(document.getElementById('mte-dmv')||{}).checked;
+    body.scope_nationwide = !!(document.getElementById('mte-nw')||{}).checked;
+    body.scope_emailed = !!(document.getElementById('mte-emailed')||{}).checked;
+  }
+  try { await adminUsersCall(body); await mtRefresh(); showToast('Account updated','success'); }
+  catch(e){ if(err) err.textContent = e.message; }
 }
 
 // ===== Route: shared link vs auth vs full app =====
