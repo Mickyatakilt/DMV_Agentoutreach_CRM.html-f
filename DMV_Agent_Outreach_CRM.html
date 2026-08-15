@@ -331,14 +331,44 @@ async function authSignOut(){
 }
 
 // Call the admin-users edge function (admin-gated server-side).
-async function adminUsersCall(body){
-  await authRefreshIfNeeded();
-  var r = await fetch(ADMIN_FN_URL, {
+// Force a token refresh regardless of the local expiry clock — recovers when a call gets 401
+// even though the stored token looked un-expired (a stale or server-rotated session).
+async function authForceRefresh(){
+  if(!authSession || !authSession.refresh_token) return false;
+  try {
+    var r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+      method:'POST', headers:{'apikey':SUPABASE_KEY,'Content-Type':'application/json'},
+      body: JSON.stringify({ refresh_token: authSession.refresh_token })
+    });
+    var data = await r.json();
+    if(!r.ok || !data.access_token) return false;
+    var expiresAt = Math.floor(Date.now()/1000) + (data.expires_in || 3600);
+    saveAuthSession({ access_token:data.access_token, refresh_token:data.refresh_token, expires_at:expiresAt, user:{ id:data.user&&data.user.id, email:data.user&&data.user.email } });
+    return true;
+  } catch(e){ return false; }
+}
+// Session is dead and can't be refreshed — clear it and drop the user on the login screen so
+// they can just re-enter their access key, instead of getting stuck on "Invalid session".
+function bounceToLogin(msg){
+  clearAuth(); currentUser=null; try{ localStorage.removeItem('crm_user'); }catch(e){}
+  try{ closeModal(); }catch(e){}
+  try{ renderAuthLogin(msg || 'Your session expired — please sign in again.'); }
+  catch(e){ location.reload(); }
+}
+function adminFetch(body){
+  return fetch(ADMIN_FN_URL, {
     method:'POST',
     headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
     body: JSON.stringify(body)
   });
-  var data = await r.json();
+}
+async function adminUsersCall(body){
+  await authRefreshIfNeeded();
+  var r = await adminFetch(body);
+  // If the token was rejected, force one fresh token and retry before giving up.
+  if(r.status===401 && await authForceRefresh()){ r = await adminFetch(body); }
+  if(r.status===401){ bounceToLogin(); throw new Error('Your session expired — please sign in again.'); }
+  var data = await r.json().catch(function(){ return {}; });
   if(!r.ok){ throw new Error(data.error || ('Request failed ('+r.status+')')); }
   return data;
 }
@@ -976,7 +1006,13 @@ function loginAs(uid){const u=USERS.find(x=>x.id===uid);saveUser(u);document.get
 function switchUser(){renderLogin();}
 
 function render(){
-  if(!currentUser){renderLogin();document.getElementById('app').innerHTML='';return;}
+  // No active user: when auth is ON, always show the access-key login (never the legacy
+  // name-picker, which would bypass authentication); when off, show the legacy picker.
+  if(!currentUser){
+    if(AUTH_ENABLED){ renderAuthLogin(); }
+    else { renderLogin(); document.getElementById('app').innerHTML=''; }
+    return;
+  }
   const fuc=getFUCounts();
   const urgentBadge=(fuc.overdue+fuc.today)>0?`<span class="tab-badge">${fuc.overdue+fuc.today}</span>`:fuc.soon>0?`<span class="tab-badge-yellow">${fuc.soon}</span>`:'';
   const nwFuc=getNWFUCounts();
@@ -3504,11 +3540,14 @@ async function recipientEdgeSave(kind, id, patch){
   // Signed-in recipient (portal): save via portal_save with their JWT, no acceptance token needed.
   if(sharedViewMode==='portal'){
     await authRefreshIfNeeded();
-    var r = await fetch(AGREEMENT_FN_URL, {
+    var portalFetch = function(){ return fetch(AGREEMENT_FN_URL, {
       method:'POST',
       headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
       body: JSON.stringify({ action:'portal_save', kind:kind, leadId:id, patch:patch })
-    });
+    }); };
+    var r = await portalFetch();
+    if(r.status===401 && await authForceRefresh()){ r = await portalFetch(); }
+    if(r.status===401){ bounceToLogin(); throw new Error('Your session expired — please sign in again.'); }
     var data = await r.json().catch(function(){ return {}; });
     if(!r.ok || data.error) throw new Error(data.error || ('HTTP '+r.status));
     applyRecipientPatchLocal(kind, id, patch); // keep in-memory record in sync for the dashboard/list
