@@ -3276,7 +3276,7 @@ function sentIndicatorHTML(l){
   if(!l || !l.shared) return '';
   var who = esc(sentToName(l.sharedWith));
   var when = fmtShareDate(l.sharedAt);
-  return '<span style="color:var(--accent)">&middot; &#128231; Sent to '+who+' by Email'+(when?' on '+when:'')+'</span>';
+  return '<span style="color:var(--red);font-weight:700">&middot; &#128231; Sent to '+who+' by Email'+(when?' on '+when:'')+'</span>';
 }
 function addTeamMember(){
   var name = document.getElementById('new-team-name').value.trim();
