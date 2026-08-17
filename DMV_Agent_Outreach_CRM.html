@@ -1647,7 +1647,7 @@ function renderDetailModal(){
     <div class="modal-overlay" onclick="overlayClick(event)">
       <div class="modal">
         <div class="modal-header">
-          <div><div class="modal-title">${esc(l.address)||'No Address'}</div><div class="modal-subtitle"><span>Lead #${l.id}</span>${l.date?'<span>&middot; '+l.date+'</span>':''}<span>&middot; ${l.month}</span>${l.updatedBy?'<span style="color:var(--teal)">&middot; Edited by '+l.updatedBy+'</span>':''}</div>${l.address?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.address)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.address)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}</div>
+          <div><div class="modal-title">${esc(l.address)||'No Address'}</div><div class="modal-subtitle"><span>Lead #${l.id}</span>${l.date?'<span>&middot; '+l.date+'</span>':''}<span>&middot; ${l.month}</span>${l.updatedBy?'<span style="color:var(--teal)">&middot; Edited by '+l.updatedBy+'</span>':''}${sentIndicatorHTML(l)}</div>${l.address?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.address)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.address)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}</div>
           <button class="modal-close-btn" onclick="closeModal()">&#10005;</button>
         </div>
         <div class="modal-body">
@@ -1930,7 +1930,13 @@ async function saveLead(){
   else{const i=leads.findIndex(x=>x.id===l.id);if(i>=0)leads[i]=l;}
   save();render();
   const ok = await saveLeadToSupabase(l);
-  if(ok){ showToast(wasNew?'Lead added!':'Updated!','success'); closeModal(); }
+  if(ok){
+    showToast(wasNew?'Lead added!':'Updated!','success');
+    // UPDATE 1: a single Save reflects the change immediately. For an existing lead, reopen
+    // the DETAIL view so the new follow-up (and every field) is visible right away instead of
+    // dropping back to the list. New leads still just close.
+    if(wasNew) closeModal(); else openDetail(l.id);
+  }
   else{ showToast('Cloud sync failed -- check your connection and try Save again','error'); }
   if(ok && APPS_SCRIPT_URL) syncLeadToSheet(l);
 }
@@ -2490,7 +2496,7 @@ function openJVDetail(id){
   if(!l) return;
   var statuses=getJVStatuses();
   var statusOpts=statuses.map(function(s){return '<option value="'+s+'" '+(l.jvStatus===s?'selected':'')+'>'+s+'</option>';}).join('');
-  document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px"><div class="modal-header"><div><div class="modal-title">'+esc(l.name||'JV Lead')+'</div><div class="modal-subtitle">'+scoreBadgeHTML(l.score)+' &middot; '+esc(l.location||l.address||'')+'</div>'+(l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body">'
+  document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px"><div class="modal-header"><div><div class="modal-title">'+esc(l.name||'JV Lead')+'</div><div class="modal-subtitle">'+scoreBadgeHTML(l.score)+' &middot; '+esc(l.location||l.address||'')+sentIndicatorHTML(l)+'</div>'+(l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body">'
     +'<div class="form-section"><div class="detail-grid">'
     +'<div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">'+(l.phone?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':esc(l.phone||''))+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Asking Price</span><span class="detail-val" style="color:var(--accent);font-weight:700">'+esc(l.askingPrice||'')+'</span></div>'
@@ -2678,7 +2684,9 @@ async function saveEditTask(id){
   // second Save click. Cloud sync runs in the background; pendingSaves (inside saveJVToSupabase)
   // still blocks the 30s auto-refresh poll from stomping this write while it's in flight.
   showToast('Task updated!','success');
-  closeModal();
+  // UPDATE 1: reopen the task DETAIL so the new follow-up shows immediately after one Save,
+  // removing the need for the inline "Save Changes" under Follow-Up.
+  openJVDetail(id);
   saveJVToSupabase(l).then(function(ok){
     if(!ok) showToast('Saved on this device — cloud sync failed, it will retry automatically','warning');
   });
@@ -3249,6 +3257,27 @@ function getTeamMembers(){
   return JSON.parse(localStorage.getItem('crm_team_members')||'null') || [];
 }
 function saveTeamMembers(list){ localStorage.setItem('crm_team_members', JSON.stringify(list)); }
+// UPDATE 2: "Sent to <Name> by Email on <date>" indicator for the detail header.
+// Looks up the recipient's name from the saved team members by email; falls back to the email.
+function sentToName(email){
+  if(!email) return '';
+  var m = getTeamMembers().find(function(x){ return (x.email||'').trim().toLowerCase() === String(email).trim().toLowerCase(); });
+  return (m && m.name) ? m.name : email;
+}
+function fmtShareDate(iso){
+  if(!iso) return '';
+  var d = new Date(iso);
+  if(isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+}
+// Renders the "Sent to ..." subtitle chip. Keyed on l.shared, so it auto-disappears
+// when the record is removed from the Sent Out tab (unshareRecord clears l.shared).
+function sentIndicatorHTML(l){
+  if(!l || !l.shared) return '';
+  var who = esc(sentToName(l.sharedWith));
+  var when = fmtShareDate(l.sharedAt);
+  return '<span style="color:var(--accent)">&middot; &#128231; Sent to '+who+' by Email'+(when?' on '+when:'')+'</span>';
+}
 function addTeamMember(){
   var name = document.getElementById('new-team-name').value.trim();
   var email = document.getElementById('new-team-email').value.trim();
