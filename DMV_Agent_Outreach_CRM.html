@@ -410,17 +410,31 @@ const GHL_LOOKUP_URL = SUPABASE_URL + '/functions/v1/ghl-lookup';
 const GHL_CONVO_URL = SUPABASE_URL + '/functions/v1/ghl-conversation';
 
 // --- GoHighLevel SMS thread (read-only, fetched when a lead/task detail opens) ---
-function ghlSmsSectionHTML(contactId){
+function ghlSmsSectionHTML(contactId, kind, id){
+  // kind/id let the "Schedule" button here open the scheduler for this exact lead/task,
+  // carrying over whatever is typed in the reply box.
+  var schedBtn = (kind && id!=null)
+    ? '<button class="btn btn-secondary btn-sm" title="Schedule this text to auto-send later" onclick="scheduleFromSms(\''+kind+'\','+id+')">&#128197; Schedule</button>'
+    : '';
   return '<div class="detail-section"><div class="detail-section-title">&#128241; SMS Conversation '
     + '<span style="font-weight:400;color:var(--text4);font-size:11px">&middot; from GoHighLevel</span>'
     + '<a href="#" onclick="event.preventDefault();loadGhlSms(\''+contactId+'\')" class="detail-link" style="font-size:11px;float:right">&#8635; Refresh</a></div>'
     + '<div id="ghl-sms-body"></div>'
     + '<div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end">'
     +   '<textarea id="ghl-sms-input" class="form-textarea" rows="2" placeholder="Type an SMS reply&hellip;" style="flex:1;min-height:38px;resize:vertical" onkeydown="if(event.key===\'Enter\'&&(event.metaKey||event.ctrlKey)){event.preventDefault();sendGhlSms(\''+contactId+'\');}"></textarea>'
-    +   '<button id="ghl-sms-send" class="btn btn-primary btn-sm" onclick="sendGhlSms(\''+contactId+'\')">Send SMS</button>'
+    +   '<div style="display:flex;flex-direction:column;gap:6px">'
+    +     '<button id="ghl-sms-send" class="btn btn-primary btn-sm" onclick="sendGhlSms(\''+contactId+'\')">Send SMS</button>'
+    +     schedBtn
+    +   '</div>'
     + '</div>'
     + '<div id="ghl-sms-status" style="font-size:11px;color:var(--text4);margin-top:4px;min-height:14px"></div>'
     + '</div>';
+}
+// Open the scheduler from the SMS composer, pre-filling with any drafted reply text.
+function scheduleFromSms(kind, id){
+  var inp = document.getElementById('ghl-sms-input');
+  var draft = inp ? (inp.value||'').trim() : '';
+  openScheduleSmsModal(kind, id, draft);
 }
 async function sendGhlSms(contactId){
   var inp = document.getElementById('ghl-sms-input');
@@ -543,7 +557,7 @@ function findAnyRecord(kind, id){
   return arr.find(function(x){return x.id===id;});
 }
 
-function openScheduleSmsModal(kind, id){
+function openScheduleSmsModal(kind, id, prefillBody){
   var l = findAnyRecord(kind, id);
   if(!l){ showToast('Lead not found','error'); return; }
   var cid = (l.ghlContactId||'').trim();
@@ -563,8 +577,8 @@ function openScheduleSmsModal(kind, id){
     + '<button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
     + '<div class="modal-body">'
     + '<div class="form-field"><label class="form-label">Message</label>'
-    + '<textarea id="sched-sms-body" class="form-textarea" rows="4" placeholder="Type the text to auto-send&hellip;" oninput="schedSmsCount()"></textarea>'
-    + '<div class="field-hint"><span id="sched-sms-count">0</span> characters</div></div>'
+    + '<textarea id="sched-sms-body" class="form-textarea" rows="4" placeholder="Type the text to auto-send&hellip;" oninput="schedSmsCount()">'+esc(prefillBody||'')+'</textarea>'
+    + '<div class="field-hint"><span id="sched-sms-count">'+((prefillBody||'').length)+'</span> characters</div></div>'
     + '<div class="form-field"><label class="form-label">&#128197; Send at (US Eastern / ET)</label>'
     + '<input type="datetime-local" id="sched-sms-when" class="form-input" value="'+nowEtLocalPlus(15)+'" min="'+nowEtLocalPlus(1)+'">'
     + '<div class="field-hint">The text auto-sends at this time through GoHighLevel, even if this page is closed.</div></div>'
@@ -1981,7 +1995,7 @@ function renderDetailModal(){
             </div>
           </div>
           ${renderAttachmentsSection('dmv', l.id)}
-          ${l.ghlContactId?ghlSmsSectionHTML(l.ghlContactId):''}
+          ${l.ghlContactId?ghlSmsSectionHTML(l.ghlContactId,'lead',l.id):''}
           ${agreementSectionHTML(l.id,'lead',l.agreementStatus,l.agreementAcceptedAt)}
           ${renderActivityLog('lead', l.id, l.activityLog)}
         </div>
@@ -2821,7 +2835,7 @@ function openJVDetail(id){
     +'<div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>'+(l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>')+'</div>'
     +((l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':'')
     +agreementSectionHTML(l.id,'task',l.agreementStatus,l.agreementAcceptedAt)
-    +(l.ghlContactId?ghlSmsSectionHTML(l.ghlContactId):'')
+    +(l.ghlContactId?ghlSmsSectionHTML(l.ghlContactId,'task',l.id):'')
     +renderAttachmentsSection('task', l.id)
     +renderActivityLog('task', l.id, l.activityLog)
     +'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
