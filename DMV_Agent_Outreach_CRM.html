@@ -498,6 +498,208 @@ async function loadGhlSms(contactId){
   }
 }
 
+// ===== Scheduled SMS (auto-send a text at a future time via GoHighLevel) =====
+// The row is saved to scheduled_sms (status=pending); a server-side pg_cron job calls the
+// send-scheduled-sms edge function every minute, which sends due texts through GHL and flips
+// them to sent -- so it works with this page closed. Times are picked in US Eastern (ET),
+// stored as UTC in send_at.
+var SCHED_SMS_PATH = 'scheduled_sms';
+
+// Minutes that America/New_York is offset from UTC at the given instant (-240 EDT, -300 EST).
+function etOffsetMinutes(date){
+  var dtf = new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour12:false,
+    year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  var p = dtf.formatToParts(date).reduce(function(a,x){a[x.type]=x.value;return a;},{});
+  var asUTC = Date.UTC(+p.year, +p.month-1, +p.day, +p.hour, +p.minute, +p.second);
+  return (asUTC - date.getTime())/60000;
+}
+// 'YYYY-MM-DDTHH:mm' interpreted as ET wall-clock -> UTC ISO string.
+function etLocalToUtcIso(local){
+  if(!local) return '';
+  var dp = local.split('T'); if(dp.length<2) return '';
+  var d = dp[0].split('-').map(Number), t = dp[1].split(':').map(Number);
+  var guess = Date.UTC(d[0], d[1]-1, d[2], t[0], t[1]||0);
+  var off = etOffsetMinutes(new Date(guess));
+  return new Date(guess - off*60000).toISOString();
+}
+// Now + minutes, formatted as an ET wall-clock 'YYYY-MM-DDTHH:mm' for a datetime-local default.
+function nowEtLocalPlus(min){
+  var d = new Date(Date.now() + (min||0)*60000);
+  var p = new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',hour12:false,
+    year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
+    .formatToParts(d).reduce(function(a,x){a[x.type]=x.value;return a;},{});
+  return p.year+'-'+p.month+'-'+p.day+'T'+p.hour+':'+p.minute;
+}
+// UTC ISO -> friendly ET string for display.
+function fmtSchedEt(iso){
+  if(!iso) return '';
+  var d = new Date(iso); if(isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',
+    hour:'numeric',minute:'2-digit'}) + ' ET';
+}
+
+function findAnyRecord(kind, id){
+  var arr = kind==='task' ? jvLeads : leads;
+  return arr.find(function(x){return x.id===id;});
+}
+
+function openScheduleSmsModal(kind, id){
+  var l = findAnyRecord(kind, id);
+  if(!l){ showToast('Lead not found','error'); return; }
+  var cid = (l.ghlContactId||'').trim();
+  var phone = kind==='task' ? (l.phone||'') : ((l.phone||'').split('/')[0].trim());
+  var ten = ghlNormPhone(phone);
+  var title = kind==='task' ? (l.name||l.location||'Task') : (l.address||l.name||'Lead');
+  if(!cid && !ten){
+    showToast('⚠️ No phone or linked GHL contact on this lead — can\'t schedule a text','error');
+    return;
+  }
+  var toLine = cid ? 'GHL contact linked' + (ten?(' &middot; '+esc(ten)):'')
+                   : ('Will match GHL by phone &middot; '+esc(ten));
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:480px">'
+    + '<div class="modal-header"><div><div class="modal-title">&#128197; Schedule SMS</div>'
+    + '<div class="modal-subtitle"><span>'+esc(title)+'</span><span>&middot; '+toLine+'</span></div></div>'
+    + '<button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+    + '<div class="form-field"><label class="form-label">Message</label>'
+    + '<textarea id="sched-sms-body" class="form-textarea" rows="4" placeholder="Type the text to auto-send&hellip;" oninput="schedSmsCount()"></textarea>'
+    + '<div class="field-hint"><span id="sched-sms-count">0</span> characters</div></div>'
+    + '<div class="form-field"><label class="form-label">&#128197; Send at (US Eastern / ET)</label>'
+    + '<input type="datetime-local" id="sched-sms-when" class="form-input" value="'+nowEtLocalPlus(15)+'" min="'+nowEtLocalPlus(1)+'">'
+    + '<div class="field-hint">The text auto-sends at this time through GoHighLevel, even if this page is closed.</div></div>'
+    + '<div id="sched-sms-status" style="font-size:12px;min-height:16px;margin-top:4px"></div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+    + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+    + '<button class="btn btn-primary" id="sched-sms-save" onclick="saveScheduledSms(\''+kind+'\','+id+')">&#128197; Schedule Text</button>'
+    + '</div></div></div>';
+}
+function schedSmsCount(){
+  var t = document.getElementById('sched-sms-body'); var c = document.getElementById('sched-sms-count');
+  if(t && c) c.textContent = (t.value||'').length;
+}
+async function saveScheduledSms(kind, id){
+  var l = findAnyRecord(kind, id);
+  if(!l) return;
+  var bodyEl = document.getElementById('sched-sms-body');
+  var whenEl = document.getElementById('sched-sms-when');
+  var st = document.getElementById('sched-sms-status');
+  var btn = document.getElementById('sched-sms-save');
+  var body = (bodyEl && bodyEl.value || '').trim();
+  var whenLocal = whenEl && whenEl.value || '';
+  function fail(m){ if(st){ st.style.color='var(--red)'; st.innerHTML=m; } }
+  if(!body){ fail('Type a message first.'); return; }
+  if(!whenLocal){ fail('Pick a date and time.'); return; }
+  var sendAtIso = etLocalToUtcIso(whenLocal);
+  if(!sendAtIso){ fail('Invalid date/time.'); return; }
+  if(new Date(sendAtIso).getTime() <= Date.now()){ fail('Pick a time in the future.'); return; }
+  var cid = (l.ghlContactId||'').trim();
+  var phone = kind==='task' ? (l.phone||'') : ((l.phone||'').split('/')[0].trim());
+  if(btn){ btn.disabled=true; btn.textContent='Scheduling…'; }
+  if(st){ st.style.color='var(--text4)'; st.textContent='Scheduling…'; }
+  try {
+    var row = {
+      kind: kind,
+      lead_id: id,
+      ghl_contact_id: cid,
+      phone: phone,
+      body: body,
+      send_at: sendAtIso,
+      status: 'pending',
+      created_by: (currentUser && currentUser.name) || 'Team'
+    };
+    var res = await sbFetch(SCHED_SMS_PATH, 'POST', row);
+    // log to the lead's Activity Log so there's a record it was scheduled
+    try {
+      if(!l.activityLog) l.activityLog=[];
+      l.activityLog.push({type:'SMS Scheduled', by:(currentUser&&currentUser.name)||'Team',
+        at:new Date().toISOString(), note:'Auto-send '+fmtSchedEt(sendAtIso)+' — "'+body.slice(0,80)+(body.length>80?'…':'')+'"'});
+      if(kind==='task'){ saveJV(); saveJVToSupabase(l); }
+      else { localStorage.setItem('crm_leads', JSON.stringify(leads)); saveLeadToSupabase(l); }
+    } catch(e){}
+    closeModal();
+    showToast('📅 Text scheduled for '+fmtSchedEt(sendAtIso),'success');
+    if(kind==='task') openJVDetail(id); else openDetail(id);
+  } catch(e){
+    fail('Could not schedule &#8212; '+esc(String(e && e.message || e).slice(0,140)));
+    if(btn){ btn.disabled=false; btn.textContent='📅 Schedule Text'; }
+  }
+}
+
+var schedSmsFilter = 'all';
+function setSchedSmsFilter(f){ schedSmsFilter=f; renderScheduledSmsTab(); }
+async function renderScheduledSmsTab(){
+  var host = document.getElementById('tab-content');
+  if(host) host.innerHTML = '<div style="padding:16px 24px;color:var(--text4)">Loading scheduled texts&hellip;</div>';
+  var rows = [];
+  try {
+    rows = await sbFetch(SCHED_SMS_PATH+'?select=*&order=send_at.desc&limit=500') || [];
+  } catch(e){
+    if(host) host.innerHTML = '<div style="padding:16px 24px;color:var(--red)">Could not load scheduled texts.</div>';
+    return;
+  }
+  if(schedSmsFilter!=='all') rows = rows.filter(function(r){ return (r.status||'')===schedSmsFilter; });
+  var counts = {pending:0,sent:0,failed:0,canceled:0};
+  (rows||[]).forEach(function(r){ if(counts[r.status]!=null) counts[r.status]++; });
+  function chip(f,label){ return '<button class="btn '+(schedSmsFilter===f?'btn-primary':'btn-secondary')+' btn-sm" onclick="setSchedSmsFilter(\''+f+'\')">'+label+'</button>'; }
+  function statusPill(s){
+    var map = {pending:['#92400e','#fef3c7','#fde68a','&#9203; Pending'],
+      sent:['#166534','#dcfce7','#86efac','&#10004; Sent'],
+      failed:['#991b1b','#fee2e2','#fca5a5','&#10006; Failed'],
+      canceled:['#4b5563','#f3f4f6','#d1d5db','&#8856; Canceled'],
+      sending:['#3730a3','#e0e7ff','#a5b4fc','&#8230; Sending']};
+    var m = map[s] || ['#4b5563','#f3f4f6','#d1d5db',esc(s||'')];
+    return '<span style="color:'+m[0]+';background:'+m[1]+';border:1px solid '+m[2]+';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap">'+m[3]+'</span>';
+  }
+  var body = (!rows || rows.length===0)
+    ? '<div class="empty"><div class="empty-icon">&#128197;</div><h3>No scheduled texts'+(schedSmsFilter!=='all'?' ('+schedSmsFilter+')':'')+'</h3><p style="color:var(--text3);font-size:12px">Use &#128197; Schedule SMS on a lead or task to queue an auto-send.</p></div>'
+    : '<div class="table-container"><div class="table-wrap"><table>'
+      + '<thead><tr><th>Send At (ET)</th><th>Lead</th><th>To</th><th>Message</th><th>Status</th><th>Created By</th><th></th></tr></thead><tbody>'
+      + rows.map(function(r){
+          var rec = findAnyRecord(r.kind, r.lead_id);
+          var openFn = r.kind==='task' ? 'openJVDetail('+r.lead_id+')' : 'openDetail('+r.lead_id+')';
+          var name = rec ? (r.kind==='task' ? (rec.name||rec.location||'Task') : (rec.address||rec.name||'Lead')) : ('#'+r.lead_id);
+          var typeTag = r.kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
+          var msg = '<div style="font-size:12px;max-width:280px;white-space:pre-wrap;word-break:break-word;color:var(--text2)">'+esc(r.body||'')+'</div>';
+          var err = r.status==='failed' && r.error ? '<div style="font-size:10px;color:var(--red);margin-top:3px">'+esc(String(r.error).slice(0,160))+'</div>' : '';
+          var sentInfo = r.status==='sent' && r.sent_at ? '<div style="font-size:10px;color:var(--text4);margin-top:2px">sent '+fmtSchedEt(r.sent_at)+'</div>' : '';
+          var toCell = r.ghl_contact_id ? 'GHL&#8599;' : esc(ghlNormPhone(r.phone||'')||'&#8212;');
+          var action = r.status==='pending'
+            ? '<button class="btn btn-danger btn-sm" onclick="cancelScheduledSms('+r.id+')">Cancel</button>'
+            : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
+          return '<tr>'
+            + '<td style="white-space:nowrap;font-size:12px;font-weight:600">'+fmtSchedEt(r.send_at)+'</td>'
+            + '<td onclick="'+openFn+'" style="cursor:pointer"><div class="address-cell">'+typeTag+esc(name)+'</div></td>'
+            + '<td style="font-size:12px">'+(rec?('<a href="#" onclick="event.preventDefault();'+openFn+'" class="detail-link">'+toCell+'</a>'):toCell)+'</td>'
+            + '<td>'+msg+err+'</td>'
+            + '<td>'+statusPill(r.status)+sentInfo+'</td>'
+            + '<td style="font-size:12px">'+esc(r.created_by||'')+'</td>'
+            + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'+action+'</td>'
+            + '</tr>';
+        }).join('')
+      + '</tbody></table></div></div>';
+  if(host) host.innerHTML = '<div style="padding:16px 24px">'
+    + '<div style="margin-bottom:12px"><h2 style="font-size:16px;font-weight:700">&#128197; Scheduled SMS</h2>'
+    + '<p style="font-size:12px;color:var(--text3);margin-top:3px">Texts queued to auto-send through GoHighLevel at their scheduled time (US Eastern). Sends run on the server every minute, so they go out even with this page closed. Cancel a pending one any time before it sends.</p></div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
+    + chip('all','All') + chip('pending','Pending ('+counts.pending+')') + chip('sent','Sent ('+counts.sent+')')
+    + chip('failed','Failed ('+counts.failed+')') + chip('canceled','Canceled ('+counts.canceled+')')
+    + '<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="renderScheduledSmsTab()">&#8635; Refresh</button></div>'
+    + body + '</div>';
+}
+async function cancelScheduledSms(id){
+  if(!confirm('Cancel this scheduled text? It will not be sent.')) return;
+  try {
+    // Guard on status=pending so we never cancel one that already sent between refreshes.
+    await sbFetch(SCHED_SMS_PATH+'?id=eq.'+id+'&status=eq.pending', 'PATCH', {status:'canceled'});
+    showToast('Scheduled text canceled','success');
+  } catch(e){
+    showToast('Could not cancel — refresh and try again','error');
+  }
+  renderScheduledSmsTab();
+}
+
 // ===== Lead Protection / Non-Circumvention Agreement =====
 // Recipients must accept this agreement before any protected lead data is returned.
 // Enforcement lives in the 'lead-agreement' edge function (service role); the shared
@@ -1148,6 +1350,7 @@ function render(){
       <div class="tab ${activeTab==='nationwide'?'active':''}" onclick="setTab('nationwide')" style="${activeTab==='nationwide'?'':''}">&#127758; Nationwide <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.nationwide==='Yes').length}</span></div>
       <div class="tab ${activeTab==='sentout'?'active':''}" onclick="setTab('sentout')">&#128231; Sent Out <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.shared).length + jvLeads.filter(l=>!l.deleted&&l.shared).length}</span>${(function(){var n=recipientFUAlertCount();return n>0?' <span title="Recipient follow-ups overdue or due today" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">&#10071;'+n+'</span>':'';})()}</div>
       <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
+      <div class="tab ${activeTab==='scheduledsms'?'active':''}" onclick="setTab('scheduledsms')">&#128197; Scheduled</div>
     </div>
     <div id="tab-content"></div>`;
   if(activeTab==='leads') renderLeadsTab();
@@ -1155,6 +1358,7 @@ function render(){
   else if(activeTab==='jvleads') renderJVLeadsTab();
   else if(activeTab==='sentout') renderSentOutTab();
   else if(activeTab==='review') renderReviewTab();
+  else if(activeTab==='scheduledsms') renderScheduledSmsTab();
   else renderNationwideTab();
 }
 
@@ -1784,6 +1988,7 @@ function renderDetailModal(){
         <div class="modal-footer">
           <button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>
           <button class="btn btn-secondary btn-sm" onclick="sendToReview('lead',${l.id})">&#128203; Review</button>
+          <button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal('lead',${l.id})">&#128197; Schedule SMS</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,'lead',${l.id})">&#128231; Send to Team</button>
           <button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button>
           <button class="btn btn-primary" onclick="switchToEdit()">&#9999;&#65039; Edit</button>
@@ -2619,7 +2824,7 @@ function openJVDetail(id){
     +(l.ghlContactId?ghlSmsSectionHTML(l.ghlContactId):'')
     +renderAttachmentsSection('task', l.id)
     +renderActivityLog('task', l.id, l.activityLog)
-    +'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
+    +'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
   if(l.ghlContactId) loadGhlSms(l.ghlContactId);
 }
 async function saveJVDetail(id){
@@ -3013,7 +3218,7 @@ function deleteActivityEntry(kind, id, index){
   showToast('Log entry removed','success');
 }
 function activityIcon(type){
-  return type==='Called Answered' ? '&#128222;' : type==='Called No Answer' ? '&#128244;' : type==='SMS Sent' ? '&#128172;' : type==='Email Sent' ? '&#128231;' : type==='Called' ? '&#128222;' : type==='Texted' ? '&#128172;' : type==='Emailed' ? '&#128231;' : type==='Follow-Up Set' ? '&#128197;' : type==='Followed Up' ? '&#9989;' : '&#128221;';
+  return type==='Called Answered' ? '&#128222;' : type==='Called No Answer' ? '&#128244;' : type==='SMS Sent' ? '&#128172;' : type==='SMS Scheduled' ? '&#128197;' : type==='Email Sent' ? '&#128231;' : type==='Called' ? '&#128222;' : type==='Texted' ? '&#128172;' : type==='Emailed' ? '&#128231;' : type==='Follow-Up Set' ? '&#128197;' : type==='Followed Up' ? '&#9989;' : '&#128221;';
 }
 // ===== Agreement acceptance display (team side, inside lead/task detail) =====
 function agreementSectionHTML(id, kind, status, acceptedAt){
