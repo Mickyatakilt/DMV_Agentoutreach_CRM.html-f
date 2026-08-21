@@ -252,6 +252,40 @@
   .crm-soon-h{font-size:22px;font-weight:800;color:var(--text);margin-bottom:8px;}
   .crm-soon-p{font-size:14px;color:var(--text3);line-height:1.55;}
   .crm-soon-badge{display:inline-block;margin-top:18px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--accent);background:var(--accent-light);border-radius:20px;padding:6px 14px;}
+  /* ===== List Tracking (Phase 2) ===== */
+  .lt-wrap{padding:18px 24px 40px;}
+  .lt-head{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:14px;}
+  .lt-head h2{font-size:19px;font-weight:800;letter-spacing:-.02em;}
+  .lt-head p{font-size:12.5px;color:var(--text3);margin-top:3px;max-width:640px;line-height:1.5;}
+  .lt-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;}
+  .lt-demo{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:20px;padding:4px 11px;margin-left:8px;}
+  .lt-stats{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 18px;}
+  .lt-stat{flex:1;min-width:120px;background:var(--card,#fff);border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;}
+  .lt-stat .n{font-size:22px;font-weight:800;line-height:1;}
+  .lt-stat .l{font-size:11px;color:var(--text3);margin-top:5px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+  .lt-due{background:var(--card,#fff);border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:18px;}
+  .lt-due-h{font-size:13px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:7px;}
+  .lt-due-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;}
+  .lt-due-col{border:1px solid var(--border);border-radius:10px;padding:9px 11px;background:#fafbfc;}
+  .lt-due-col.od{border-color:#fca5a5;background:#fef2f2;}
+  .lt-due-col.td{border-color:#fdba74;background:#fff7ed;}
+  .lt-due-col.up{border-color:#93c5fd;background:#eff6ff;}
+  .lt-due-col h4{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;display:flex;justify-content:space-between;}
+  .lt-due-item{font-size:12.5px;padding:5px 0;border-top:1px dashed var(--border);cursor:pointer;display:flex;justify-content:space-between;gap:8px;}
+  .lt-due-item:first-of-type{border-top:none;}
+  .lt-due-item:hover{color:var(--accent);}
+  .lt-due-empty{font-size:12px;color:var(--text4);padding:4px 0;}
+  .lt-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+  .lt-toolbar input,.lt-toolbar select{padding:7px 11px;border:1.5px solid var(--border);border-radius:8px;font-size:12.5px;box-sizing:border-box;}
+  .lt-group{margin-bottom:20px;}
+  .lt-group-h{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:800;margin:0 0 8px;padding-bottom:6px;border-bottom:2px solid var(--border);}
+  .lt-group-h .cnt{font-size:11px;font-weight:700;color:var(--text3);background:var(--accent-light);border-radius:20px;padding:2px 9px;}
+  .lt-group-h .rec{font-size:11px;font-weight:600;color:var(--text3);margin-left:auto;}
+  .lt-chip{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.3px;padding:1px 7px;border-radius:5px;vertical-align:middle;}
+  .lt-touch{font-size:11px;color:var(--text3);background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:1px 7px;margin:1px 3px 1px 0;display:inline-block;white-space:nowrap;}
+  .lt-due-pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;}
+  .lt-lbl{font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;}
+  .lt-touchrow{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12.5px;background:#fafbfc;}
   @media(max-width:768px){
     .crm-sidebar{transform:translateX(-100%);box-shadow:none;}
     body.sb-open .crm-sidebar{transform:translateX(0);box-shadow:2px 0 24px rgba(0,0,0,.35);}
@@ -1381,7 +1415,7 @@ function switchUser(){renderLogin();}
 const SB_ITEMS = [
   {k:'dashboard', ic:'&#128202;', lb:'Dashboard',     soon:true},
   {k:'outreach',  ic:'&#128227;', lb:'CRM Outreach',  soon:false},
-  {k:'lists',     ic:'&#128199;', lb:'List Tracking', soon:true},
+  {k:'lists',     ic:'&#128199;', lb:'List Tracking', soon:false},
   {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', soon:true},
   {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  soon:true}
 ];
@@ -1423,6 +1457,473 @@ function renderPlaceholderSection(sec){
     +'<div class="crm-soon-badge">Coming soon</div>'
     +'</div>';
 }
+// ===================== Phase 2: List Tracking =====================
+// Tracks purchased/skiptraced lists (seller / wholesaler / realtor / buyer) the way the
+// team already does in the "New List Tracking" spreadsheet: one row per list, grouped by
+// the month it was acquired, with a record count (Amount), a source Link, an optional GHL
+// bulk-contacts link, and a running log of outreach "touches" (e.g. "6/11/25 Texted 800").
+// Adds a Next-Due date + a "What's Due" re-outreach queue. Cloud-backed by Supabase table
+// `crm_lists` (RLS authenticated-only, same posture as leads/jv_leads).
+const LT_PATH = 'crm_lists';
+var crmLists = null;                              // null = not loaded yet
+var ltSearch = '', ltRegion = '', ltPeriod = '', ltCat = '';
+const LT_CATS = [['seller','Seller'],['wholesaler','Wholesaler'],['realtor','Realtor'],['buyer','Buyer'],['other','Other']];
+function ltCatColor(c){
+  var m={seller:['#475569','#e2e8f0'],wholesaler:['#7c3aed','#ede9fe'],realtor:['#047857','#d1fae5'],buyer:['#b45309','#fef3c7'],other:['#334155','#f1f5f9']};
+  return m[c]||m.other;
+}
+function ltCatLabel(c){ var f=LT_CATS.find(function(x){return x[0]===c;}); return f?f[1]:'Seller'; }
+function ltCatBadge(c){ c=c||'seller'; var col=ltCatColor(c); return '<span class="lt-chip" style="color:'+col[0]+';background:'+col[1]+'">'+esc(ltCatLabel(c))+'</span>'; }
+
+// ---- DB <-> memory mapping ----
+function ltFromDb(r){ return {id:r.id,name:r.name||'',period:r.period||'',region:r.region||'',amount:r.amount||'',
+  link:r.link||'',ghlLink:r.ghl_link||'',category:r.category||'seller',dateAdded:r.date_added||'',
+  lastTexted:r.last_texted||'',dueDate:r.due_date||'',notes:r.notes||'',touches:Array.isArray(r.touches)?r.touches:[]}; }
+function ltToDb(l){ return {name:l.name||'',period:l.period||'',region:l.region||'',amount:l.amount||'',
+  link:l.link||'',ghl_link:l.ghlLink||'',category:l.category||'seller',date_added:l.dateAdded||null,
+  last_texted:l.lastTexted||null,due_date:l.dueDate||null,notes:l.notes||'',touches:l.touches||[],updated_at:new Date().toISOString()}; }
+async function crmListsFetch(){
+  try { var rows=await sbFetch(LT_PATH+'?select=*&order=id.asc&limit=2000'); crmLists=(rows||[]).map(ltFromDb); }
+  catch(e){ crmLists=[]; showToast('Could not load lists — check connection','error'); }
+}
+async function crmListInsert(l){ var rows=await sbFetch(LT_PATH,'POST',ltToDb(l)); return rows&&rows[0]?ltFromDb(rows[0]):null; }
+async function crmListInsertMany(arr){ var rows=await sbFetch(LT_PATH,'POST',arr.map(ltToDb)); return (rows||[]).map(ltFromDb); }
+async function crmListUpdate(l){ await sbFetch(LT_PATH+'?id=eq.'+l.id,'PATCH',ltToDb(l)); }
+async function crmListDeleteDb(id){ await sbFetch(LT_PATH+'?id=eq.'+id,'DELETE'); }
+function crmListById(id){ id=+id; return (crmLists||[]).find(function(l){ return +l.id===id; }); }
+
+// ---- small helpers ----
+function ltLastTexted(l){
+  if(l.lastTexted) return l.lastTexted;
+  var ds=(l.touches||[]).map(function(t){return t.date;}).filter(Boolean);
+  return ds.length?ds.sort().slice(-1)[0]:'';
+}
+function ltDaysUntil(dateStr){
+  if(!dateStr) return null;
+  var t=new Date(today()+'T00:00:00'), d=new Date(dateStr+'T00:00:00');
+  return Math.round((d-t)/86400000);
+}
+function ltFmtDate(d){ if(!d) return ''; var p=String(d).split('-'); if(p.length!==3) return d; return (+p[1])+'/'+(+p[2])+'/'+p[0].slice(2); }
+function ltRegionChip(r){
+  if(!r) return '';
+  var map={DC:['#7c3aed','#ede9fe'],MD:['#dc2626','#fee2e2'],VA:['#2563eb','#dbeafe'],
+    NC:['#059669','#d1fae5'],SC:['#0891b2','#cffafe'],TX:['#ea580c','#ffedd5'],KY:['#b45309','#fef3c7']};
+  var c=map[r]||['#475569','#e2e8f0'];
+  return '<span class="lt-chip" style="color:'+c[0]+';background:'+c[1]+'">'+esc(r)+'</span>';
+}
+function ltDuePill(d){
+  var n=ltDaysUntil(d);
+  if(n===null) return '<span style="color:var(--text4);font-size:11.5px">&mdash;</span>';
+  var lbl=ltFmtDate(d), sty, txt;
+  if(n<0){ sty='color:#991b1b;background:#fee2e2'; txt=lbl+' &middot; '+(-n)+'d late'; }
+  else if(n===0){ sty='color:#9a3412;background:#ffedd5'; txt=lbl+' &middot; today'; }
+  else if(n<=7){ sty='color:#1e40af;background:#dbeafe'; txt=lbl+' &middot; in '+n+'d'; }
+  else { sty='color:#334155;background:#f1f5f9'; txt=lbl; }
+  return '<span class="lt-due-pill" style="'+sty+'">'+txt+'</span>';
+}
+function ltGhlBtn(l,small){
+  if(!l.ghlLink) return '';
+  var href=/^https?:/i.test(l.ghlLink)?esc(l.ghlLink):('https://'+esc(l.ghlLink));
+  return '<a href="'+href+'" target="_blank" class="btn btn-secondary btn-sm" onclick="event.stopPropagation()" title="Open this list\'s contacts in GoHighLevel">&#128241; GHL&#8599;</a>';
+}
+function ltInferRegion(name){
+  var n=(name||'').toUpperCase();
+  var checks=[['DC','DC'],['PG','MD'],['MOCO','MD'],['MONTGOMERY','MD'],['ANNE ARUNDEL','MD'],['MD','MD'],
+    ['ALEXANDRIA','VA'],['FALLS CH','VA'],['ARLINGTON','VA'],['NORFOLK','VA'],['VA BEACH','VA'],['RICHMOND','VA'],['NOVA','VA'],['VA','VA'],
+    ['NC','NC'],['SC','SC'],['HOUSTON','TX'],['SAN ANTONIO','TX'],['DALLAS','TX'],['TX','TX'],['LOUISVILLE','KY'],['KY','KY']];
+  for(var i=0;i<checks.length;i++){ if(n.indexOf(checks[i][0])>=0) return checks[i][1]; }
+  return '';
+}
+function ltPeriodOrder(){
+  var seen=[]; (crmLists||[]).forEach(function(l){ if(seen.indexOf(l.period||'')<0) seen.push(l.period||''); });
+  return seen;
+}
+
+// ---- Main section render ----
+function renderLists(){
+  var host=document.getElementById('section-main'); if(!host) return;
+  if(crmLists===null){
+    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128199; List Tracking</h2></div></div>'
+      +'<div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading lists&hellip;</div></div>';
+    crmListsFetch().then(function(){ if(activeSection==='lists') renderLists(); });
+    return;
+  }
+  var all=crmLists||[];
+  var totalRecords=all.reduce(function(s,l){ var n=parseInt(String(l.amount||'').replace(/[^0-9]/g,''),10); return s+(isNaN(n)?0:n); },0);
+  var dueCount=all.filter(function(l){ var n=ltDaysUntil(l.dueDate); return n!==null && n<=0; }).length;
+  var soonCount=all.filter(function(l){ var n=ltDaysUntil(l.dueDate); return n!==null && n>0 && n<=7; }).length;
+  var regions=Array.from(new Set(all.map(function(l){return l.region;}).filter(Boolean))).sort();
+  var periods=ltPeriodOrder();
+  function catChip(v,label){
+    var on=ltCat===v; var col=v?ltCatColor(v):['#334155','#e2e8f0'];
+    return '<button class="btn btn-sm" style="'+(on?'background:'+col[0]+';color:#fff;border-color:'+col[0]:'background:#fff;color:'+col[0]+';border:1.5px solid '+col[1])+'" onclick="ltCat=\''+v+'\';ltRenderListArea();ltSyncCatChips()">'+label+'</button>';
+  }
+  host.innerHTML =
+    '<div class="lt-wrap">'
+    + '<div class="lt-head">'
+      + '<div><h2>&#128199; List Tracking</h2>'
+        + '<p>Every purchased list &mdash; record count, source link, GHL bulk link, and a running log of every text/call round &mdash; grouped by the month you got it, with a Next-Due queue so nothing goes cold.</p></div>'
+      + '<div class="lt-actions">'
+        + '<button class="btn btn-secondary btn-sm" onclick="crmLists=null;renderLists()">&#8635; Refresh</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="openListImportModal()">&#8681; Import CSV</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="exportListsCSV()">&#8682; Export</button>'
+        + '<button class="btn btn-primary btn-sm" onclick="openListEditModal(null)">&#43; New List</button>'
+      + '</div>'
+    + '</div>'
+    + '<div class="lt-stats">'
+      + '<div class="lt-stat"><div class="n">'+all.length+'</div><div class="l">Lists tracked</div></div>'
+      + '<div class="lt-stat"><div class="n">'+totalRecords.toLocaleString()+'</div><div class="l">Total records</div></div>'
+      + '<div class="lt-stat"><div class="n" style="color:'+(dueCount?'#dc2626':'inherit')+'">'+dueCount+'</div><div class="l">Due / overdue</div></div>'
+      + '<div class="lt-stat"><div class="n" style="color:'+(soonCount?'#2563eb':'inherit')+'">'+soonCount+'</div><div class="l">Due next 7 days</div></div>'
+    + '</div>'
+    + listWhatsDueHTML()
+    + '<div class="lt-toolbar">'
+      + '<input id="lt-search" type="text" placeholder="&#128269; Search list name..." oninput="ltSetSearch(this.value)" value="'+esc(ltSearch)+'" style="flex:1;min-width:170px">'
+      + '<select onchange="ltRegion=this.value;ltRenderListArea()"><option value="">All regions</option>'
+        + regions.map(function(r){return '<option value="'+esc(r)+'"'+(ltRegion===r?' selected':'')+'>'+esc(r)+'</option>';}).join('')+'</select>'
+      + '<select onchange="ltPeriod=this.value;ltRenderListArea()"><option value="">All months</option>'
+        + periods.map(function(p){return '<option value="'+esc(p)+'"'+(ltPeriod===p?' selected':'')+'>'+esc(p||'(none)')+'</option>';}).join('')+'</select>'
+    + '</div>'
+    + '<div id="lt-cat-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
+      + catChip('','All types')
+      + LT_CATS.map(function(c){ var n=all.filter(function(l){return (l.category||'seller')===c[0];}).length; return catChip(c[0],c[1]+' ('+n+')'); }).join('')
+    + '</div>'
+    + '<div id="lt-list-area"></div>'
+    + '</div>';
+  ltRenderListArea();
+}
+function ltSyncCatChips(){ /* re-render chips to reflect active state */ if(document.getElementById('lt-cat-chips')) renderLists(); }
+function ltSetSearch(v){ ltSearch=v; ltRenderListArea(); }
+
+function ltFilteredLists(){
+  var q=ltSearch.trim().toLowerCase();
+  return (crmLists||[]).filter(function(l){
+    if(ltRegion && l.region!==ltRegion) return false;
+    if(ltPeriod && (l.period||'')!==ltPeriod) return false;
+    if(ltCat && (l.category||'seller')!==ltCat) return false;
+    if(q && String(l.name||'').toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+}
+
+function ltRenderListArea(){
+  var area=document.getElementById('lt-list-area'); if(!area) return;
+  var rows=ltFilteredLists();
+  if(!rows.length){
+    area.innerHTML='<div class="empty"><div class="empty-icon">&#128199;</div><h3>No lists match</h3><p style="color:var(--text3);font-size:12px">Try clearing the filters, or add a new list.</p></div>';
+    return;
+  }
+  var order=ltPeriodOrder();
+  var groups={}; rows.forEach(function(l){ (groups[l.period||'']=groups[l.period||'']||[]).push(l); });
+  var html=order.filter(function(p){return groups[p];}).map(function(p){
+    var gr=groups[p];
+    var recs=gr.reduce(function(s,l){ var n=parseInt(String(l.amount||'').replace(/[^0-9]/g,''),10); return s+(isNaN(n)?0:n); },0);
+    var body=gr.map(function(l){
+      var lt=ltLastTexted(l);
+      var cc=ltCatColor(l.category||'seller');
+      var touches=(l.touches||[]);
+      var touchHtml=touches.length
+        ? touches.slice(-3).map(function(t){ return '<span class="lt-touch">'+(t.date?ltFmtDate(t.date)+' ':'')+esc(t.note||'')+'</span>'; }).join('')
+          + (touches.length>3?'<span class="lt-touch" style="background:#e2e8f0">+'+(touches.length-3)+' more</span>':'')
+        : '<span style="color:var(--text4);font-size:11.5px">No outreach yet</span>';
+      var linkCell = l.link ? '<a href="'+(/^https?:/i.test(l.link)?esc(l.link):'#')+'" '+(/^https?:/i.test(l.link)?'target="_blank"':'onclick="event.preventDefault();openListDetail('+l.id+')"')+' class="detail-link">'+esc(l.link)+'&#8599;</a>' : '<span style="color:var(--text4)">&mdash;</span>';
+      return '<tr style="cursor:pointer" onclick="openListDetail('+l.id+')">'
+        + '<td style="border-left:4px solid '+cc[0]+'"><div style="font-weight:600;font-size:13px">'+esc(l.name)+'</div><div style="margin-top:3px">'+ltCatBadge(l.category)+' '+ltRegionChip(l.region)+'</div></td>'
+        + '<td style="white-space:nowrap;font-weight:600">'+(l.amount?esc(l.amount):'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
+        + '<td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="event.stopPropagation()">'+linkCell+(l.ghlLink?' '+ltGhlBtn(l,true):'')+'</td>'
+        + '<td style="max-width:260px">'+touchHtml+'</td>'
+        + '<td style="white-space:nowrap;font-size:11.5px">'+(lt?ltFmtDate(lt):'<span style="color:var(--text4)">never</span>')+'</td>'
+        + '<td style="white-space:nowrap">'+ltDuePill(l.dueDate)+'</td>'
+        + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'
+          + '<button class="btn btn-secondary btn-sm" title="Log a text/call round now" onclick="logListText('+l.id+')">&#128172; Log</button> '
+          + '<button class="btn btn-secondary btn-sm" onclick="openListEditModal('+l.id+')">&#9998;</button>'
+        + '</td>'
+      + '</tr>';
+    }).join('');
+    return '<div class="lt-group">'
+      + '<div class="lt-group-h">&#128197; '+esc(p||'(no month)')+' <span class="cnt">'+gr.length+' list'+(gr.length!==1?'s':'')+'</span>'
+        + '<span class="rec">'+recs.toLocaleString()+' records</span></div>'
+      + '<div class="table-container"><div class="table-wrap"><table>'
+        + '<thead><tr><th>List Name</th><th>Amount</th><th>Link</th><th>Outreach Log</th><th>Last Texted</th><th>Next Due</th><th></th></tr></thead>'
+        + '<tbody>'+body+'</tbody></table></div></div>'
+      + '</div>';
+  }).join('');
+  area.innerHTML=html;
+}
+
+// ---- What's Due queue ----
+function listWhatsDueHTML(){
+  var all=crmLists||[];
+  var withDue=all.filter(function(l){ return l.dueDate; });
+  var overdue=[],todayd=[],upcoming=[];
+  withDue.forEach(function(l){ var n=ltDaysUntil(l.dueDate); if(n<0) overdue.push(l); else if(n===0) todayd.push(l); else if(n<=7) upcoming.push(l); });
+  function sortByDue(a,b){ return (a.dueDate||'').localeCompare(b.dueDate||''); }
+  overdue.sort(sortByDue); todayd.sort(sortByDue); upcoming.sort(sortByDue);
+  function col(cls,title,arr){
+    var items = arr.length
+      ? arr.map(function(l){ return '<div class="lt-due-item" onclick="openListDetail('+l.id+')"><span>'+esc(l.name)+' '+ltRegionChip(l.region)+'</span><span style="color:var(--text3);white-space:nowrap">'+ltFmtDate(l.dueDate)+'</span></div>'; }).join('')
+      : '<div class="lt-due-empty">Nothing here.</div>';
+    return '<div class="lt-due-col '+cls+'"><h4>'+title+'<span>'+arr.length+'</span></h4>'+items+'</div>';
+  }
+  if(!withDue.length){
+    return '<div class="lt-due"><div class="lt-due-h">&#9200; What\'s Due</div>'
+      + '<div class="lt-due-empty">No lists have a Next-Due date yet. Open a list and set one, or use &#128172; Log to record a text round.</div></div>';
+  }
+  return '<div class="lt-due"><div class="lt-due-h">&#9200; What\'s Due for Re-Outreach</div>'
+    + '<div class="lt-due-grid">'
+    + col('od','&#128308; Overdue',overdue)
+    + col('td','&#128992; Due Today',todayd)
+    + col('up','&#128309; Next 7 Days',upcoming)
+    + '</div></div>';
+}
+
+// ---- Detail modal ----
+function openListDetail(id){
+  var l=crmListById(id); if(!l){ showToast('List not found','error'); return; }
+  var lt=ltLastTexted(l);
+  var touches=(l.touches||[]);
+  var touchLog = touches.length
+    ? touches.map(function(t,i){ return '<div class="lt-touchrow"><div><b style="color:var(--text2)">'+(t.date?ltFmtDate(t.date):'no date')+'</b> &middot; '+esc(t.note||'')+'</div>'
+        + '<button class="btn btn-secondary btn-sm" onclick="removeListTouch('+l.id+','+i+')" title="Remove">&#10005;</button></div>'; }).join('')
+    : '<div style="color:var(--text4);font-size:12.5px;padding:6px 0">No outreach logged yet.</div>';
+  var linkHtml = l.link ? (/^https?:/i.test(l.link)?'<a href="'+esc(l.link)+'" target="_blank" class="detail-link">'+esc(l.link)+' &#8599;</a>':esc(l.link)) : '<span style="color:var(--text4)">&mdash;</span>';
+  var ghlHtml = l.ghlLink ? ltGhlBtn(l) : '<span style="color:var(--text4);font-size:12px">Not linked &mdash; add one in Edit</span>';
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:560px">'
+    + '<div class="modal-header"><div><div class="modal-title">'+esc(l.name)+'</div>'
+      + '<div class="modal-subtitle" style="margin-top:4px">'+ltCatBadge(l.category)+' '+ltRegionChip(l.region)+' <span style="color:var(--text3)">'+esc(l.period||'')+(l.amount?' &middot; '+esc(l.amount)+' records':'')+'</span></div></div>'
+      + '<button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'
+        + '<div><div class="lt-lbl">Source Link</div><div style="font-size:12.5px;margin-top:2px">'+linkHtml+'</div></div>'
+        + '<div><div class="lt-lbl">GHL Bulk Contacts</div><div style="margin-top:3px">'+ghlHtml+'</div></div>'
+        + '<div><div class="lt-lbl">Last Texted</div><div style="font-size:12.5px;margin-top:2px">'+(lt?ltFmtDate(lt):'never')+'</div></div>'
+        + '<div><div class="lt-lbl">Next Due</div><div style="margin-top:2px">'+ltDuePill(l.dueDate)+'</div></div>'
+      + '</div>'
+      + (l.notes?'<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:14px;white-space:pre-wrap">'+esc(l.notes)+'</div>':'')
+      + '<div style="font-size:12px;font-weight:800;margin:6px 0 8px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2)">&#128172; Outreach Log ('+touches.length+')</div>'
+      + touchLog
+      + '<div style="display:flex;gap:6px;margin-top:10px;align-items:flex-end;flex-wrap:wrap">'
+        + '<div style="flex:1;min-width:120px"><label class="lt-lbl">Date</label><input type="date" id="lt-touch-date" class="form-input" value="'+today()+'" style="font-size:12px"></div>'
+        + '<div style="flex:2;min-width:160px"><label class="lt-lbl">What happened</label><input type="text" id="lt-touch-note" class="form-input" placeholder="e.g. Texted 800, Called all" style="font-size:12px"></div>'
+        + '<button class="btn btn-primary btn-sm" onclick="addListTouch('+l.id+')">Add Touch</button>'
+      + '</div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-danger btn-sm" style="margin-right:auto" onclick="deleteListEntry('+l.id+')">Delete List</button>'
+      + '<button class="btn btn-secondary btn-sm" onclick="openListEditModal('+l.id+')">Edit Details</button>'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button>'
+    + '</div></div></div>';
+}
+
+// ---- Add / Edit modal ----
+function openListEditModal(id){
+  var isNew = (id===null || id===undefined);
+  var l = isNew ? {id:null,name:'',region:'',period:'',amount:'',link:'',ghlLink:'',category:'seller',dateAdded:today(),lastTexted:'',dueDate:'',notes:'',touches:[]} : crmListById(id);
+  if(!l){ showToast('List not found','error'); return; }
+  var periods=ltPeriodOrder().filter(Boolean);
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:480px">'
+    + '<div class="modal-header"><div class="modal-title">'+(isNew?'&#43; New List':'&#9998; Edit List')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<div class="form-field"><label class="form-label">List Name</label><input id="le-name" class="form-input" value="'+esc(l.name)+'" placeholder="e.g. PG County High Equity" oninput="leAutoRegion()"></div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+        + '<div class="form-field"><label class="form-label">Type</label><select id="le-cat" class="form-input">'
+          + LT_CATS.map(function(c){return '<option value="'+c[0]+'"'+(l.category===c[0]?' selected':'')+'>'+c[1]+'</option>';}).join('')+'</select></div>'
+        + '<div class="form-field"><label class="form-label">Region</label><input id="le-region" class="form-input" value="'+esc(l.region)+'" placeholder="DC / MD / VA..."></div>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+        + '<div class="form-field"><label class="form-label">Month / Period</label><input id="le-period" class="form-input" list="le-period-list" value="'+esc(l.period)+'" placeholder="e.g. August 2026">'
+          + '<datalist id="le-period-list">'+periods.map(function(p){return '<option value="'+esc(p)+'">';}).join('')+'</datalist></div>'
+        + '<div class="form-field"><label class="form-label">Amount (records)</label><input id="le-amount" class="form-input" value="'+esc(l.amount)+'" placeholder="e.g. 1923 or 3K"></div>'
+      + '</div>'
+      + '<div class="form-field"><label class="form-label">Source Link</label><input id="le-link" class="form-input" value="'+esc(l.link)+'" placeholder="https://... or label"></div>'
+      + '<div class="form-field"><label class="form-label">GHL Bulk Contacts Link <span style="font-weight:400;color:var(--text3)">(opens this list in GoHighLevel)</span></label><input id="le-ghl" class="form-input" value="'+esc(l.ghlLink)+'" placeholder="https://app.gohighlevel.com/..."></div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+        + '<div class="form-field"><label class="form-label">Next Due (re-outreach)</label><input id="le-due" type="date" class="form-input" value="'+esc(l.dueDate)+'"></div>'
+        + '<div class="form-field"><label class="form-label">Date Added</label><input id="le-added" type="date" class="form-input" value="'+esc(l.dateAdded)+'"></div>'
+      + '</div>'
+      + '<div class="form-field"><label class="form-label">Notes</label><textarea id="le-notes" class="form-input" rows="2" placeholder="Optional">'+esc(l.notes)+'</textarea></div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary" onclick="saveListEntry('+(isNew?'null':l.id)+')">'+(isNew?'Create List':'Save Changes')+'</button>'
+    + '</div></div></div>';
+}
+function leAutoRegion(){
+  var rEl=document.getElementById('le-region'); if(!rEl || rEl.value.trim()) return;
+  var g=ltInferRegion(document.getElementById('le-name').value); if(g) rEl.value=g;
+}
+function leReadForm(){
+  return {
+    name:(document.getElementById('le-name').value||'').trim(),
+    period:(document.getElementById('le-period').value||'').trim(),
+    region:(document.getElementById('le-region').value||'').trim().toUpperCase(),
+    amount:(document.getElementById('le-amount').value||'').trim(),
+    category:document.getElementById('le-cat').value,
+    link:(document.getElementById('le-link').value||'').trim(),
+    ghlLink:(document.getElementById('le-ghl').value||'').trim(),
+    dueDate:document.getElementById('le-due').value||'',
+    dateAdded:document.getElementById('le-added').value||'',
+    notes:(document.getElementById('le-notes').value||'').trim()
+  };
+}
+async function saveListEntry(id){
+  var data=leReadForm();
+  if(!data.name){ showToast('List name is required','error'); return; }
+  if(id===null||id===undefined){
+    try {
+      var row=await crmListInsert(Object.assign({lastTexted:'',touches:[]},data));
+      if(row) crmLists.push(row);
+      showToast('List added','success');
+    } catch(e){ showToast('Could not save list — try again','error'); return; }
+  } else {
+    var l=crmListById(id); if(!l){ showToast('List not found','error'); return; }
+    Object.assign(l,data);
+    try { await crmListUpdate(l); showToast('List updated','success'); }
+    catch(e){ showToast('Saved locally, cloud sync failed — Refresh and retry','error'); }
+  }
+  closeModal(); renderLists();
+}
+async function deleteListEntry(id){
+  if(!confirm('Delete this list and its outreach log? This cannot be undone.')) return;
+  crmLists=(crmLists||[]).filter(function(l){ return +l.id!==+id; });
+  closeModal(); renderLists();
+  try { await crmListDeleteDb(id); showToast('List deleted','success'); }
+  catch(e){ showToast('Delete failed to sync — Refresh','error'); }
+}
+
+// ---- Touches ----
+async function addListTouch(id){
+  var l=crmListById(id); if(!l) return;
+  var d=document.getElementById('lt-touch-date').value||'';
+  var note=(document.getElementById('lt-touch-note').value||'').trim();
+  if(!note){ showToast('Add a short note (e.g. "Texted 800")','error'); return; }
+  l.touches=l.touches||[]; l.touches.push({date:d,note:note});
+  if(d && (!l.lastTexted || d>l.lastTexted)) l.lastTexted=d;
+  openListDetail(id); renderListsAreaIfVisible();
+  try { await crmListUpdate(l); showToast('Touch logged','success'); }
+  catch(e){ showToast('Cloud sync failed — Refresh','error'); }
+}
+async function removeListTouch(id,idx){
+  var l=crmListById(id); if(!l||!l.touches) return;
+  l.touches.splice(idx,1);
+  l.lastTexted='';
+  var ds=l.touches.map(function(t){return t.date;}).filter(Boolean).sort();
+  if(ds.length) l.lastTexted=ds[ds.length-1];
+  openListDetail(id); renderListsAreaIfVisible();
+  try { await crmListUpdate(l); } catch(e){ showToast('Cloud sync failed — Refresh','error'); }
+}
+async function logListText(id){
+  var l=crmListById(id); if(!l) return;
+  l.touches=l.touches||[]; l.touches.push({date:today(),note:'Texted all'});
+  l.lastTexted=today();
+  renderLists();
+  try { await crmListUpdate(l); showToast('Logged a text round for "'+l.name+'"','success'); }
+  catch(e){ showToast('Cloud sync failed — Refresh','error'); }
+}
+function renderListsAreaIfVisible(){ if(document.getElementById('lt-list-area')) ltRenderListArea(); }
+
+// ---- CSV import / export ----
+function ltParseCSV(text){
+  var rows=[],cur=[],val='',inQ=false;
+  for(var i=0;i<text.length;i++){
+    var c=text[i];
+    if(inQ){
+      if(c==='"'){ if(text[i+1]==='"'){ val+='"'; i++; } else inQ=false; }
+      else val+=c;
+    } else {
+      if(c==='"') inQ=true;
+      else if(c===','){ cur.push(val); val=''; }
+      else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n') i++; cur.push(val); rows.push(cur); cur=[]; val=''; }
+      else val+=c;
+    }
+  }
+  if(val!==''||cur.length){ cur.push(val); rows.push(cur); }
+  return rows.filter(function(r){ return r.some(function(x){ return String(x).trim()!==''; }); });
+}
+function openListImportModal(){
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px">'
+    + '<div class="modal-header"><div class="modal-title">&#8681; Import Lists from CSV</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:10px">Paste rows, or upload a .csv. Columns (a header row is auto-detected):<br>'
+        + '<code style="font-size:11.5px;background:#f1f5f9;padding:1px 5px;border-radius:4px">Name, Amount, Link, Region, Month, Type, Due, Notes</code><br>'
+        + 'Only <b>Name</b> is required. Region auto-fills from the name; Type defaults to Seller.</p>'
+      + '<div class="form-field"><label class="form-label">Upload .csv</label><input type="file" id="lt-csv-file" accept=".csv,text/csv" class="form-input" onchange="ltCsvFile(event)"></div>'
+      + '<div class="form-field"><label class="form-label">&hellip; or paste CSV</label><textarea id="lt-csv-text" class="form-input" rows="7" placeholder="Name,Amount,Link,Region,Month,Type,Due,Notes\nPG County High Equity,2337,https://...,MD,August 2026,seller,2026-09-01,"></textarea></div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+        + '<div class="form-field"><label class="form-label">Assign to Month (optional)</label><input id="lt-csv-period" class="form-input" placeholder="e.g. August 2026"></div>'
+        + '<div class="form-field"><label class="form-label">Default Type</label><select id="lt-csv-cat" class="form-input">'+LT_CATS.map(function(c){return '<option value="'+c[0]+'">'+c[1]+'</option>';}).join('')+'</select></div>'
+      + '</div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary" onclick="doListImport()">Import</button>'
+    + '</div></div></div>';
+}
+function ltCsvFile(ev){
+  var f=ev.target.files&&ev.target.files[0]; if(!f) return;
+  var r=new FileReader(); r.onload=function(){ document.getElementById('lt-csv-text').value=r.result; }; r.readAsText(f);
+}
+async function doListImport(){
+  var text=(document.getElementById('lt-csv-text').value||'').trim();
+  if(!text){ showToast('Paste CSV or choose a file first','error'); return; }
+  var forcePeriod=(document.getElementById('lt-csv-period').value||'').trim();
+  var defCat=document.getElementById('lt-csv-cat').value||'seller';
+  var rows=ltParseCSV(text);
+  if(!rows.length){ showToast('No rows found','error'); return; }
+  var first=rows[0].map(function(x){return String(x).trim().toLowerCase();});
+  var hasHeader=first.some(function(h){ return ['name','amount','link','region','month','period','type','category','due','notes','list','list name'].indexOf(h)>=0; });
+  var idx={name:0,amount:1,link:2,region:3,month:4,type:5,due:6,notes:7};
+  if(hasHeader){
+    idx={};
+    first.forEach(function(h,i){
+      if(h==='name'||h==='list'||h==='list name'||h==='seller list name') idx.name=i;
+      else if(h==='amount'||h==='count'||h==='records') idx.amount=i;
+      else if(h==='link'||h==='url') idx.link=i;
+      else if(h==='region'||h==='state') idx.region=i;
+      else if(h==='month'||h==='period') idx.month=i;
+      else if(h==='type'||h==='category') idx.type=i;
+      else if(h==='due'||h==='due date'||h==='next due') idx.due=i;
+      else if(h==='notes'||h==='note') idx.notes=i;
+    });
+    rows=rows.slice(1);
+  }
+  var toAdd=[];
+  rows.forEach(function(r){
+    var get=function(k){ return idx[k]!=null && r[idx[k]]!=null ? String(r[idx[k]]).trim() : ''; };
+    var name=get('name'); if(!name) return;
+    var region=get('region').toUpperCase()||ltInferRegion(name);
+    var cat=(get('type')||defCat).toLowerCase();
+    if(!LT_CATS.some(function(c){return c[0]===cat;})) cat=defCat;
+    toAdd.push({name:name,amount:get('amount'),link:get('link'),ghlLink:'',region:region,
+      period:forcePeriod||get('month')||'Imported',category:cat,dateAdded:today(),
+      lastTexted:'',dueDate:get('due'),notes:get('notes'),touches:[]});
+  });
+  if(!toAdd.length){ showToast('Nothing to import','warning'); return; }
+  try {
+    var inserted=await crmListInsertMany(toAdd);
+    inserted.forEach(function(row){ crmLists.push(row); });
+    closeModal(); showToast('Imported '+inserted.length+' list'+(inserted.length!==1?'s':''),'success'); renderLists();
+  } catch(e){ showToast('Import failed — check the CSV and try again','error'); }
+}
+function exportListsCSV(){
+  var header=['Name','Type','Amount','Link','GHL Link','Region','Month','Date Added','Last Texted','Next Due','Touches','Notes'];
+  var q=function(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  var lines=[header.join(',')];
+  (crmLists||[]).forEach(function(l){
+    var touches=(l.touches||[]).map(function(t){ return (t.date?t.date+' ':'')+t.note; }).join(' | ');
+    lines.push([l.name,ltCatLabel(l.category),l.amount,l.link,l.ghlLink,l.region,l.period,l.dateAdded,ltLastTexted(l),l.dueDate,touches,l.notes].map(q).join(','));
+  });
+  var blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  var url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download='list-tracking-'+today()+'.csv'; document.body.appendChild(a); a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
+  showToast('Exported '+(crmLists||[]).length+' lists','success');
+}
+// =================== end List Tracking ===================
+
 function render(){
   // No active user: when auth is ON, always show the access-key login (never the legacy
   // name-picker, which would bypass authentication); when off, show the legacy picker.
@@ -1433,6 +1934,7 @@ function render(){
   }
   // Paint the sidebar shell + the main content container, then fill the active section.
   document.getElementById('app').innerHTML = sidebarHTML() + '<div id="section-main" class="section-main"></div>';
+  if(activeSection==='lists'){ renderLists(); return; }
   if(activeSection!=='outreach'){ renderPlaceholderSection(activeSection); return; }
   renderOutreach();
 }
