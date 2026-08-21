@@ -218,6 +218,56 @@
 
   @media(max-width:900px){.followup-grid{grid-template-columns:1fr;}.form-grid.cols-3{grid-template-columns:1fr 1fr;}.detail-grid{grid-template-columns:1fr;}}
   @media(max-width:640px){.header{padding:0 14px;}.toolbar,.stats-bar{padding:8px 14px;}.table-container,.cards-container,.followup-container{padding:10px 14px;}.form-grid,.form-grid.cols-3{grid-template-columns:1fr;}}
+
+  /* ===== Phase 1: left sidebar shell (wraps CRM Outreach; does NOT alter it) ===== */
+  :root{ --sb-w:216px; --sb-w-collapsed:64px; --sb-bg:#0f172a; --sb-bg2:#1e293b; --sb-fg:#cbd5e1; --sb-fg-dim:#64748b; --sb-active:#3b82f6; }
+  .crm-sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sb-w);background:var(--sb-bg);color:var(--sb-fg);z-index:300;display:flex;flex-direction:column;transition:width .16s ease, transform .2s ease;box-shadow:2px 0 12px rgba(0,0,0,.12);}
+  .crm-sb-brand{display:flex;align-items:center;gap:9px;height:56px;padding:0 16px;color:#fff;font-weight:800;font-size:15px;letter-spacing:.2px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap;overflow:hidden;flex:0 0 auto;}
+  .crm-sb-mark{font-size:20px;flex:0 0 auto;}
+  .crm-sb-nav{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:10px 8px;display:flex;flex-direction:column;gap:2px;}
+  .crm-sb-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:9px;cursor:pointer;color:var(--sb-fg);font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;transition:background .12s,color .12s;}
+  .crm-sb-item:hover{background:var(--sb-bg2);color:#fff;}
+  .crm-sb-item.active{background:var(--sb-active);color:#fff;box-shadow:0 2px 8px rgba(59,130,246,.35);}
+  .crm-sb-ico{font-size:17px;flex:0 0 22px;text-align:center;}
+  .crm-sb-soon{margin-left:auto;font-size:9px;font-weight:700;background:rgba(255,255,255,.14);color:#e2e8f0;border-radius:8px;padding:2px 6px;letter-spacing:.3px;}
+  .crm-sb-item.active .crm-sb-soon{background:rgba(255,255,255,.22);}
+  .crm-sb-collapse{display:flex;align-items:center;gap:10px;margin:0 8px 8px;padding:9px 12px;border-radius:9px;cursor:pointer;color:var(--sb-fg-dim);font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;}
+  .crm-sb-collapse:hover{background:var(--sb-bg2);color:#fff;}
+  .crm-sb-collapse .crm-sb-ico{color:inherit;}
+  .crm-sb-foot{flex:0 0 auto;padding:11px 16px;border-top:1px solid rgba(255,255,255,.08);font-size:10.5px;color:var(--sb-fg-dim);white-space:nowrap;overflow:hidden;}
+  body.sb-collapsed .crm-sidebar{width:var(--sb-w-collapsed);}
+  body.sb-collapsed .crm-sb-name,
+  body.sb-collapsed .crm-sb-label,
+  body.sb-collapsed .crm-sb-soon,
+  body.sb-collapsed .crm-sb-foot span,
+  body.sb-collapsed .crm-sb-collapse span{display:none;}
+  body.sb-collapsed .crm-sb-item,
+  body.sb-collapsed .crm-sb-collapse{justify-content:center;gap:0;}
+  .section-main{margin-left:var(--sb-w);transition:margin-left .16s ease;min-height:100vh;}
+  body.sb-collapsed .section-main{margin-left:var(--sb-w-collapsed);}
+  .crm-sb-scrim{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:250;}
+  .crm-sb-burger{display:none;position:fixed;top:9px;left:9px;z-index:320;width:38px;height:38px;border-radius:9px;border:none;background:rgba(255,255,255,.18);color:#fff;font-size:18px;cursor:pointer;align-items:center;justify-content:center;}
+  .crm-soon-wrap{max-width:560px;margin:11vh auto;padding:40px 28px;text-align:center;}
+  .crm-soon-ico{font-size:52px;line-height:1;margin-bottom:14px;}
+  .crm-soon-h{font-size:22px;font-weight:800;color:var(--text);margin-bottom:8px;}
+  .crm-soon-p{font-size:14px;color:var(--text3);line-height:1.55;}
+  .crm-soon-badge{display:inline-block;margin-top:18px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--accent);background:var(--accent-light);border-radius:20px;padding:6px 14px;}
+  @media(max-width:768px){
+    .crm-sidebar{transform:translateX(-100%);box-shadow:none;}
+    body.sb-open .crm-sidebar{transform:translateX(0);box-shadow:2px 0 24px rgba(0,0,0,.35);}
+    body.sb-open .crm-sb-scrim{display:block;}
+    .section-main{margin-left:0 !important;}
+    .crm-sb-burger{display:flex;}
+    .crm-sb-collapse{display:none;}
+    .header{padding-left:58px !important;}
+    /* 'collapsed' is a desktop-only concept: on mobile the drawer is always full width */
+    body.sb-collapsed .crm-sidebar{width:var(--sb-w);}
+    body.sb-collapsed .crm-sb-name,
+    body.sb-collapsed .crm-sb-label,
+    body.sb-collapsed .crm-sb-soon,
+    body.sb-collapsed .crm-sb-foot span{display:inline;}
+    body.sb-collapsed .crm-sb-item{justify-content:flex-start;gap:12px;}
+  }
 </style>
 </head>
 <body>
@@ -1088,6 +1138,9 @@ let jvFilter = ''; // 'Hot','Warm','Cold' or ''
 let currentUser = JSON.parse(localStorage.getItem('crm_user')||'null');
 let lastSynced = localStorage.getItem('crm_last_synced') || '';
 let activeTab = 'leads'; // 'leads' | 'followups' | 'nationwide'
+// Phase 1: top-level section that wraps the tab system. 'outreach' = the current CRM (default).
+let activeSection = 'outreach'; // 'dashboard' | 'outreach' | 'lists' | 'probate' | 'dispo'
+try{ if(localStorage.getItem('crm_sb_collapsed')==='1'){ if(document.body) document.body.classList.add('sb-collapsed'); else document.addEventListener('DOMContentLoaded',function(){document.body.classList.add('sb-collapsed');}); } }catch(e){}
 let sortField = 'month'; let sortDir = 1;
 let leadScoreFilter = '';
 let tempScoreView = ''; // '' | 'Hot' | 'Warm' | 'Cold' -- combined view across DMV+Nationwide+Tasks
@@ -1321,6 +1374,55 @@ function renderLogin(){
 function loginAs(uid){const u=USERS.find(x=>x.id===uid);saveUser(u);document.getElementById('modal-container').innerHTML='';render();}
 function switchUser(){renderLogin();}
 
+// ===== Phase 1 sidebar shell =====
+// render() now wraps the existing app: it paints the left sidebar + a #section-main
+// container, then delegates the 'outreach' section to renderOutreach() (the ORIGINAL
+// app body, unchanged) or shows a "coming soon" placeholder for the other sections.
+const SB_ITEMS = [
+  {k:'dashboard', ic:'&#128202;', lb:'Dashboard',     soon:true},
+  {k:'outreach',  ic:'&#128227;', lb:'CRM Outreach',  soon:false},
+  {k:'lists',     ic:'&#128199;', lb:'List Tracking', soon:true},
+  {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', soon:true},
+  {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  soon:true}
+];
+function sidebarHTML(){
+  var nav = SB_ITEMS.map(function(it){
+    return '<div class="crm-sb-item '+(activeSection===it.k?'active':'')+'" onclick="setSection(\''+it.k+'\')" title="'+it.lb+'">'
+      +'<span class="crm-sb-ico">'+it.ic+'</span>'
+      +'<span class="crm-sb-label">'+it.lb+'</span>'
+      +(it.soon?'<span class="crm-sb-soon">SOON</span>':'')
+    +'</div>';
+  }).join('');
+  return '<button class="crm-sb-burger" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>'
+    +'<div class="crm-sb-scrim" onclick="toggleSidebar()"></div>'
+    +'<aside class="crm-sidebar">'
+      +'<div class="crm-sb-brand"><span class="crm-sb-mark">&#127968;</span><span class="crm-sb-name">DMV CRM</span></div>'
+      +'<nav class="crm-sb-nav">'+nav+'</nav>'
+      +'<div class="crm-sb-collapse" onclick="toggleSidebar()"><span class="crm-sb-ico">&#171;</span><span>Collapse</span></div>'
+      +'<div class="crm-sb-foot"><span>DMV Agent Outreach &middot; v2.0</span></div>'
+    +'</aside>';
+}
+function sbIsMobile(){ try{ return window.matchMedia('(max-width:768px)').matches; }catch(e){ return (document.documentElement.clientWidth||window.innerWidth)<=768; } }
+function setSection(s){ activeSection=s; if(sbIsMobile()) document.body.classList.remove('sb-open'); render(); }
+function toggleSidebar(){
+  if(sbIsMobile()){ document.body.classList.toggle('sb-open'); }
+  else { var c=document.body.classList.toggle('sb-collapsed'); try{ localStorage.setItem('crm_sb_collapsed', c?'1':'0'); }catch(e){} }
+}
+function renderPlaceholderSection(sec){
+  var meta = {
+    dashboard:{ic:'&#128202;', t:'Dashboard'},
+    lists:{ic:'&#128199;', t:'List Tracking'},
+    probate:{ic:'&#9878;&#65039;', t:'Probate'},
+    dispo:{ic:'&#127991;&#65039;', t:'Dispo'}
+  }[sec] || {ic:'', t:''};
+  document.getElementById('section-main').innerHTML =
+    '<div class="crm-soon-wrap">'
+    +'<div class="crm-soon-ico">'+meta.ic+'</div>'
+    +'<div class="crm-soon-h">'+meta.t+'</div>'
+    +'<div class="crm-soon-p">This section is coming soon. We&#8217;re building it next &mdash; for now, head back to <b>CRM Outreach</b> to manage your leads, tasks, and follow-ups.</div>'
+    +'<div class="crm-soon-badge">Coming soon</div>'
+    +'</div>';
+}
 function render(){
   // No active user: when auth is ON, always show the access-key login (never the legacy
   // name-picker, which would bypass authentication); when off, show the legacy picker.
@@ -1329,13 +1431,19 @@ function render(){
     else { renderLogin(); document.getElementById('app').innerHTML=''; }
     return;
   }
+  // Paint the sidebar shell + the main content container, then fill the active section.
+  document.getElementById('app').innerHTML = sidebarHTML() + '<div id="section-main" class="section-main"></div>';
+  if(activeSection!=='outreach'){ renderPlaceholderSection(activeSection); return; }
+  renderOutreach();
+}
+function renderOutreach(){
   const fuc=getFUCounts();
   const urgentBadge=(fuc.overdue+fuc.today)>0?`<span class="tab-badge">${fuc.overdue+fuc.today}</span>`:fuc.soon>0?`<span class="tab-badge-yellow">${fuc.soon}</span>`:'';
   const nwFuc=getNWFUCounts();
   const nwUrgentBadge=(nwFuc.overdue+nwFuc.today)>0?`<span class="tab-badge">${nwFuc.overdue+nwFuc.today}</span>`:nwFuc.soon>0?`<span class="tab-badge-yellow">${nwFuc.soon}</span>`:'';
   const u=currentUser;
   const syncMsg=APPS_SCRIPT_URL?(lastSynced?`Synced ${lastSynced}`:'Ready'):'Not connected';
-  document.getElementById('app').innerHTML=`
+  document.getElementById('section-main').innerHTML=`
     ${activityBannerHTML()}
     <div class="header">
       <div class="logo">&#127968; DMV Agent Outreach CRM <span class="logo-sub">Lead Management</span></div>
