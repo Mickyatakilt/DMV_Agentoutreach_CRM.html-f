@@ -291,6 +291,10 @@
   .pb-cand{color:#92400e;background:#fef3c7;}
   .pb-score{display:inline-block;color:#fff;font-weight:800;font-size:11px;padding:1px 8px;border-radius:10px;white-space:nowrap;}
   .pb-chk{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;color:var(--text2);cursor:pointer;}
+  tr.row-sel{background:#eff6ff;}
+  .dp-deal.row-sel{outline:2px solid #3b82f6;outline-offset:-1px;}
+  .dp-deal{position:relative;}
+  .dp-deal-chk{position:absolute;top:8px;left:8px;z-index:2;background:rgba(255,255,255,.9);border-radius:5px;padding:2px 4px;display:inline-flex;box-shadow:0 1px 3px rgba(0,0,0,.2);}
   .lt-touchrow{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12.5px;background:#fafbfc;}
   /* Dispo */
   .dp-grid{display:grid;grid-template-columns:minmax(320px,1.05fr) minmax(0,1.35fr);gap:18px;align-items:start;}
@@ -1465,7 +1469,7 @@ function switchUser(){renderLogin();}
 // container, then delegates the 'outreach' section to renderOutreach() (the ORIGINAL
 // app body, unchanged) or shows a "coming soon" placeholder for the other sections.
 const SB_ITEMS = [
-  {k:'dashboard', ic:'&#128202;', lb:'Dashboard',     soon:true},
+  {k:'dashboard', ic:'&#128202;', lb:'Dashboard',     soon:false},
   {k:'outreach',  ic:'&#128227;', lb:'CRM Outreach',  soon:false},
   {k:'lists',     ic:'&#128199;', lb:'List Tracking', soon:false},
   {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', soon:false},
@@ -1695,8 +1699,9 @@ function ltRenderListArea(){
           + (touches.length>3?'<span class="lt-touch" style="background:#e2e8f0">+'+(touches.length-3)+' more</span>':'')
         : '<span style="color:var(--text4);font-size:11.5px">No outreach yet</span>';
       var linkCell = l.link ? '<a href="'+(/^https?:/i.test(l.link)?esc(l.link):'#')+'" '+(/^https?:/i.test(l.link)?'target="_blank"':'onclick="event.preventDefault();openListDetail('+l.id+')"')+' class="detail-link">'+esc(l.link)+'&#8599;</a>' : '<span style="color:var(--text4)">&mdash;</span>';
-      return '<tr style="cursor:pointer" onclick="openListDetail('+l.id+')">'
-        + '<td style="border-left:4px solid '+cc[0]+'"><div style="font-weight:600;font-size:13px">'+esc(l.name)+'</div><div style="margin-top:3px">'+ltCatBadge(l.category)+' '+ltRegionChip(l.region)+'</div></td>'
+      return '<tr style="cursor:pointer"'+(ltSel.has(+l.id)?' class="row-sel"':'')+' onclick="openListDetail('+l.id+')">'
+        + '<td onclick="event.stopPropagation()" style="border-left:4px solid '+cc[0]+'">'+selChk('ltToggle',l.id,ltSel.has(+l.id))+'</td>'
+        + '<td><div style="font-weight:600;font-size:13px">'+esc(l.name)+'</div><div style="margin-top:3px">'+ltCatBadge(l.category)+' '+ltRegionChip(l.region)+'</div></td>'
         + '<td style="white-space:nowrap;font-weight:600">'+(l.amount?esc(l.amount):'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
         + '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="event.stopPropagation()">'+linkCell+' '+ltGhlBtn(l,true)+'</td>'
         + '<td style="max-width:260px">'+touchHtml+'</td>'
@@ -1704,19 +1709,35 @@ function ltRenderListArea(){
         + '<td style="white-space:nowrap">'+ltDuePill(l.dueDate)+'</td>'
         + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'
           + '<button class="btn btn-secondary btn-sm" title="Log a text/call round now" onclick="logListText('+l.id+')">&#128172; Log</button> '
-          + '<button class="btn btn-secondary btn-sm" onclick="openListEditModal('+l.id+')">&#9998;</button>'
+          + '<button class="btn btn-secondary btn-sm" onclick="openListEditModal('+l.id+')">&#9998;</button> '
+          + '<button class="btn btn-secondary btn-sm" title="Delete" onclick="deleteListEntry('+l.id+')">&#128465;</button>'
         + '</td>'
       + '</tr>';
     }).join('');
+    var gids=JSON.stringify(gr.map(function(l){return +l.id;}));
+    var gAll=gr.length && gr.every(function(l){ return ltSel.has(+l.id); });
     return '<div class="lt-group">'
       + '<div class="lt-group-h">&#128197; '+esc(p||'(no month)')+' <span class="cnt">'+gr.length+' list'+(gr.length!==1?'s':'')+'</span>'
         + '<span class="rec">'+recs.toLocaleString()+' records</span></div>'
       + '<div class="table-container"><div class="table-wrap"><table>'
-        + '<thead><tr><th>List Name</th><th>Amount</th><th>Link</th><th>Outreach Log</th><th>Last Texted</th><th>Next Due</th><th></th></tr></thead>'
+        + '<thead><tr><th style="width:34px"><input type="checkbox" '+(gAll?'checked':'')+' onchange=\'ltToggleGroup('+gids+',this.checked)\' style="width:15px;height:15px;cursor:pointer"></th><th>List Name</th><th>Amount</th><th>Link</th><th>Outreach Log</th><th>Last Texted</th><th>Next Due</th><th></th></tr></thead>'
         + '<tbody>'+body+'</tbody></table></div></div>'
       + '</div>';
   }).join('');
-  area.innerHTML=html;
+  area.innerHTML=bulkBar(ltSel.size,'ltClearSel()','ltDeleteSelected()')+html;
+}
+function ltClearSel(){ ltSel.clear(); ltRenderListArea(); }
+function ltToggleGroup(ids,c){ ids.forEach(function(id){ if(c)ltSel.add(+id); else ltSel.delete(+id); }); ltRenderListArea(); }
+function ltDeleteSelected(){
+  var ids=[...ltSel]; if(!ids.length) return;
+  var removed=(crmLists||[]).filter(function(l){ return ltSel.has(+l.id); });
+  deleteWithUndo({
+    label:'Deleted '+ids.length+' list'+(ids.length!==1?'s':''),
+    removeMem:function(){ crmLists=(crmLists||[]).filter(function(l){ return !ltSel.has(+l.id); }); ltSel.clear(); },
+    restoreMem:function(){ crmLists=(crmLists||[]).concat(removed); },
+    dbDelete:function(){ return sbFetch(LT_PATH+'?id=in.('+ids.join(',')+')','DELETE'); },
+    reRender:function(){ if(activeSection==='lists') renderLists(); }
+  });
 }
 
 // ---- What's Due queue ----
@@ -1856,12 +1877,16 @@ async function saveListEntry(id){
   }
   closeModal(); renderLists();
 }
-async function deleteListEntry(id){
-  if(!confirm('Delete this list and its outreach log? This cannot be undone.')) return;
-  crmLists=(crmLists||[]).filter(function(l){ return +l.id!==+id; });
-  closeModal(); renderLists();
-  try { await crmListDeleteDb(id); showToast('List deleted','success'); }
-  catch(e){ showToast('Delete failed to sync — Refresh','error'); }
+function deleteListEntry(id){
+  var l=crmListById(id); if(!l) return;
+  closeModal();
+  deleteWithUndo({
+    label:'List deleted',
+    removeMem:function(){ crmLists=(crmLists||[]).filter(function(x){ return +x.id!==+id; }); ltSel.delete(+id); },
+    restoreMem:function(){ crmLists=(crmLists||[]).concat([l]); },
+    dbDelete:function(){ return crmListDeleteDb(id); },
+    reRender:function(){ if(activeSection==='lists') renderLists(); }
+  });
 }
 
 // ---- Touches ----
@@ -2133,11 +2158,29 @@ function dispoMessageText(p){
 async function dispoCopyLink(id){ try{ await navigator.clipboard.writeText(propShareUrl(id)); showToast('Link copied','success'); }catch(e){ showToast('Copy failed','error'); } }
 async function dispoCopyMessage(id){ var p=crmPropById(id)||dispoDraft; try{ await navigator.clipboard.writeText(dispoMessageText(p)); showToast('Message copied','success'); }catch(e){ showToast('Copy failed','error'); } }
 function dispoEditDeal(id){ var p=crmPropById(id); if(!p) return; dispoDraft=JSON.parse(JSON.stringify(p)); renderDispo(); setTimeout(function(){ dispoShowLink(id); },0); }
-async function dispoDeleteDeal(id){
-  if(!confirm('Delete this deal? The public link will stop working.')) return;
-  try{ await crmPropDeleteDb(id); crmProps=(crmProps||[]).filter(function(p){return +p.id!==+id;});
-    if(+dispoDraft.id===+id) dispoClearDraft(); else renderDispo(); showToast('Deal deleted','success'); }
-  catch(e){ showToast('Delete failed','error'); }
+function dispoDeleteDeal(id){
+  var p=crmPropById(id); if(!p) return;
+  if(+dispoDraft.id===+id) dispoClearDraft();
+  deleteWithUndo({
+    label:'Deal deleted — its public link stops working',
+    removeMem:function(){ crmProps=(crmProps||[]).filter(function(x){return +x.id!==+id;}); dpSel.delete(+id); },
+    restoreMem:function(){ crmProps=(crmProps||[]).concat([p]); },
+    dbDelete:function(){ return crmPropDeleteDb(id); },
+    reRender:function(){ if(activeSection==='dispo') renderDispo(); }
+  });
+}
+function dpClearSel(){ dpSel.clear(); var el=document.getElementById('dp-deals'); if(el) el.innerHTML=dispoDealsHTML(); }
+function dpDeleteSelected(){
+  var ids=[...dpSel]; if(!ids.length) return;
+  var removed=(crmProps||[]).filter(function(p){ return dpSel.has(+p.id); });
+  if(removed.some(function(p){ return +dispoDraft.id===+p.id; })) dispoClearDraft();
+  deleteWithUndo({
+    label:'Deleted '+ids.length+' deal'+(ids.length!==1?'s':''),
+    removeMem:function(){ crmProps=(crmProps||[]).filter(function(p){ return !dpSel.has(+p.id); }); dpSel.clear(); },
+    restoreMem:function(){ crmProps=(crmProps||[]).concat(removed); },
+    dbDelete:function(){ return sbFetch(PROP_PATH+'?id=in.('+ids.join(',')+')','DELETE'); },
+    reRender:function(){ if(activeSection==='dispo') renderDispo(); }
+  });
 }
 function dispoClearDraft(){ dispoDraft={id:null,address:'',price:'',beds:'',baths:'',sqft:'',notes:'',photos:[],photosLink:''}; renderDispo(); }
 
@@ -2223,10 +2266,10 @@ function renderDispo(){
 function dispoDealsHTML(){
   var list=(crmProps||[]);
   if(!list.length) return '<div style="padding:24px;text-align:center;color:var(--text4);font-size:13px;border:1px dashed var(--border);border-radius:10px">No saved deals yet. Build one above and hit Save.</div>';
-  return '<div class="dp-deals-grid">'+list.map(function(p){
+  return bulkBar(dpSel.size,'dpClearSel()','dpDeleteSelected()')+'<div class="dp-deals-grid">'+list.map(function(p){
     var thumb=(p.photos&&p.photos[0])?'<div class="dp-deal-img" style="background-image:url(\''+esc(p.photos[0])+'\')"></div>':'<div class="dp-deal-img dp-deal-noimg">&#127968;</div>';
     var spec=[]; if(p.beds) spec.push(p.beds+'bd'); if(p.baths) spec.push(p.baths+'ba'); if(p.sqft) spec.push(p.sqft+'sqft');
-    return '<div class="dp-deal">'+thumb
+    return '<div class="dp-deal'+(dpSel.has(+p.id)?' row-sel':'')+'"><label class="dp-deal-chk">'+selChk('dpToggle',p.id,dpSel.has(+p.id))+'</label>'+thumb
       +'<div class="dp-deal-body">'
         +'<div class="dp-deal-addr">'+esc(p.address||'(no address)')+'</div>'
         +'<div class="dp-deal-meta">'+(p.price?'<b>'+esc(p.price)+'</b>':'')+(spec.length?' &middot; '+esc(spec.join('/')):'')+(p.photos&&p.photos.length?' &middot; '+p.photos.length+' 📷':'')+'</div>'
@@ -2259,7 +2302,8 @@ function byRenderArea(){
   }
   var body=rows.map(function(b){
     var contact=[b.phone?esc(b.phone):'',b.email?esc(b.email):''].filter(Boolean).join('<br>')||'<span style="color:var(--text4)">&mdash;</span>';
-    return '<tr>'
+    return '<tr'+(bySel.has(+b.id)?' class="row-sel"':'')+'>'
+      + '<td>'+selChk('byToggle',b.id,bySel.has(+b.id))+'</td>'
       + '<td><div style="font-weight:600;font-size:13px">'+esc(b.name||'(no name)')+'</div>'+(b.tags?'<div style="margin-top:2px;font-size:11px;color:var(--text3)">'+esc(b.tags)+'</div>':'')+'</td>'
       + '<td style="white-space:nowrap">'+(b.area?ltRegionChip(b.area.length<=3?b.area.toUpperCase():'')||'<span class="lt-chip" style="color:#475569;background:#e2e8f0">'+esc(b.area)+'</span>':'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
       + '<td style="white-space:nowrap"><span class="dp-hot'+(b.hot?'':' no')+'">'+(b.hot?'&#128293; HOT':'&mdash;')+'</span></td>'
@@ -2267,13 +2311,28 @@ function byRenderArea(){
       + '<td style="max-width:220px;font-size:12px;color:var(--text2)">'+(b.buyBox?esc(b.buyBox):'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
       + '<td style="white-space:nowrap">'
         + '<button class="btn btn-secondary btn-sm" onclick="openBuyerEditModal('+b.id+')">&#9998;</button> '
-        + '<button class="btn btn-secondary btn-sm" onclick="deleteBuyer('+b.id+')" title="Delete">&#10005;</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="deleteBuyer('+b.id+')" title="Delete">&#128465;</button>'
       + '</td>'
     + '</tr>';
   }).join('');
-  area.innerHTML='<div class="table-container"><div class="table-wrap"><table>'
-    + '<thead><tr><th>Name</th><th>Area</th><th>Hot</th><th>Contact</th><th>Buy Box</th><th></th></tr></thead>'
+  var allSel=rows.length && rows.every(function(b){ return bySel.has(+b.id); });
+  area.innerHTML=bulkBar(bySel.size,'byClearSel()','byDeleteSelected()')
+    + '<div class="table-container"><div class="table-wrap"><table>'
+    + '<thead><tr><th style="width:34px"><input type="checkbox" '+(allSel?'checked':'')+' onchange="byToggleAll(this.checked)" style="width:15px;height:15px;cursor:pointer"></th><th>Name</th><th>Area</th><th>Hot</th><th>Contact</th><th>Buy Box</th><th></th></tr></thead>'
     + '<tbody>'+body+'</tbody></table></div></div>';
+}
+function byClearSel(){ bySel.clear(); byRenderArea(); }
+function byToggleAll(c){ var rows=byFilteredBuyers(); if(c) rows.forEach(function(b){ bySel.add(+b.id); }); else rows.forEach(function(b){ bySel.delete(+b.id); }); byRenderArea(); }
+function byDeleteSelected(){
+  var ids=[...bySel]; if(!ids.length) return;
+  var removed=(crmBuyers||[]).filter(function(b){ return bySel.has(+b.id); });
+  deleteWithUndo({
+    label:'Deleted '+ids.length+' buyer'+(ids.length!==1?'s':''),
+    removeMem:function(){ crmBuyers=(crmBuyers||[]).filter(function(b){ return !bySel.has(+b.id); }); bySel.clear(); },
+    restoreMem:function(){ crmBuyers=(crmBuyers||[]).concat(removed); },
+    dbDelete:function(){ return sbFetch(BUY_PATH+'?id=in.('+ids.join(',')+')','DELETE'); },
+    reRender:function(){ if(activeSection==='dispo') renderDispo(); }
+  });
 }
 
 // ---- Add / Edit buyer ----
@@ -2330,13 +2389,15 @@ async function saveBuyer(id){
   }
   closeModal(); renderDispo();
 }
-async function deleteBuyer(id){
+function deleteBuyer(id){
   var b=crmBuyerById(id); if(!b) return;
-  if(!confirm('Delete buyer "'+(b.name||'this buyer')+'"? This cannot be undone.')) return;
-  crmBuyers=(crmBuyers||[]).filter(function(x){ return +x.id!==+id; });
-  renderDispo();
-  try { await crmBuyerDeleteDb(id); showToast('Buyer deleted','success'); }
-  catch(e){ showToast('Delete failed to sync — Refresh','error'); }
+  deleteWithUndo({
+    label:'Buyer deleted',
+    removeMem:function(){ crmBuyers=(crmBuyers||[]).filter(function(x){ return +x.id!==+id; }); bySel.delete(+id); },
+    restoreMem:function(){ crmBuyers=(crmBuyers||[]).concat([b]); },
+    dbDelete:function(){ return crmBuyerDeleteDb(id); },
+    reRender:function(){ if(activeSection==='dispo') renderDispo(); }
+  });
 }
 
 // ---- CSV import / export (GHL-sample compatible) ----
@@ -2747,20 +2808,36 @@ function pbRenderArea(){
     var sentCell = p.sentOn
       ? pbSentBadge(p)+(p.sentTag?'<div style="font-size:11px;color:var(--text4);margin-top:2px">'+esc(p.sentTag)+'</div>':'')
       : '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();pbSendGhl('+p.id+')" title="Copy the GHL tag, open GHL, and stamp today as the send date">&#128241; Send</button>';
-    return '<tr style="cursor:pointer" onclick="openProbateDetail('+p.id+')">'
-      + '<td style="border-left:4px solid '+(p.sentOn?'#059669':'#cbd5e1')+';white-space:nowrap;font-size:11.5px">'+pbStateChip(p.state)+'<div style="color:var(--text4);margin-top:3px">'+(p.datePulled?ltFmtDate(p.datePulled):'')+'</div></td>'
+    return '<tr style="cursor:pointer"'+(pbSel.has(+p.id)?' class="row-sel"':'')+' onclick="openProbateDetail('+p.id+')">'
+      + '<td onclick="event.stopPropagation()" style="border-left:4px solid '+(p.sentOn?'#059669':'#cbd5e1')+'">'+selChk('pbToggle',p.id,pbSel.has(+p.id))+'</td>'
+      + '<td style="white-space:nowrap;font-size:11.5px">'+pbStateChip(p.state)+'<div style="color:var(--text4);margin-top:3px">'+(p.datePulled?ltFmtDate(p.datePulled):'')+'</div></td>'
       + '<td style="max-width:230px">'+addr+'</td>'
       + '<td style="max-width:230px">'+decRep+'</td>'
       + '<td style="white-space:nowrap">'+pbScorePill(p.score)+'</td>'
       + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'+sentCell+'</td>'
       + '<td style="white-space:nowrap">'+ltDuePill(p.followUpDate)+'</td>'
-      + '<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">&#9998;</button></td>'
+      + '<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">&#9998;</button> <button class="btn btn-secondary btn-sm" title="Delete" onclick="deleteProbateLead('+p.id+')">&#128465;</button></td>'
     + '</tr>';
   }).join('');
   var cap = rows.length>PB_CAP ? '<div style="font-size:12px;color:var(--text4);padding:8px 2px">Showing first '+PB_CAP+' of '+rows.length.toLocaleString()+' — refine the search or filters to narrow down.</div>' : '';
-  area.innerHTML='<div class="table-container"><div class="table-wrap"><table>'
-    + '<thead><tr><th>Pulled</th><th>Property</th><th>Decedent / PR</th><th>Score</th><th>Send to GHL</th><th>Follow-up</th><th></th></tr></thead>'
+  var allShownSel = shown.length && shown.every(function(p){ return pbSel.has(+p.id); });
+  area.innerHTML=bulkBar(pbSel.size,'pbClearSel()','pbDeleteSelected()')
+    + '<div class="table-container"><div class="table-wrap"><table>'
+    + '<thead><tr><th style="width:34px"><input type="checkbox" '+(allShownSel?'checked':'')+' onchange="pbToggleAll(this.checked)" style="width:15px;height:15px;cursor:pointer"></th><th>State</th><th>Property</th><th>Decedent / PR</th><th>Score</th><th>Send to GHL</th><th>Follow-up</th><th></th></tr></thead>'
     + '<tbody>'+body+'</tbody></table></div></div>'+cap;
+}
+function pbClearSel(){ pbSel.clear(); pbRenderArea(); }
+function pbToggleAll(c){ var shown=pbFilteredLeads().slice(0,PB_CAP); if(c) shown.forEach(function(p){ pbSel.add(+p.id); }); else shown.forEach(function(p){ pbSel.delete(+p.id); }); pbRenderArea(); }
+function pbDeleteSelected(){
+  var ids=[...pbSel]; if(!ids.length) return;
+  var removed=(crmProbate||[]).filter(function(p){ return pbSel.has(+p.id); });
+  deleteWithUndo({
+    label:'Deleted '+ids.length+' probate lead'+(ids.length!==1?'s':''),
+    removeMem:function(){ crmProbate=(crmProbate||[]).filter(function(p){ return !pbSel.has(+p.id); }); pbSel.clear(); },
+    restoreMem:function(){ crmProbate=(crmProbate||[]).concat(removed); },
+    dbDelete:function(){ return sbFetch(PB_PATH+'?id=in.('+ids.join(',')+')','DELETE'); },
+    reRender:function(){ if(activeSection==='probate') renderProbate(); }
+  });
 }
 
 // ---- Detail modal ----
@@ -2834,12 +2911,16 @@ async function saveProbateEdit(id){
   catch(e){ showToast('Saved locally, cloud sync failed — Refresh and retry','error'); }
   closeModal(); renderProbate();
 }
-async function deleteProbateLead(id){
-  if(!confirm('Delete this probate lead from the CRM? (It stays in the scanner; a future sync will NOT re-add it unless you clear it there.)')) return;
-  crmProbate=(crmProbate||[]).filter(function(p){ return +p.id!==+id; });
-  closeModal(); renderProbate();
-  try{ await crmProbateDeleteDb(id); showToast('Probate lead deleted','success'); }
-  catch(e){ showToast('Delete failed to sync — Refresh','error'); }
+function deleteProbateLead(id){
+  var p=crmProbateById(id); if(!p) return;
+  closeModal();
+  deleteWithUndo({
+    label:'Probate lead deleted',
+    removeMem:function(){ crmProbate=(crmProbate||[]).filter(function(x){ return +x.id!==+id; }); pbSel.delete(+id); },
+    restoreMem:function(){ crmProbate=(crmProbate||[]).concat([p]); },
+    dbDelete:function(){ return crmProbateDeleteDb(id); },
+    reRender:function(){ if(activeSection==='probate') renderProbate(); }
+  });
 }
 
 // ---- CSV export ----
@@ -2858,6 +2939,144 @@ function exportProbateCSV(){
 }
 // =================== end Probate ===================
 
+// =================== Shared: delete-with-undo ===================
+// Optimistic delete used by List Tracking, Probate, Buyers, and Deals. Removes the row(s)
+// from the in-memory array + re-renders immediately, shows a 5-6s Undo toast, and only
+// hits the DB AFTER the undo window closes. Undo cancels the DB delete and restores the
+// rows — no schema change, no re-insert, ids preserved. A new delete commits any still-
+// pending one first. Commit fires at 6200ms so it's always after the toast's 6000ms Undo.
+var __pendingDel = null;
+// Multi-select sets per section (ids).
+var ltSel=new Set(), pbSel=new Set(), bySel=new Set(), dpSel=new Set();
+function pbToggle(id,c){ if(c)pbSel.add(+id); else pbSel.delete(+id); pbRenderArea(); }
+function ltToggle(id,c){ if(c)ltSel.add(+id); else ltSel.delete(+id); ltRenderListArea(); }
+function byToggle(id,c){ if(c)bySel.add(+id); else bySel.delete(+id); byRenderArea(); }
+function dpToggle(id,c){ if(c)dpSel.add(+id); else dpSel.delete(+id); var el=document.getElementById('dp-deals'); if(el) el.innerHTML=dispoDealsHTML(); }
+// Bulk action bar shown above a table when rows are selected.
+function bulkBar(count, clearFn, delFn){
+  if(!count) return '';
+  return '<div style="background:#fff3cd;border:1.5px solid #fcd34d;border-radius:8px;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
+    + '<span style="font-size:13px;font-weight:600;color:#b45309">&#10003; '+count+' selected</span>'
+    + '<div style="display:flex;gap:8px"><button class="btn btn-secondary btn-sm" onclick="'+clearFn+'">Clear</button>'
+    + '<button class="btn btn-danger btn-sm" onclick="'+delFn+'">&#128465; Delete '+count+'</button></div></div>';
+}
+function deleteWithUndo(opts){
+  if(__pendingDel){ var p=__pendingDel; __pendingDel=null; clearTimeout(p.timer); p.commit(); }
+  opts.removeMem(); opts.reRender();
+  var committed=false;
+  function commit(){ if(committed) return; committed=true;
+    Promise.resolve().then(opts.dbDelete).catch(function(){ showToast('Delete failed to sync — Refresh','error'); }); }
+  var timer=setTimeout(function(){ __pendingDel=null; commit(); }, 6200);
+  __pendingDel={timer:timer, commit:commit};
+  showToast(opts.label,'warning',function(){
+    clearTimeout(timer); __pendingDel=null; opts.restoreMem(); opts.reRender();
+    showToast('Restored','success');
+  });
+}
+// A checkbox that stops row-click propagation, bound to a selection Set via a toggle fn.
+function selChk(setName, id, checked){
+  return '<input type="checkbox" '+(checked?'checked':'')+' onclick="event.stopPropagation()" onchange="'+setName+'('+id+',this.checked)" style="width:15px;height:15px;cursor:pointer">';
+}
+// =================== end shared delete ===================
+
+// =================== Dashboard (KPIs + Follow-up Hub) ===================
+function ltCatCount(cat){ return (crmLists||[]).filter(function(l){ return (l.category||'seller')===cat; }).length; }
+
+// Every follow-up across the whole CRM, unified into {kind,id,date,label,sub}.
+function dashFollowups(){
+  var items=[];
+  (leads||[]).forEach(function(l){ if(!l.deleted && l.followUpDate) items.push({kind:'lead',id:l.id,date:l.followUpDate,label:l.address||l.name||('Lead #'+l.id),sub:(l.nationwide==='Yes'?'Nationwide lead':'DMV lead')}); });
+  (jvLeads||[]).forEach(function(t){ if(!t.deleted && t.followUpDate) items.push({kind:'task',id:t.id,date:t.followUpDate,label:t.name||t.location||('Task #'+t.id),sub:'Task'}); });
+  (crmProbate||[]).forEach(function(p){ if(p.followUpDate) items.push({kind:'probate',id:p.id,date:p.followUpDate,label:p.decedentName||p.propertyAddress||('Probate #'+p.id),sub:'Probate'+(p.county?' · '+p.county:'')}); });
+  (crmLists||[]).forEach(function(l){ if(l.dueDate) items.push({kind:'list',id:l.id,date:l.dueDate,label:l.name||('List #'+l.id),sub:'List re-outreach'}); });
+  return items;
+}
+// Open the right record from a dashboard follow-up row (switches section, then the modal).
+function dashOpen(kind,id){
+  if(kind==='list'){ setSection('lists'); setTimeout(function(){ openListDetail(id); },40); return; }
+  if(kind==='probate'){ setSection('probate'); setTimeout(function(){ openProbateDetail(id); },40); return; }
+  if(kind==='task'){ setSection('outreach'); setTimeout(function(){ openJVDetail(id); },40); return; }
+  setSection('outreach'); setTimeout(function(){ openDetail(id); },40);
+}
+function dashKindIcon(k){ return k==='lead'?'&#127968;':k==='task'?'&#9989;':k==='probate'?'&#9878;&#65039;':'&#128199;'; }
+
+function renderDashboard(){
+  var host=document.getElementById('section-main'); if(!host) return;
+  // Dashboard reads across every section, so make sure the lazy-loaded tables are in.
+  var need=[];
+  if(crmLists===null)   need.push(crmListsFetch());
+  if(crmProbate===null) need.push(crmProbateFetch());
+  if(crmBuyers===null)  need.push(crmBuyersFetch());
+  if(crmProps===null)   need.push(crmPropsFetch());
+  if(need.length){
+    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128202; Dashboard</h2></div></div>'
+      +'<div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading your numbers&hellip;</div></div>';
+    Promise.all(need).then(function(){ if(activeSection==='dashboard') renderDashboard(); });
+    return;
+  }
+  var fu=dashFollowups();
+  var overdue=[],todayd=[],next7=[];
+  fu.forEach(function(it){ var n=ltDaysUntil(it.date); if(n===null) return; if(n<0) overdue.push(it); else if(n===0) todayd.push(it); else if(n<=7) next7.push(it); });
+  function byDate(a,b){ return (a.date||'').localeCompare(b.date||''); }
+  overdue.sort(byDate); todayd.sort(byDate); next7.sort(byDate);
+  var dueNow=overdue.length+todayd.length;
+  var totalLeads=(leads||[]).filter(function(l){return !l.deleted;}).length;
+  var totalTasks=(jvLeads||[]).filter(function(t){return !t.deleted;}).length;
+  var probSent=(crmProbate||[]).filter(function(p){return p.sentOn;}).length;
+
+  function stat(n,label,color){ return '<div class="lt-stat"><div class="n"'+(color?' style="color:'+color+'"':'')+'>'+n+'</div><div class="l">'+label+'</div></div>'; }
+  function fuCol(cls,title,arr){
+    var items = arr.length
+      ? arr.map(function(it){ return '<div class="lt-due-item" onclick="dashOpen(\''+it.kind+'\','+it.id+')">'
+          + '<span>'+dashKindIcon(it.kind)+' '+esc(it.label)+' <span style="color:var(--text4);font-size:11px">· '+esc(it.sub)+'</span></span>'
+          + '<span style="color:var(--text3);white-space:nowrap">'+ltFmtDate(it.date)+'</span></div>'; }).join('')
+      : '<div class="lt-due-empty">Nothing here. &#127881;</div>';
+    return '<div class="lt-due-col '+cls+'"><h4>'+title+'<span>'+arr.length+'</span></h4>'+items+'</div>';
+  }
+
+  host.innerHTML =
+    '<div class="lt-wrap">'
+    + '<div class="lt-head"><div><h2>&#128202; Dashboard</h2>'
+      + '<p>Your whole pipeline at a glance &mdash; and one place that shows every follow-up due across Outreach, Tasks, Probate, and Lists so nothing slips.</p></div>'
+      + '<div class="lt-actions"><button class="btn btn-secondary btn-sm" onclick="crmLists=null;crmProbate=null;crmBuyers=null;crmProps=null;renderDashboard()">&#8635; Refresh</button></div>'
+    + '</div>'
+    // Urgent row
+    + '<div class="lt-stats">'
+      + stat(dueNow,'Follow-ups due now', dueNow?'#dc2626':'#059669')
+      + stat(overdue.length,'Overdue', overdue.length?'#dc2626':null)
+      + stat(todayd.length,'Due today', todayd.length?'#d97706':null)
+      + stat(next7.length,'Due next 7 days', next7.length?'#2563eb':null)
+    + '</div>'
+    // Inventory row
+    + '<div class="lt-stats" style="margin-top:12px">'
+      + stat(totalLeads,'Leads')
+      + stat(totalTasks,'Tasks')
+      + stat((crmProbate||[]).length,'Probate leads')
+      + stat((crmBuyers||[]).length,'Buyers')
+      + stat((crmProps||[]).length,'Saved deals')
+    + '</div>'
+    // Lists-by-type row (Mike: how many lists we have for Realtors / Wholesalers / etc.)
+    + '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin:18px 0 8px">&#128199; Lists by type</div>'
+    + '<div class="lt-stats">'
+      + stat((crmLists||[]).length,'Total lists')
+      + stat(ltCatCount('realtor'),'Realtor lists','#059669')
+      + stat(ltCatCount('wholesaler'),'Wholesaler lists','#7c3aed')
+      + stat(ltCatCount('seller'),'Seller lists')
+      + stat(ltCatCount('buyer'),'Buyer lists','#d97706')
+    + '</div>'
+    // Follow-up hub
+    + '<div class="lt-due" style="margin-top:22px"><div class="lt-due-h">&#9200; Follow-Up Hub &mdash; everything due, all sections</div>'
+      + (fu.length? ('<div class="lt-due-grid">'
+        + fuCol('od','&#128308; Overdue',overdue)
+        + fuCol('td','&#128992; Due Today',todayd)
+        + fuCol('up','&#128309; Next 7 Days',next7)
+        + '</div>')
+        : '<div class="lt-due-empty">No follow-up dates set anywhere yet. Set a follow-up on a lead, task, probate lead, or list and it shows up here.</div>')
+    + '</div>'
+    + '</div>';
+}
+// =================== end Dashboard ===================
+
 function render(){
   // No active user: when auth is ON, always show the access-key login (never the legacy
   // name-picker, which would bypass authentication); when off, show the legacy picker.
@@ -2871,6 +3090,7 @@ function render(){
   if(activeSection==='lists'){ renderLists(); return; }
   if(activeSection==='dispo'){ renderDispo(); return; }
   if(activeSection==='probate'){ renderProbate(); return; }
+  if(activeSection==='dashboard'){ renderDashboard(); return; }
   if(activeSection!=='outreach'){ renderPlaceholderSection(activeSection); return; }
   renderOutreach();
 }
