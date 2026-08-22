@@ -286,6 +286,18 @@
   .lt-due-pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;}
   .lt-lbl{font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;}
   .lt-touchrow{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12.5px;background:#fafbfc;}
+  /* Dispo */
+  .dp-grid{display:grid;grid-template-columns:minmax(320px,1.05fr) minmax(0,1.35fr);gap:18px;align-items:start;}
+  .dp-card{background:var(--card,#fff);border:1.5px solid var(--border);border-radius:14px;padding:16px 18px;}
+  .dp-card h3{font-size:14px;font-weight:800;letter-spacing:-.01em;margin-bottom:2px;}
+  .dp-card .sub{font-size:11.5px;color:var(--text3);margin-bottom:12px;line-height:1.5;}
+  .dp-form{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .dp-form .full{grid-column:1 / -1;}
+  .dp-preview{white-space:pre-wrap;font-size:13px;line-height:1.55;background:#0f172a;color:#e2e8f0;border-radius:10px;padding:14px 16px;min-height:120px;font-family:ui-monospace,Menlo,Consolas,monospace;}
+  .dp-target{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0;font-size:12.5px;}
+  .dp-hot{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.3px;padding:1px 7px;border-radius:5px;color:#b91c1c;background:#fee2e2;}
+  .dp-hot.no{color:#64748b;background:#f1f5f9;}
+  @media(max-width:900px){ .dp-grid{grid-template-columns:1fr;} }
   @media(max-width:768px){
     .crm-sidebar{transform:translateX(-100%);box-shadow:none;}
     body.sb-open .crm-sidebar{transform:translateX(0);box-shadow:2px 0 24px rgba(0,0,0,.35);}
@@ -1417,7 +1429,7 @@ const SB_ITEMS = [
   {k:'outreach',  ic:'&#128227;', lb:'CRM Outreach',  soon:false},
   {k:'lists',     ic:'&#128199;', lb:'List Tracking', soon:false},
   {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', soon:true},
-  {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  soon:true}
+  {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  soon:false}
 ];
 function sidebarHTML(){
   var nav = SB_ITEMS.map(function(it){
@@ -1477,10 +1489,10 @@ function ltCatBadge(c){ c=c||'seller'; var col=ltCatColor(c); return '<span clas
 
 // ---- DB <-> memory mapping ----
 function ltFromDb(r){ return {id:r.id,name:r.name||'',period:r.period||'',region:r.region||'',amount:r.amount||'',
-  link:r.link||'',ghlLink:r.ghl_link||'',category:r.category||'seller',dateAdded:r.date_added||'',
+  link:r.link||'',ghlLink:r.ghl_link||'',ghlTag:r.ghl_tag||'',category:r.category||'seller',dateAdded:r.date_added||'',
   lastTexted:r.last_texted||'',dueDate:r.due_date||'',notes:r.notes||'',touches:Array.isArray(r.touches)?r.touches:[]}; }
 function ltToDb(l){ return {name:l.name||'',period:l.period||'',region:l.region||'',amount:l.amount||'',
-  link:l.link||'',ghl_link:l.ghlLink||'',category:l.category||'seller',date_added:l.dateAdded||null,
+  link:l.link||'',ghl_link:l.ghlLink||'',ghl_tag:l.ghlTag||'',category:l.category||'seller',date_added:l.dateAdded||null,
   last_texted:l.lastTexted||null,due_date:l.dueDate||null,notes:l.notes||'',touches:l.touches||[],updated_at:new Date().toISOString()}; }
 async function crmListsFetch(){
   try { var rows=await sbFetch(LT_PATH+'?select=*&order=id.asc&limit=2000'); crmLists=(rows||[]).map(ltFromDb); }
@@ -1521,10 +1533,26 @@ function ltDuePill(d){
   else { sty='color:#334155;background:#f1f5f9'; txt=lbl; }
   return '<span class="lt-due-pill" style="'+sty+'">'+txt+'</span>';
 }
+// Effective GHL tag for a list = its explicit ghlTag, else the list name (so every list
+// auto-links by name — the "tag every contact with the list name on import" workflow).
+function ltEffectiveTag(l){ return ((l&&l.ghlTag||'').trim()) || ((l&&l.name||'').trim()); }
+// GHL has no reliable public URL param to pre-filter contacts by tag, so the tag path opens
+// the location's contacts list and copies the tag for you to drop into GHL's Tag filter.
 function ltGhlBtn(l,small){
-  if(!l.ghlLink) return '';
-  var href=/^https?:/i.test(l.ghlLink)?esc(l.ghlLink):('https://'+esc(l.ghlLink));
-  return '<a href="'+href+'" target="_blank" class="btn btn-secondary btn-sm" onclick="event.stopPropagation()" title="Open this list\'s contacts in GoHighLevel">&#128241; GHL&#8599;</a>';
+  // Manual pasted link (e.g. a saved Smart List URL) wins as the override.
+  if(l.ghlLink){
+    var href=/^https?:/i.test(l.ghlLink)?esc(l.ghlLink):('https://'+esc(l.ghlLink));
+    return '<a href="'+href+'" target="_blank" class="btn btn-secondary btn-sm" onclick="event.stopPropagation()" title="Open this list\'s saved GoHighLevel link">&#128241; GHL&#8599;</a>';
+  }
+  var tag=ltEffectiveTag(l); if(!tag) return '';
+  return '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();ltOpenGhlTag('+l.id+')" title="Open GHL contacts &amp; copy the tag &quot;'+esc(tag)+'&quot; to filter by">&#128241; GHL&#8599;</button>';
+}
+async function ltOpenGhlTag(id){
+  var l=crmListById(id); if(!l) return;
+  var tag=ltEffectiveTag(l); if(!tag){ showToast('No GHL tag or list name set','error'); return; }
+  try { await navigator.clipboard.writeText(tag); showToast('Tag "'+tag+'" copied — paste it into GHL\'s Tag filter','success'); }
+  catch(e){ showToast('Filter GHL contacts by tag: '+tag,'warning'); }
+  window.open(GHL_CONTACTS_URL,'_blank');
 }
 function ltInferRegion(name){
   var n=(name||'').toUpperCase();
@@ -1630,7 +1658,7 @@ function ltRenderListArea(){
       return '<tr style="cursor:pointer" onclick="openListDetail('+l.id+')">'
         + '<td style="border-left:4px solid '+cc[0]+'"><div style="font-weight:600;font-size:13px">'+esc(l.name)+'</div><div style="margin-top:3px">'+ltCatBadge(l.category)+' '+ltRegionChip(l.region)+'</div></td>'
         + '<td style="white-space:nowrap;font-weight:600">'+(l.amount?esc(l.amount):'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
-        + '<td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="event.stopPropagation()">'+linkCell+(l.ghlLink?' '+ltGhlBtn(l,true):'')+'</td>'
+        + '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="event.stopPropagation()">'+linkCell+' '+ltGhlBtn(l,true)+'</td>'
         + '<td style="max-width:260px">'+touchHtml+'</td>'
         + '<td style="white-space:nowrap;font-size:11.5px">'+(lt?ltFmtDate(lt):'<span style="color:var(--text4)">never</span>')+'</td>'
         + '<td style="white-space:nowrap">'+ltDuePill(l.dueDate)+'</td>'
@@ -1687,7 +1715,8 @@ function openListDetail(id){
         + '<button class="btn btn-secondary btn-sm" onclick="removeListTouch('+l.id+','+i+')" title="Remove">&#10005;</button></div>'; }).join('')
     : '<div style="color:var(--text4);font-size:12.5px;padding:6px 0">No outreach logged yet.</div>';
   var linkHtml = l.link ? (/^https?:/i.test(l.link)?'<a href="'+esc(l.link)+'" target="_blank" class="detail-link">'+esc(l.link)+' &#8599;</a>':esc(l.link)) : '<span style="color:var(--text4)">&mdash;</span>';
-  var ghlHtml = l.ghlLink ? ltGhlBtn(l) : '<span style="color:var(--text4);font-size:12px">Not linked &mdash; add one in Edit</span>';
+  var effTag=ltEffectiveTag(l);
+  var ghlHtml = ltGhlBtn(l) + (l.ghlLink?'<div style="font-size:11px;color:var(--text4);margin-top:3px">Saved link (manual override)</div>':(effTag?'<div style="font-size:11px;color:var(--text4);margin-top:3px">Tag: <b>'+esc(effTag)+'</b></div>':'<span style="color:var(--text4);font-size:12px">Set a name or tag in Edit</span>'));
   document.getElementById('modal-container').innerHTML =
     '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:560px">'
     + '<div class="modal-header"><div><div class="modal-title">'+esc(l.name)+'</div>'
@@ -1719,7 +1748,7 @@ function openListDetail(id){
 // ---- Add / Edit modal ----
 function openListEditModal(id){
   var isNew = (id===null || id===undefined);
-  var l = isNew ? {id:null,name:'',region:'',period:'',amount:'',link:'',ghlLink:'',category:'seller',dateAdded:today(),lastTexted:'',dueDate:'',notes:'',touches:[]} : crmListById(id);
+  var l = isNew ? {id:null,name:'',region:'',period:'',amount:'',link:'',ghlLink:'',ghlTag:'',category:'seller',dateAdded:today(),lastTexted:'',dueDate:'',notes:'',touches:[]} : crmListById(id);
   if(!l){ showToast('List not found','error'); return; }
   var periods=ltPeriodOrder().filter(Boolean);
   document.getElementById('modal-container').innerHTML =
@@ -1738,7 +1767,8 @@ function openListEditModal(id){
         + '<div class="form-field"><label class="form-label">Amount (records)</label><input id="le-amount" class="form-input" value="'+esc(l.amount)+'" placeholder="e.g. 1923 or 3K"></div>'
       + '</div>'
       + '<div class="form-field"><label class="form-label">Source Link</label><input id="le-link" class="form-input" value="'+esc(l.link)+'" placeholder="https://... or label"></div>'
-      + '<div class="form-field"><label class="form-label">GHL Bulk Contacts Link <span style="font-weight:400;color:var(--text3)">(opens this list in GoHighLevel)</span></label><input id="le-ghl" class="form-input" value="'+esc(l.ghlLink)+'" placeholder="https://app.gohighlevel.com/..."></div>'
+      + '<div class="form-field"><label class="form-label">GHL Tag <span style="font-weight:400;color:var(--text3)">(the tag you apply to these contacts in GHL)</span></label><input id="le-ghltag" class="form-input" value="'+esc(l.ghlTag)+'" placeholder="Defaults to the list name"></div>'
+      + '<div class="form-field"><label class="form-label">GHL Smart List Link <span style="font-weight:400;color:var(--text3)">(optional — overrides the tag)</span></label><input id="le-ghl" class="form-input" value="'+esc(l.ghlLink)+'" placeholder="Paste a saved GHL Smart List URL"></div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
         + '<div class="form-field"><label class="form-label">Next Due (re-outreach)</label><input id="le-due" type="date" class="form-input" value="'+esc(l.dueDate)+'"></div>'
         + '<div class="form-field"><label class="form-label">Date Added</label><input id="le-added" type="date" class="form-input" value="'+esc(l.dateAdded)+'"></div>'
@@ -1763,6 +1793,7 @@ function leReadForm(){
     category:document.getElementById('le-cat').value,
     link:(document.getElementById('le-link').value||'').trim(),
     ghlLink:(document.getElementById('le-ghl').value||'').trim(),
+    ghlTag:(document.getElementById('le-ghltag').value||'').trim(),
     dueDate:document.getElementById('le-due').value||'',
     dateAdded:document.getElementById('le-added').value||'',
     notes:(document.getElementById('le-notes').value||'').trim()
@@ -1897,7 +1928,7 @@ async function doListImport(){
     var region=get('region').toUpperCase()||ltInferRegion(name);
     var cat=(get('type')||defCat).toLowerCase();
     if(!LT_CATS.some(function(c){return c[0]===cat;})) cat=defCat;
-    toAdd.push({name:name,amount:get('amount'),link:get('link'),ghlLink:'',region:region,
+    toAdd.push({name:name,amount:get('amount'),link:get('link'),ghlLink:'',ghlTag:'',region:region,
       period:forcePeriod||get('month')||'Imported',category:cat,dateAdded:today(),
       lastTexted:'',dueDate:get('due'),notes:get('notes'),touches:[]});
   });
@@ -1909,12 +1940,12 @@ async function doListImport(){
   } catch(e){ showToast('Import failed — check the CSV and try again','error'); }
 }
 function exportListsCSV(){
-  var header=['Name','Type','Amount','Link','GHL Link','Region','Month','Date Added','Last Texted','Next Due','Touches','Notes'];
+  var header=['Name','Type','Amount','Link','GHL Tag','GHL Link','Region','Month','Date Added','Last Texted','Next Due','Touches','Notes'];
   var q=function(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
   var lines=[header.join(',')];
   (crmLists||[]).forEach(function(l){
     var touches=(l.touches||[]).map(function(t){ return (t.date?t.date+' ':'')+t.note; }).join(' | ');
-    lines.push([l.name,ltCatLabel(l.category),l.amount,l.link,l.ghlLink,l.region,l.period,l.dateAdded,ltLastTexted(l),l.dueDate,touches,l.notes].map(q).join(','));
+    lines.push([l.name,ltCatLabel(l.category),l.amount,l.link,ltEffectiveTag(l),l.ghlLink,l.region,l.period,l.dateAdded,ltLastTexted(l),l.dueDate,touches,l.notes].map(q).join(','));
   });
   var blob=new Blob([lines.join('\n')],{type:'text/csv'});
   var url=URL.createObjectURL(blob), a=document.createElement('a');
@@ -1923,6 +1954,346 @@ function exportListsCSV(){
   showToast('Exported '+(crmLists||[]).length+' lists','success');
 }
 // =================== end List Tracking ===================
+
+// ===================== Phase 3: Dispo + Buyers =====================
+// Two parts: (1) a Property Blast composer that formats a clean buyer-blast message from a
+// property (address/price/beds/baths/sqft/photos/notes), and (2) a Buyers roster in Supabase
+// table `crm_buyers` (RLS authenticated-only) with GHL-sample-compatible CSV import, saved
+// with an Area (which doubles as the GHL tag) + a Hot Buyer flag for targeting GHL bulk sends.
+const BUY_PATH = 'crm_buyers';
+var crmBuyers = null;                 // null = not loaded yet
+var bySearch = '', byArea = '', byHot = false;
+// blast composer draft (kept so re-renders don't lose typing)
+var dispoDraft = {address:'',price:'',beds:'',baths:'',sqft:'',photos:'',notes:''};
+var dispoTargetArea = '', dispoTargetHot = false;
+
+function byFromDb(r){ return {id:r.id,name:r.name||'',email:r.email||'',phone:r.phone||'',area:r.area||'',
+  hot:!!r.hot,buyBox:r.buy_box||'',tags:r.tags||'',notes:r.notes||''}; }
+function byToDb(b){ return {name:b.name||'',email:b.email||'',phone:b.phone||'',area:b.area||'',
+  hot:!!b.hot,buy_box:b.buyBox||'',tags:b.tags||'',notes:b.notes||'',updated_at:new Date().toISOString()}; }
+async function crmBuyersFetch(){
+  try { var rows=await sbFetch(BUY_PATH+'?select=*&order=id.asc&limit=5000'); crmBuyers=(rows||[]).map(byFromDb); }
+  catch(e){ crmBuyers=[]; showToast('Could not load buyers — check connection','error'); }
+}
+async function crmBuyerInsert(b){ var rows=await sbFetch(BUY_PATH,'POST',byToDb(b)); return rows&&rows[0]?byFromDb(rows[0]):null; }
+async function crmBuyerInsertMany(arr){ var rows=await sbFetch(BUY_PATH,'POST',arr.map(byToDb)); return (rows||[]).map(byFromDb); }
+async function crmBuyerUpdate(b){ await sbFetch(BUY_PATH+'?id=eq.'+b.id,'PATCH',byToDb(b)); }
+async function crmBuyerDeleteDb(id){ await sbFetch(BUY_PATH+'?id=eq.'+id,'DELETE'); }
+function crmBuyerById(id){ id=+id; return (crmBuyers||[]).find(function(b){ return +b.id===id; }); }
+function buyerAreas(){ return Array.from(new Set((crmBuyers||[]).map(function(b){return (b.area||'').trim();}).filter(Boolean))).sort(); }
+
+// ---- Blast message ----
+function dispoReadForm(){
+  ['address','price','beds','baths','sqft','photos','notes'].forEach(function(k){
+    var el=document.getElementById('dp-'+k); if(el) dispoDraft[k]=el.value;
+  });
+  return dispoDraft;
+}
+function dispoBlastText(d){
+  d=d||dispoDraft;
+  var lines=[];
+  lines.push('🏠 NEW DEAL' + (d.address?' — '+d.address.trim():''));
+  if(d.price) lines.push('💰 '+d.price.trim());
+  var spec=[]; if(d.beds) spec.push(d.beds.trim()+' bd'); if(d.baths) spec.push(d.baths.trim()+' ba'); if(d.sqft) spec.push(d.sqft.trim()+' sqft');
+  if(spec.length) lines.push('🛏 '+spec.join('  |  '));
+  if(d.notes) lines.push('', d.notes.trim());
+  if(d.photos) lines.push('', '📸 Photos: '+d.photos.trim());
+  lines.push('', 'Cash buyers — serious inquiries only. Reply for the number to run it.');
+  return lines.join('\n');
+}
+function dispoUpdatePreview(){
+  dispoReadForm();
+  var pv=document.getElementById('dp-preview'); if(pv) pv.textContent=dispoBlastText();
+}
+function dispoTargetBuyers(){
+  return (crmBuyers||[]).filter(function(b){
+    if(dispoTargetHot && !b.hot) return false;
+    if(dispoTargetArea && (b.area||'').trim()!==dispoTargetArea) return false;
+    return true;
+  });
+}
+function dispoRefreshTarget(){
+  var areaEl=document.getElementById('dp-target-area'); if(areaEl) dispoTargetArea=areaEl.value;
+  var hotEl=document.getElementById('dp-target-hot'); if(hotEl) dispoTargetHot=hotEl.checked;
+  var cnt=document.getElementById('dp-target-count');
+  if(cnt){ var n=dispoTargetBuyers().length; cnt.textContent=n+' buyer'+(n!==1?'s':'')+(dispoTargetArea?' in '+dispoTargetArea:'')+(dispoTargetHot?' (hot)':''); }
+}
+async function dispoCopyBlast(openGhl){
+  dispoReadForm();
+  if(!dispoDraft.address && !dispoDraft.price){ showToast('Add at least an address or price first','error'); return; }
+  var txt=dispoBlastText();
+  try { await navigator.clipboard.writeText(txt); }
+  catch(e){ showToast('Copy failed — select the preview text manually','error'); return; }
+  var tag=dispoTargetArea||'', hot=dispoTargetHot;
+  if(openGhl){
+    showToast('Blast copied — in GHL, filter buyers by tag '+(tag?'"'+tag+'"':'(your buyer tag)')+(hot?' + "Hot"':'')+' and paste into Bulk SMS','success');
+    window.open(GHL_CONTACTS_URL,'_blank');
+  } else {
+    showToast('Blast copied to clipboard','success');
+  }
+}
+
+// ---- Main section render ----
+function renderDispo(){
+  var host=document.getElementById('section-main'); if(!host) return;
+  if(crmBuyers===null){
+    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#127991;&#65039; Dispo</h2></div></div>'
+      +'<div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading buyers&hellip;</div></div>';
+    crmBuyersFetch().then(function(){ if(activeSection==='dispo') renderDispo(); });
+    return;
+  }
+  var areas=buyerAreas();
+  var hotCount=(crmBuyers||[]).filter(function(b){return b.hot;}).length;
+  var d=dispoDraft;
+  var fld=function(k,label,ph,extra){ return '<div class="form-field'+(extra&&extra.full?' full':'')+'"><label class="form-label">'+label+'</label>'
+    +'<input id="dp-'+k+'" class="form-input" value="'+esc(d[k])+'" placeholder="'+esc(ph||'')+'" oninput="dispoUpdatePreview()"></div>'; };
+  host.innerHTML =
+    '<div class="lt-wrap">'
+    + '<div class="lt-head">'
+      + '<div><h2>&#127991;&#65039; Dispo &amp; Buyers</h2>'
+        + '<p>Build a clean property blast, then send it to your buyers through GoHighLevel. Buyers are tagged by <b>Area</b> (your GHL tag) and flagged <b>Hot</b> for fast targeting.</p></div>'
+    + '</div>'
+    + '<div class="dp-grid">'
+      // ---- Blast composer ----
+      + '<div class="dp-card">'
+        + '<h3>&#128241; Property Blast</h3><div class="sub">Fill in the deal &mdash; the message on the right updates live.</div>'
+        + '<div class="dp-form">'
+          + '<div class="form-field full"><label class="form-label">Address</label><input id="dp-address" class="form-input" value="'+esc(d.address)+'" placeholder="123 Main St, Washington DC" oninput="dispoUpdatePreview()"></div>'
+          + fld('price','Price','$250,000')
+          + fld('sqft','Sqft','1,450')
+          + fld('beds','Beds','3')
+          + fld('baths','Baths','2')
+          + '<div class="form-field full"><label class="form-label">Photos link <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input id="dp-photos" class="form-input" value="'+esc(d.photos)+'" placeholder="Dropbox / Google Drive link" oninput="dispoUpdatePreview()"></div>'
+          + '<div class="form-field full"><label class="form-label">Notes / highlights</label><textarea id="dp-notes" class="form-input" rows="3" placeholder="ARV $400k, needs $60k rehab, ARV comps attached, EMD $5k..." oninput="dispoUpdatePreview()">'+esc(d.notes)+'</textarea></div>'
+        + '</div>'
+      + '</div>'
+      // ---- Preview + send ----
+      + '<div class="dp-card">'
+        + '<h3>&#9993;&#65039; Buyer Blast Message</h3><div class="sub">This is exactly what buyers receive. Copy it, then paste into a GHL Bulk SMS/Email to your targeted buyers.</div>'
+        + '<div id="dp-preview" class="dp-preview">'+esc(dispoBlastText())+'</div>'
+        + '<div class="dp-target">'
+          + '<span style="font-weight:700;color:var(--text2)">Target:</span>'
+          + '<select id="dp-target-area" onchange="dispoRefreshTarget()"><option value="">All areas</option>'
+            + areas.map(function(a){return '<option value="'+esc(a)+'"'+(dispoTargetArea===a?' selected':'')+'>'+esc(a)+'</option>';}).join('')+'</select>'
+          + '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="dp-target-hot" onchange="dispoRefreshTarget()"'+(dispoTargetHot?' checked':'')+'> Hot only</label>'
+          + '<span id="dp-target-count" style="color:var(--text3)"></span>'
+        + '</div>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+          + '<button class="btn btn-primary btn-sm" onclick="dispoCopyBlast(true)">&#128203; Copy Blast &amp; Open GHL</button>'
+          + '<button class="btn btn-secondary btn-sm" onclick="dispoCopyBlast(false)">Copy only</button>'
+          + '<button class="btn btn-secondary btn-sm" onclick="dispoClearDraft()">Clear</button>'
+        + '</div>'
+      + '</div>'
+    + '</div>'
+    // ---- Buyers roster ----
+    + '<div class="lt-stats" style="margin-top:22px">'
+      + '<div class="lt-stat"><div class="n">'+(crmBuyers||[]).length+'</div><div class="l">Buyers</div></div>'
+      + '<div class="lt-stat"><div class="n" style="color:#b91c1c">'+hotCount+'</div><div class="l">Hot buyers</div></div>'
+      + '<div class="lt-stat"><div class="n">'+areas.length+'</div><div class="l">Areas</div></div>'
+    + '</div>'
+    + '<div class="lt-head" style="margin-bottom:10px"><div><h2 style="font-size:16px">&#128101; Buyers List</h2></div>'
+      + '<div class="lt-actions">'
+        + '<button class="btn btn-secondary btn-sm" onclick="crmBuyers=null;renderDispo()">&#8635; Refresh</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="openBuyerImportModal()">&#8681; Import CSV</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="exportBuyersCSV()">&#8682; Export</button>'
+        + '<button class="btn btn-primary btn-sm" onclick="openBuyerEditModal(null)">&#43; Add Buyer</button>'
+      + '</div>'
+    + '</div>'
+    + '<div class="lt-toolbar">'
+      + '<input id="by-search" type="text" placeholder="&#128269; Search name / area / notes..." oninput="bySetSearch(this.value)" value="'+esc(bySearch)+'" style="flex:1;min-width:170px">'
+      + '<select onchange="byArea=this.value;byRenderArea()"><option value="">All areas</option>'
+        + areas.map(function(a){return '<option value="'+esc(a)+'"'+(byArea===a?' selected':'')+'>'+esc(a)+'</option>';}).join('')+'</select>'
+      + '<label style="display:flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="by-hot"'+(byHot?' checked':'')+' onchange="byHot=this.checked;byRenderArea()"> Hot only</label>'
+    + '</div>'
+    + '<div id="by-list-area"></div>'
+    + '</div>';
+  byRenderArea();
+  dispoRefreshTarget();
+}
+function dispoClearDraft(){ dispoDraft={address:'',price:'',beds:'',baths:'',sqft:'',photos:'',notes:''}; renderDispo(); }
+function bySetSearch(v){ bySearch=v; byRenderArea(); }
+function byFilteredBuyers(){
+  var q=bySearch.trim().toLowerCase();
+  return (crmBuyers||[]).filter(function(b){
+    if(byArea && (b.area||'').trim()!==byArea) return false;
+    if(byHot && !b.hot) return false;
+    if(q && [b.name,b.area,b.notes,b.buyBox,b.email,b.phone].join(' ').toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+}
+function byRenderArea(){
+  var area=document.getElementById('by-list-area'); if(!area) return;
+  var rows=byFilteredBuyers();
+  if(!rows.length){
+    area.innerHTML='<div class="empty"><div class="empty-icon">&#128101;</div><h3>No buyers'+((crmBuyers||[]).length?' match':' yet')+'</h3><p style="color:var(--text3);font-size:12px">'+((crmBuyers||[]).length?'Try clearing the filters.':'Import a CSV or add your first buyer.')+'</p></div>';
+    return;
+  }
+  var body=rows.map(function(b){
+    var contact=[b.phone?esc(b.phone):'',b.email?esc(b.email):''].filter(Boolean).join('<br>')||'<span style="color:var(--text4)">&mdash;</span>';
+    return '<tr>'
+      + '<td><div style="font-weight:600;font-size:13px">'+esc(b.name||'(no name)')+'</div>'+(b.tags?'<div style="margin-top:2px;font-size:11px;color:var(--text3)">'+esc(b.tags)+'</div>':'')+'</td>'
+      + '<td style="white-space:nowrap">'+(b.area?ltRegionChip(b.area.length<=3?b.area.toUpperCase():'')||'<span class="lt-chip" style="color:#475569;background:#e2e8f0">'+esc(b.area)+'</span>':'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
+      + '<td style="white-space:nowrap"><span class="dp-hot'+(b.hot?'':' no')+'">'+(b.hot?'&#128293; HOT':'&mdash;')+'</span></td>'
+      + '<td style="font-size:11.5px;white-space:nowrap">'+contact+'</td>'
+      + '<td style="max-width:220px;font-size:12px;color:var(--text2)">'+(b.buyBox?esc(b.buyBox):'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
+      + '<td style="white-space:nowrap">'
+        + '<button class="btn btn-secondary btn-sm" onclick="openBuyerEditModal('+b.id+')">&#9998;</button> '
+        + '<button class="btn btn-secondary btn-sm" onclick="deleteBuyer('+b.id+')" title="Delete">&#10005;</button>'
+      + '</td>'
+    + '</tr>';
+  }).join('');
+  area.innerHTML='<div class="table-container"><div class="table-wrap"><table>'
+    + '<thead><tr><th>Name</th><th>Area</th><th>Hot</th><th>Contact</th><th>Buy Box</th><th></th></tr></thead>'
+    + '<tbody>'+body+'</tbody></table></div></div>';
+}
+
+// ---- Add / Edit buyer ----
+function openBuyerEditModal(id){
+  var isNew=(id===null||id===undefined);
+  var b=isNew?{id:null,name:'',email:'',phone:'',area:'',hot:false,buyBox:'',tags:'',notes:''}:crmBuyerById(id);
+  if(!b){ showToast('Buyer not found','error'); return; }
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:480px">'
+    + '<div class="modal-header"><div class="modal-title">'+(isNew?'&#43; Add Buyer':'&#9998; Edit Buyer')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<div class="form-field"><label class="form-label">Name</label><input id="be-name" class="form-input" value="'+esc(b.name)+'" placeholder="Buyer name or company"></div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+        + '<div class="form-field"><label class="form-label">Phone</label><input id="be-phone" class="form-input" value="'+esc(b.phone)+'" placeholder="(202) 555-0100"></div>'
+        + '<div class="form-field"><label class="form-label">Email</label><input id="be-email" class="form-input" value="'+esc(b.email)+'" placeholder="buyer@email.com"></div>'
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end">'
+        + '<div class="form-field"><label class="form-label">Area <span style="font-weight:400;color:var(--text3)">(GHL tag)</span></label><input id="be-area" class="form-input" list="be-area-list" value="'+esc(b.area)+'" placeholder="DC Buyers / MD / Cash">'
+          + '<datalist id="be-area-list">'+buyerAreas().map(function(a){return '<option value="'+esc(a)+'">';}).join('')+'</datalist></div>'
+        + '<div class="form-field"><label class="form-label">Hot?</label><label style="display:flex;align-items:center;gap:6px;height:38px;font-size:13px;cursor:pointer"><input type="checkbox" id="be-hot"'+(b.hot?' checked':'')+'> &#128293; Hot buyer</label></div>'
+      + '</div>'
+      + '<div class="form-field"><label class="form-label">Buy Box</label><input id="be-buybox" class="form-input" value="'+esc(b.buyBox)+'" placeholder="SFH, $100k-$400k, DC/PG, ARV 70%..."></div>'
+      + '<div class="form-field"><label class="form-label">Tags <span style="font-weight:400;color:var(--text3)">(comma-separated, optional)</span></label><input id="be-tags" class="form-input" value="'+esc(b.tags)+'" placeholder="Cash Buyers, Fix &amp; Flip"></div>'
+      + '<div class="form-field"><label class="form-label">Notes</label><textarea id="be-notes" class="form-input" rows="2" placeholder="Optional">'+esc(b.notes)+'</textarea></div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary" onclick="saveBuyer('+(isNew?'null':b.id)+')">'+(isNew?'Add Buyer':'Save Changes')+'</button>'
+    + '</div></div></div>';
+}
+function beReadForm(){
+  return {
+    name:(document.getElementById('be-name').value||'').trim(),
+    phone:(document.getElementById('be-phone').value||'').trim(),
+    email:(document.getElementById('be-email').value||'').trim(),
+    area:(document.getElementById('be-area').value||'').trim(),
+    hot:document.getElementById('be-hot').checked,
+    buyBox:(document.getElementById('be-buybox').value||'').trim(),
+    tags:(document.getElementById('be-tags').value||'').trim(),
+    notes:(document.getElementById('be-notes').value||'').trim()
+  };
+}
+async function saveBuyer(id){
+  var data=beReadForm();
+  if(!data.name && !data.phone && !data.email){ showToast('Add at least a name, phone, or email','error'); return; }
+  if(id===null||id===undefined){
+    try { var row=await crmBuyerInsert(data); if(row) crmBuyers.push(row); showToast('Buyer added','success'); }
+    catch(e){ showToast('Could not save buyer — try again','error'); return; }
+  } else {
+    var b=crmBuyerById(id); if(!b){ showToast('Buyer not found','error'); return; }
+    Object.assign(b,data);
+    try { await crmBuyerUpdate(b); showToast('Buyer updated','success'); }
+    catch(e){ showToast('Saved locally, cloud sync failed — Refresh and retry','error'); }
+  }
+  closeModal(); renderDispo();
+}
+async function deleteBuyer(id){
+  var b=crmBuyerById(id); if(!b) return;
+  if(!confirm('Delete buyer "'+(b.name||'this buyer')+'"? This cannot be undone.')) return;
+  crmBuyers=(crmBuyers||[]).filter(function(x){ return +x.id!==+id; });
+  renderDispo();
+  try { await crmBuyerDeleteDb(id); showToast('Buyer deleted','success'); }
+  catch(e){ showToast('Delete failed to sync — Refresh','error'); }
+}
+
+// ---- CSV import / export (GHL-sample compatible) ----
+function openBuyerImportModal(){
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:540px">'
+    + '<div class="modal-header"><div class="modal-title">&#8681; Import Buyers from CSV</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:10px">Upload a .csv or paste rows. Works with a <b>GoHighLevel contact export</b> (First Name / Last Name / Phone / Email / Tags) or these columns:<br>'
+        + '<code style="font-size:11.5px;background:#f1f5f9;padding:1px 5px;border-radius:4px">Name, Phone, Email, Area, Hot, Buy Box, Tags, Notes</code><br>'
+        + 'A header row is auto-detected. If <b>Area</b> is blank it uses the first Tag; <b>Hot</b> is on for yes/true/1 or a "hot" tag.</p>'
+      + '<div class="form-field"><label class="form-label">Upload .csv</label><input type="file" id="by-csv-file" accept=".csv,text/csv" class="form-input" onchange="byCsvFile(event)"></div>'
+      + '<div class="form-field"><label class="form-label">&hellip; or paste CSV</label><textarea id="by-csv-text" class="form-input" rows="7" placeholder="Name,Phone,Email,Area,Hot,Buy Box,Tags\nJohn Cash,2025550100,john@x.com,DC Buyers,yes,SFH 100-400k,Cash"></textarea></div>'
+      + '<div class="form-field"><label class="form-label">Default Area (optional)</label><input id="by-csv-area" class="form-input" placeholder="applied when a row has no area/tag"></div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary" onclick="doBuyerImport()">Import</button>'
+    + '</div></div></div>';
+}
+function byCsvFile(ev){
+  var f=ev.target.files&&ev.target.files[0]; if(!f) return;
+  var r=new FileReader(); r.onload=function(){ document.getElementById('by-csv-text').value=r.result; }; r.readAsText(f);
+}
+async function doBuyerImport(){
+  var text=(document.getElementById('by-csv-text').value||'').trim();
+  if(!text){ showToast('Paste CSV or choose a file first','error'); return; }
+  var defArea=(document.getElementById('by-csv-area').value||'').trim();
+  var rows=ltParseCSV(text);
+  if(!rows.length){ showToast('No rows found','error'); return; }
+  var first=rows[0].map(function(x){return String(x).trim().toLowerCase();});
+  var known=['name','full name','first name','last name','phone','phone number','email','area','city','region','hot','hot buyer','buy box','buybox','criteria','tags','tag','notes','note'];
+  var hasHeader=first.some(function(h){ return known.indexOf(h)>=0; });
+  var idx={};
+  if(hasHeader){
+    first.forEach(function(h,i){
+      if(h==='name'||h==='full name') idx.name=i;
+      else if(h==='first name') idx.first=i;
+      else if(h==='last name') idx.last=i;
+      else if(h==='phone'||h==='phone number') idx.phone=i;
+      else if(h==='email') idx.email=i;
+      else if(h==='area'||h==='city'||h==='region') idx.area=i;
+      else if(h==='hot'||h==='hot buyer') idx.hot=i;
+      else if(h==='buy box'||h==='buybox'||h==='criteria') idx.buybox=i;
+      else if(h==='tags'||h==='tag') idx.tags=i;
+      else if(h==='notes'||h==='note') idx.notes=i;
+    });
+    rows=rows.slice(1);
+  } else {
+    idx={name:0,phone:1,email:2,area:3,hot:4,buybox:5,tags:6,notes:7};
+  }
+  var truthy=function(v){ v=String(v||'').trim().toLowerCase(); return v==='yes'||v==='y'||v==='true'||v==='1'||v==='hot'; };
+  var toAdd=[];
+  rows.forEach(function(r){
+    var get=function(k){ return idx[k]!=null && r[idx[k]]!=null ? String(r[idx[k]]).trim() : ''; };
+    var name=get('name');
+    if(!name && (idx.first!=null||idx.last!=null)) name=[get('first'),get('last')].filter(Boolean).join(' ').trim();
+    var phone=get('phone'), email=get('email');
+    if(!name && !phone && !email) return;
+    var tags=get('tags');
+    var firstTag=tags?tags.split(/[;,]/)[0].trim():'';
+    var area=get('area')||firstTag||defArea;
+    var hot=idx.hot!=null?truthy(get('hot')):/\bhot\b/i.test(tags);
+    toAdd.push({name:name,phone:phone,email:email,area:area,hot:hot,buyBox:get('buybox'),tags:tags,notes:get('notes')});
+  });
+  if(!toAdd.length){ showToast('Nothing to import','warning'); return; }
+  try {
+    var inserted=await crmBuyerInsertMany(toAdd);
+    inserted.forEach(function(row){ crmBuyers.push(row); });
+    closeModal(); showToast('Imported '+inserted.length+' buyer'+(inserted.length!==1?'s':''),'success'); renderDispo();
+  } catch(e){ showToast('Import failed — check the CSV and try again','error'); }
+}
+function exportBuyersCSV(){
+  var header=['Name','Phone','Email','Area','Hot','Buy Box','Tags','Notes'];
+  var q=function(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  var lines=[header.join(',')];
+  (crmBuyers||[]).forEach(function(b){
+    lines.push([b.name,b.phone,b.email,b.area,b.hot?'Yes':'No',b.buyBox,b.tags,b.notes].map(q).join(','));
+  });
+  var blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  var url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download='buyers-'+today()+'.csv'; document.body.appendChild(a); a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
+  showToast('Exported '+(crmBuyers||[]).length+' buyers','success');
+}
+// =================== end Dispo + Buyers ===================
 
 function render(){
   // No active user: when auth is ON, always show the access-key login (never the legacy
@@ -1935,6 +2306,7 @@ function render(){
   // Paint the sidebar shell + the main content container, then fill the active section.
   document.getElementById('app').innerHTML = sidebarHTML() + '<div id="section-main" class="section-main"></div>';
   if(activeSection==='lists'){ renderLists(); return; }
+  if(activeSection==='dispo'){ renderDispo(); return; }
   if(activeSection!=='outreach'){ renderPlaceholderSection(activeSection); return; }
   renderOutreach();
 }
