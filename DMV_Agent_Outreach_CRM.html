@@ -285,6 +285,12 @@
   .lt-touch{font-size:11px;color:var(--text3);background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:1px 7px;margin:1px 3px 1px 0;display:inline-block;white-space:nowrap;}
   .lt-due-pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;}
   .lt-lbl{font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;}
+  .pb-badge{display:inline-block;font-size:10px;font-weight:800;padding:1px 7px;border-radius:5px;vertical-align:middle;}
+  .pb-sent{color:#065f46;background:#d1fae5;}
+  .pb-match{color:#3730a3;background:#e0e7ff;}
+  .pb-cand{color:#92400e;background:#fef3c7;}
+  .pb-score{display:inline-block;color:#fff;font-weight:800;font-size:11px;padding:1px 8px;border-radius:10px;white-space:nowrap;}
+  .pb-chk{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;color:var(--text2);cursor:pointer;}
   .lt-touchrow{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12.5px;background:#fafbfc;}
   /* Dispo */
   .dp-grid{display:grid;grid-template-columns:minmax(320px,1.05fr) minmax(0,1.35fr);gap:18px;align-items:start;}
@@ -1462,7 +1468,7 @@ const SB_ITEMS = [
   {k:'dashboard', ic:'&#128202;', lb:'Dashboard',     soon:true},
   {k:'outreach',  ic:'&#128227;', lb:'CRM Outreach',  soon:false},
   {k:'lists',     ic:'&#128199;', lb:'List Tracking', soon:false},
-  {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', soon:true},
+  {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', soon:false},
   {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  soon:false}
 ];
 function sidebarHTML(){
@@ -2518,6 +2524,340 @@ function exportBuyersCSV(){
 }
 // =================== end Dispo + Buyers ===================
 
+// =================== Probate (P4) ===================
+// Probate leads flow in from the Render probate scanner, which writes to THIS Supabase
+// but into a walled-off `probate` schema the CRM REST can't reach. The one-click Sync
+// calls a SECURITY DEFINER rpc (crm_probate_sync) that reads that schema server-side and
+// copies a property-matched / high-score subset into crm_probate, de-duped by scanner
+// case id (source_case_id UNIQUE) so a re-sync never doubles a lead.
+var crmProbate = null;                 // null = not loaded yet
+var pbSearch='', pbState='', pbView='all';   // view: all | unsent | sent | due
+const PB_PATH='crm_probate';
+const PB_STATES=['MD','SC','DC','VA','GA','TX','NC'];   // states offered in the sync dialog
+
+function pbFromDb(r){ return {
+  id:r.id, sourceCaseId:r.source_case_id, state:r.state||'', county:r.county||'',
+  caseNumber:r.case_number||'', estateType:r.estate_type||'', decedentName:r.decedent_name||'',
+  dateOfDeath:r.date_of_death||'', filingDate:r.filing_date||'',
+  propertyAddress:r.property_address||'', propertyCity:r.property_city||'', propertyZip:r.property_zip||'',
+  assessedValue:r.assessed_value, matchMethod:r.match_method||'', prName:r.pr_name||'', prAddress:r.pr_address||'',
+  prPhone:r.pr_phone||'', attorney:r.attorney||'', score:r.score, status:r.status||'New',
+  datePulled:r.date_pulled||'', ghlTag:r.ghl_tag||'', sentOn:r.sent_on||'', sentTag:r.sent_tag||'',
+  followUpDate:r.follow_up_date||'', notes:r.notes||'', touches:Array.isArray(r.touches)?r.touches:[],
+  createdBy:r.created_by||'' }; }
+// Only the CRM-owned workflow fields are written back; the scanned facts are read-only.
+function pbToDb(p){ return {
+  status:p.status||'New', ghl_tag:p.ghlTag||'', sent_on:p.sentOn||null, sent_tag:p.sentTag||'',
+  follow_up_date:p.followUpDate||null, notes:p.notes||'', touches:p.touches||[],
+  updated_at:new Date().toISOString() }; }
+
+async function crmProbateFetch(){
+  try { var rows=await sbFetch(PB_PATH+'?select=*&order=score.desc.nullslast&order=id.desc&limit=10000');
+        crmProbate=(rows||[]).map(pbFromDb); }
+  catch(e){ crmProbate=[]; showToast('Could not load probate leads — check connection','error'); }
+}
+async function crmProbateUpdate(p){ await sbFetch(PB_PATH+'?id=eq.'+p.id,'PATCH',pbToDb(p)); }
+async function crmProbateDeleteDb(id){ await sbFetch(PB_PATH+'?id=eq.'+id,'DELETE'); }
+function crmProbateById(id){ id=+id; return (crmProbate||[]).find(function(p){ return +p.id===id; }); }
+async function crmProbateSyncCall(f){
+  return await sbFetch('rpc/crm_probate_sync','POST',{
+    p_states:(f.states&&f.states.length)?f.states:null,
+    p_min_score:(f.minScore==null?4:f.minScore),
+    p_matched_only:!!f.matchedOnly,
+    p_since:f.since||null });
+}
+
+// ---- small helpers ----
+// Effective GHL tag = explicit tag, else "Probate <STATE>" (so every lead auto-links).
+function pbEffectiveTag(p){ return ((p&&p.ghlTag||'').trim()) || ('Probate '+((p&&p.state)||'')).trim(); }
+function pbStateChip(s){ return ltRegionChip(s); }
+function pbScorePill(s){
+  if(s==null||s==='') return '<span style="color:var(--text4);font-size:11.5px">&mdash;</span>';
+  var n=+s, bg = n>=8?'#059669':(n>=5?'#2563eb':(n>=3?'#d97706':'#94a3b8'));
+  return '<span class="pb-score" style="background:'+bg+'" title="Scanner lead score">&#9733; '+n+'</span>';
+}
+function pbMatchBadge(p){
+  if(p.matchMethod==='owner_name') return '<span class="pb-badge pb-match" title="Confirmed owner-name match">&#9989; matched</span>';
+  if(p.matchMethod==='pr_address') return '<span class="pb-badge pb-cand" title="Candidate: personal-rep mailing address, often the estate property">candidate</span>';
+  return '';
+}
+function pbMoney(v){ if(v==null||v==='') return ''; var n=+v; if(isNaN(n)) return ''; return '$'+Math.round(n).toLocaleString(); }
+function pbSentBadge(p){
+  if(!p.sentOn) return '';
+  return '<span class="pb-badge pb-sent" title="Sent to GHL tag &quot;'+esc(p.sentTag||'')+'&quot; on '+esc(ltFmtDate(p.sentOn))+'">&#10003; Sent '+ltFmtDate(p.sentOn)+'</span>';
+}
+
+// ---- Sync from Scanner ----
+function openProbateSyncModal(){
+  var saved={}; try{ saved=JSON.parse(localStorage.getItem('crm_probate_sync')||'{}'); }catch(e){}
+  var states=saved.states||['MD'];
+  var minScore=(saved.minScore!=null?saved.minScore:4);
+  var matchedOnly=!!saved.matchedOnly;
+  var since=saved.since||'';
+  var stateBoxes=PB_STATES.map(function(s){
+    return '<label class="pb-chk"><input type="checkbox" class="pb-sync-state" value="'+s+'"'+(states.indexOf(s)>=0?' checked':'')+'> '+s+'</label>';
+  }).join('');
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:460px">'
+    + '<div class="modal-header"><div class="modal-title">&#128260; Sync from Scanner</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<p style="font-size:12.5px;color:var(--text3);margin:0 0 12px">Pulls probate leads from the scanner into your CRM. Only <b>property-matched</b> cases <i>or</i> those scoring at/above your threshold come in. Re-syncing is safe — leads already here are skipped, never duplicated.</p>'
+      + '<div class="form-field"><label class="form-label">States</label><div style="display:flex;gap:10px;flex-wrap:wrap">'+stateBoxes+'</div>'
+        + '<div style="font-size:11px;color:var(--text4);margin-top:3px">Live data today: MD + SC. Others fill in as the scanner adds them.</div></div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+        + '<div class="form-field"><label class="form-label">Min score</label><input id="pb-sync-score" type="number" class="form-input" value="'+minScore+'" min="0" max="30"></div>'
+        + '<div class="form-field"><label class="form-label">Filed since <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input id="pb-sync-since" type="date" class="form-input" value="'+esc(since)+'"></div>'
+      + '</div>'
+      + '<label class="pb-chk" style="margin-top:2px"><input type="checkbox" id="pb-sync-matched"'+(matchedOnly?' checked':'')+'> Only leads with a matched property</label>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary" id="pb-sync-go" onclick="doProbateSync()">&#128260; Pull Leads</button>'
+    + '</div></div></div>';
+}
+function pbReadSyncForm(){
+  var states=Array.prototype.slice.call(document.querySelectorAll('.pb-sync-state:checked')).map(function(c){return c.value;});
+  var sc=parseInt(document.getElementById('pb-sync-score').value,10);
+  return { states:states, minScore:isNaN(sc)?4:sc,
+    matchedOnly:document.getElementById('pb-sync-matched').checked,
+    since:document.getElementById('pb-sync-since').value||'' };
+}
+async function doProbateSync(){
+  var f=pbReadSyncForm();
+  try{ localStorage.setItem('crm_probate_sync',JSON.stringify(f)); }catch(e){}
+  var btn=document.getElementById('pb-sync-go'); if(btn){ btn.disabled=true; btn.innerHTML='Pulling&hellip;'; }
+  try{
+    var res=await crmProbateSyncCall(f);
+    var ins=(res&&res.inserted)||0, sk=(res&&res.skipped)||0;
+    closeModal();
+    showToast('✅ '+ins+' new probate lead'+(ins!==1?'s':'')+' pulled · '+sk+' already in CRM (skipped)','success');
+    crmProbate=null; renderProbate();
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.innerHTML='&#128260; Pull Leads'; }
+    showToast('Sync failed — '+String(e.message||e).slice(0,120),'error');
+  }
+}
+
+// ---- GHL send (copy tag + open GHL, stamp sent-on) ----
+async function pbSendGhl(id){
+  var p=crmProbateById(id); if(!p) return;
+  var tag=pbEffectiveTag(p); if(!tag){ showToast('No tag set','error'); return; }
+  if(p.sentOn && !confirm('Already sent '+ltFmtDate(p.sentOn)+' (tag "'+(p.sentTag||tag)+'"). Send again and update the date?')) return;
+  try { await navigator.clipboard.writeText(tag); showToast('Tag "'+tag+'" copied — paste it into GHL\'s Tag filter, then run your campaign','success'); }
+  catch(e){ showToast('Filter GHL contacts by tag: '+tag,'warning'); }
+  window.open(GHL_CONTACTS_URL,'_blank');
+  p.sentOn=today(); p.sentTag=tag;
+  (p.touches=p.touches||[]).push({date:today(),note:'Sent to GHL — tag "'+tag+'"'});
+  try{ await crmProbateUpdate(p); }catch(e){ showToast('Sent, but the stamp did not save — Refresh & retry','error'); }
+  if(activeSection==='probate') renderProbate();
+}
+async function pbUnsend(id){
+  var p=crmProbateById(id); if(!p) return;
+  if(!confirm('Clear the "sent" stamp on this lead?')) return;
+  p.sentOn=''; p.sentTag='';
+  try{ await crmProbateUpdate(p); showToast('Sent stamp cleared','success'); }catch(e){ showToast('Could not save — Refresh','error'); }
+  if(activeSection==='probate') renderProbate();
+}
+
+// ---- Main section render ----
+function renderProbate(){
+  var host=document.getElementById('section-main'); if(!host) return;
+  if(crmProbate===null){
+    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#9878;&#65039; Probate</h2></div></div>'
+      +'<div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading probate leads&hellip;</div></div>';
+    crmProbateFetch().then(function(){ if(activeSection==='probate') renderProbate(); });
+    return;
+  }
+  var all=crmProbate||[];
+  var sent=all.filter(function(p){return p.sentOn;}).length;
+  var dueCount=all.filter(function(p){ var n=ltDaysUntil(p.followUpDate); return n!==null && n<=0; }).length;
+  var states=Array.from(new Set(all.map(function(p){return p.state;}).filter(Boolean))).sort();
+  function viewChip(v,label){
+    var on=pbView===v;
+    return '<button class="btn btn-sm" style="'+(on?'background:#334155;color:#fff;border-color:#334155':'background:#fff;color:#334155;border:1.5px solid #cbd5e1')+'" onclick="pbView=\''+v+'\';pbRenderArea()">'+label+'</button>';
+  }
+  host.innerHTML =
+    '<div class="lt-wrap">'
+    + '<div class="lt-head">'
+      + '<div><h2>&#9878;&#65039; Probate</h2>'
+        + '<p>Probate estate leads pulled from your scanner &mdash; decedent, candidate property, personal representative, and a running send log. One click copies the GHL tag and opens your campaign, then stamps the day it was sent.</p></div>'
+      + '<div class="lt-actions">'
+        + '<button class="btn btn-secondary btn-sm" onclick="crmProbate=null;renderProbate()">&#8635; Refresh</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="exportProbateCSV()">&#8682; Export</button>'
+        + '<button class="btn btn-primary btn-sm" onclick="openProbateSyncModal()">&#128260; Sync from Scanner</button>'
+      + '</div>'
+    + '</div>'
+    + '<div class="lt-stats">'
+      + '<div class="lt-stat"><div class="n">'+all.length+'</div><div class="l">Probate leads</div></div>'
+      + '<div class="lt-stat"><div class="n" style="color:'+(sent?'#059669':'inherit')+'">'+sent+'</div><div class="l">Sent to GHL</div></div>'
+      + '<div class="lt-stat"><div class="n">'+(all.length-sent)+'</div><div class="l">Not sent yet</div></div>'
+      + '<div class="lt-stat"><div class="n" style="color:'+(dueCount?'#dc2626':'inherit')+'">'+dueCount+'</div><div class="l">Follow-ups due</div></div>'
+    + '</div>'
+    + (all.length?'' : '<div class="empty" style="margin:8px 0 0"><div class="empty-icon">&#9878;&#65039;</div><h3>No probate leads yet</h3><p style="color:var(--text3);font-size:12.5px">Click <b>&#128260; Sync from Scanner</b> to pull your first batch.</p></div>')
+    + (all.length ? (
+        '<div class="lt-toolbar">'
+        + '<input id="pb-search" type="text" placeholder="&#128269; Search decedent, address, PR, case #..." oninput="pbSearch=this.value;pbRenderArea()" value="'+esc(pbSearch)+'" style="flex:1;min-width:200px">'
+        + '<select onchange="pbState=this.value;pbRenderArea()"><option value="">All states</option>'
+          + states.map(function(s){return '<option value="'+esc(s)+'"'+(pbState===s?' selected':'')+'>'+esc(s)+'</option>';}).join('')+'</select>'
+        + '</div>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
+          + viewChip('all','All ('+all.length+')')
+          + viewChip('unsent','Not sent ('+(all.length-sent)+')')
+          + viewChip('sent','Sent ('+sent+')')
+          + viewChip('due','Follow-ups due ('+dueCount+')')
+        + '</div>'
+        + '<div id="pb-list-area"></div>'
+      ) : '')
+    + '</div>';
+  if(all.length) pbRenderArea();
+}
+
+function pbFilteredLeads(){
+  var q=pbSearch.trim().toLowerCase();
+  return (crmProbate||[]).filter(function(p){
+    if(pbState && p.state!==pbState) return false;
+    if(pbView==='sent' && !p.sentOn) return false;
+    if(pbView==='unsent' && p.sentOn) return false;
+    if(pbView==='due'){ var n=ltDaysUntil(p.followUpDate); if(n===null || n>0) return false; }
+    if(q){
+      var hay=(p.decedentName+' '+p.propertyAddress+' '+p.propertyCity+' '+p.prName+' '+p.caseNumber+' '+p.county).toLowerCase();
+      if(hay.indexOf(q)<0) return false;
+    }
+    return true;
+  });
+}
+var PB_CAP=500;
+function pbRenderArea(){
+  var area=document.getElementById('pb-list-area'); if(!area) return;
+  var rows=pbFilteredLeads();
+  if(!rows.length){
+    area.innerHTML='<div class="empty"><div class="empty-icon">&#128269;</div><h3>No leads match</h3><p style="color:var(--text3);font-size:12px">Try clearing the search, state, or view filter.</p></div>';
+    return;
+  }
+  var shown=rows.slice(0,PB_CAP);
+  var body=shown.map(function(p){
+    var addr = p.propertyAddress
+      ? '<div style="font-weight:600;font-size:13px">'+esc(p.propertyAddress)+'</div>'
+        + '<div style="font-size:11.5px;color:var(--text3)">'+esc([p.propertyCity,p.propertyZip].filter(Boolean).join(' '))+' '+pbMatchBadge(p)
+        + (p.assessedValue?' <span style="color:var(--text3)">'+pbMoney(p.assessedValue)+'</span>':'')+'</div>'
+      : '<span style="color:var(--text4);font-size:12px">No property matched</span>';
+    var decRep = '<div style="font-weight:600;font-size:12.5px">'+esc(p.decedentName||'—')+'</div>'
+      + (p.prName?'<div style="font-size:11.5px;color:var(--text3)">PR: '+esc(p.prName)+'</div>':'')
+      + '<div style="font-size:11px;color:var(--text4)">'+esc(p.county)+(p.caseNumber?' &middot; #'+esc(p.caseNumber):'')+(p.estateType?' &middot; '+esc(p.estateType):'')+'</div>';
+    var sentCell = p.sentOn
+      ? pbSentBadge(p)+(p.sentTag?'<div style="font-size:11px;color:var(--text4);margin-top:2px">'+esc(p.sentTag)+'</div>':'')
+      : '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();pbSendGhl('+p.id+')" title="Copy the GHL tag, open GHL, and stamp today as the send date">&#128241; Send</button>';
+    return '<tr style="cursor:pointer" onclick="openProbateDetail('+p.id+')">'
+      + '<td style="border-left:4px solid '+(p.sentOn?'#059669':'#cbd5e1')+';white-space:nowrap;font-size:11.5px">'+pbStateChip(p.state)+'<div style="color:var(--text4);margin-top:3px">'+(p.datePulled?ltFmtDate(p.datePulled):'')+'</div></td>'
+      + '<td style="max-width:230px">'+addr+'</td>'
+      + '<td style="max-width:230px">'+decRep+'</td>'
+      + '<td style="white-space:nowrap">'+pbScorePill(p.score)+'</td>'
+      + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'+sentCell+'</td>'
+      + '<td style="white-space:nowrap">'+ltDuePill(p.followUpDate)+'</td>'
+      + '<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">&#9998;</button></td>'
+    + '</tr>';
+  }).join('');
+  var cap = rows.length>PB_CAP ? '<div style="font-size:12px;color:var(--text4);padding:8px 2px">Showing first '+PB_CAP+' of '+rows.length.toLocaleString()+' — refine the search or filters to narrow down.</div>' : '';
+  area.innerHTML='<div class="table-container"><div class="table-wrap"><table>'
+    + '<thead><tr><th>Pulled</th><th>Property</th><th>Decedent / PR</th><th>Score</th><th>Send to GHL</th><th>Follow-up</th><th></th></tr></thead>'
+    + '<tbody>'+body+'</tbody></table></div></div>'+cap;
+}
+
+// ---- Detail modal ----
+function openProbateDetail(id){
+  var p=crmProbateById(id); if(!p){ showToast('Lead not found','error'); return; }
+  var tag=pbEffectiveTag(p);
+  var touches=(p.touches||[]);
+  var touchLog = touches.length
+    ? touches.slice().reverse().map(function(t){ return '<div class="lt-touchrow"><div><b style="color:var(--text2)">'+(t.date?ltFmtDate(t.date):'no date')+'</b> &middot; '+esc(t.note||'')+'</div></div>'; }).join('')
+    : '<div style="color:var(--text4);font-size:12.5px;padding:6px 0">No sends logged yet.</div>';
+  function row(lbl,val){ return '<div><div class="lt-lbl">'+lbl+'</div><div style="font-size:12.5px;margin-top:2px">'+(val||'<span style=\'color:var(--text4)\'>&mdash;</span>')+'</div></div>'; }
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:600px">'
+    + '<div class="modal-header"><div><div class="modal-title">'+esc(p.decedentName||'Probate lead')+'</div>'
+      + '<div class="modal-subtitle" style="margin-top:4px">'+pbStateChip(p.state)+' <span style="color:var(--text3)">'+esc(p.county)+(p.caseNumber?' &middot; Estate #'+esc(p.caseNumber):'')+'</span> '+pbScorePill(p.score)+' '+pbSentBadge(p)+'</div></div>'
+      + '<button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'
+        + row('Candidate Property', p.propertyAddress?(esc(p.propertyAddress)+'<br>'+esc([p.propertyCity,p.propertyZip].filter(Boolean).join(' '))+' '+pbMatchBadge(p)):'')
+        + row('Assessed Value', p.assessedValue?pbMoney(p.assessedValue):'')
+        + row('Estate Type', esc(p.estateType))
+        + row('Date of Death', p.dateOfDeath?ltFmtDate(p.dateOfDeath):'')
+        + row('Filing Date', p.filingDate?ltFmtDate(p.filingDate):'')
+        + row('Date Pulled', p.datePulled?ltFmtDate(p.datePulled):'')
+        + row('Personal Rep', esc(p.prName))
+        + row('PR Address', esc(p.prAddress))
+        + (p.attorney?row('Attorney', esc(p.attorney)):'')
+        + row('GHL Tag', '<b>'+esc(tag)+'</b>')
+      + '</div>'
+      + (p.notes?'<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:14px;white-space:pre-wrap">'+esc(p.notes)+'</div>':'')
+      + '<div style="font-size:12px;font-weight:800;margin:6px 0 8px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2)">&#128228; Send Log ('+touches.length+')</div>'
+      + touchLog
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-danger btn-sm" style="margin-right:auto" onclick="deleteProbateLead('+p.id+')">Delete</button>'
+      + (p.sentOn?'<button class="btn btn-secondary btn-sm" onclick="pbUnsend('+p.id+')">Clear Sent</button>':'')
+      + '<button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">Edit</button>'
+      + '<button class="btn btn-primary btn-sm" onclick="pbSendGhl('+p.id+')">&#128241; '+(p.sentOn?'Send Again':'Send to GHL')+'</button>'
+    + '</div></div></div>';
+}
+
+// ---- Edit modal (workflow fields only) ----
+function openProbateEdit(id){
+  var p=crmProbateById(id); if(!p){ showToast('Lead not found','error'); return; }
+  var statuses=['New','Skip-tracing','Contacted','Follow-up','Appointment','Under contract','Dead'];
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:460px">'
+    + '<div class="modal-header"><div class="modal-title">&#9998; Edit Probate Lead</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<div style="font-size:12.5px;color:var(--text3);margin-bottom:10px">'+esc(p.decedentName||'')+' &middot; '+esc(p.county)+(p.caseNumber?' &middot; #'+esc(p.caseNumber):'')+'</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+        + '<div class="form-field"><label class="form-label">Status</label><select id="pb-e-status" class="form-input">'
+          + statuses.map(function(s){return '<option'+(p.status===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select></div>'
+        + '<div class="form-field"><label class="form-label">Follow-up date</label><input id="pb-e-fu" type="date" class="form-input" value="'+esc(p.followUpDate)+'"></div>'
+      + '</div>'
+      + '<div class="form-field"><label class="form-label">GHL Tag <span style="font-weight:400;color:var(--text3)">(defaults to "Probate '+esc(p.state)+'")</span></label><input id="pb-e-tag" class="form-input" value="'+esc(p.ghlTag)+'" placeholder="Probate '+esc(p.state)+'"></div>'
+      + '<div class="form-field"><label class="form-label">Notes</label><textarea id="pb-e-notes" class="form-input" rows="3" placeholder="Skip-trace notes, offer, seller contact...">'+esc(p.notes)+'</textarea></div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary" onclick="saveProbateEdit('+p.id+')">Save Changes</button>'
+    + '</div></div></div>';
+}
+async function saveProbateEdit(id){
+  var p=crmProbateById(id); if(!p){ showToast('Lead not found','error'); return; }
+  p.status=document.getElementById('pb-e-status').value;
+  p.followUpDate=document.getElementById('pb-e-fu').value||'';
+  p.ghlTag=(document.getElementById('pb-e-tag').value||'').trim();
+  p.notes=(document.getElementById('pb-e-notes').value||'').trim();
+  try{ await crmProbateUpdate(p); showToast('Lead updated','success'); }
+  catch(e){ showToast('Saved locally, cloud sync failed — Refresh and retry','error'); }
+  closeModal(); renderProbate();
+}
+async function deleteProbateLead(id){
+  if(!confirm('Delete this probate lead from the CRM? (It stays in the scanner; a future sync will NOT re-add it unless you clear it there.)')) return;
+  crmProbate=(crmProbate||[]).filter(function(p){ return +p.id!==+id; });
+  closeModal(); renderProbate();
+  try{ await crmProbateDeleteDb(id); showToast('Probate lead deleted','success'); }
+  catch(e){ showToast('Delete failed to sync — Refresh','error'); }
+}
+
+// ---- CSV export ----
+function exportProbateCSV(){
+  var rows=pbFilteredLeads();
+  if(!rows.length){ showToast('Nothing to export','error'); return; }
+  var cols=['state','county','caseNumber','estateType','decedentName','dateOfDeath','filingDate',
+    'propertyAddress','propertyCity','propertyZip','assessedValue','matchMethod','prName','prAddress',
+    'attorney','score','status','datePulled','ghlTag','sentOn','sentTag','followUpDate','notes'];
+  function cell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+  var csv=cols.join(',')+'\n'+rows.map(function(p){ return cols.map(function(c){ return cell(p[c]); }).join(','); }).join('\n');
+  var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob);
+  var a=document.createElement('a'); a.href=url; a.download='probate-leads-'+today()+'.csv'; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); },1000);
+  showToast('Exported '+rows.length+' lead'+(rows.length!==1?'s':''),'success');
+}
+// =================== end Probate ===================
+
 function render(){
   // No active user: when auth is ON, always show the access-key login (never the legacy
   // name-picker, which would bypass authentication); when off, show the legacy picker.
@@ -2530,6 +2870,7 @@ function render(){
   document.getElementById('app').innerHTML = sidebarHTML() + '<div id="section-main" class="section-main"></div>';
   if(activeSection==='lists'){ renderLists(); return; }
   if(activeSection==='dispo'){ renderDispo(); return; }
+  if(activeSection==='probate'){ renderProbate(); return; }
   if(activeSection!=='outreach'){ renderPlaceholderSection(activeSection); return; }
   renderOutreach();
 }
