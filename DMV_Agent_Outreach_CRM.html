@@ -1730,6 +1730,7 @@ function ltClearSel(){ ltSel.clear(); ltRenderListArea(); }
 function ltToggleGroup(ids,c){ ids.forEach(function(id){ if(c)ltSel.add(+id); else ltSel.delete(+id); }); ltRenderListArea(); }
 function ltDeleteSelected(){
   var ids=[...ltSel]; if(!ids.length) return;
+  if(!confirm('Delete '+ids.length+' selected list'+(ids.length!==1?'s':'')+'? (You\'ll get a few seconds to Undo.)')) return;
   var removed=(crmLists||[]).filter(function(l){ return ltSel.has(+l.id); });
   deleteWithUndo({
     label:'Deleted '+ids.length+' list'+(ids.length!==1?'s':''),
@@ -2172,6 +2173,7 @@ function dispoDeleteDeal(id){
 function dpClearSel(){ dpSel.clear(); var el=document.getElementById('dp-deals'); if(el) el.innerHTML=dispoDealsHTML(); }
 function dpDeleteSelected(){
   var ids=[...dpSel]; if(!ids.length) return;
+  if(!confirm('Delete '+ids.length+' selected deal'+(ids.length!==1?'s':'')+'? Their public links stop working. (You\'ll get a few seconds to Undo.)')) return;
   var removed=(crmProps||[]).filter(function(p){ return dpSel.has(+p.id); });
   if(removed.some(function(p){ return +dispoDraft.id===+p.id; })) dispoClearDraft();
   deleteWithUndo({
@@ -2325,6 +2327,7 @@ function byClearSel(){ bySel.clear(); byRenderArea(); }
 function byToggleAll(c){ var rows=byFilteredBuyers(); if(c) rows.forEach(function(b){ bySel.add(+b.id); }); else rows.forEach(function(b){ bySel.delete(+b.id); }); byRenderArea(); }
 function byDeleteSelected(){
   var ids=[...bySel]; if(!ids.length) return;
+  if(!confirm('Delete '+ids.length+' selected buyer'+(ids.length!==1?'s':'')+'? (You\'ll get a few seconds to Undo.)')) return;
   var removed=(crmBuyers||[]).filter(function(b){ return bySel.has(+b.id); });
   deleteWithUndo({
     label:'Deleted '+ids.length+' buyer'+(ids.length!==1?'s':''),
@@ -2830,6 +2833,7 @@ function pbClearSel(){ pbSel.clear(); pbRenderArea(); }
 function pbToggleAll(c){ var shown=pbFilteredLeads().slice(0,PB_CAP); if(c) shown.forEach(function(p){ pbSel.add(+p.id); }); else shown.forEach(function(p){ pbSel.delete(+p.id); }); pbRenderArea(); }
 function pbDeleteSelected(){
   var ids=[...pbSel]; if(!ids.length) return;
+  if(!confirm('Delete '+ids.length+' selected probate lead'+(ids.length!==1?'s':'')+'? (You\'ll get a few seconds to Undo.)')) return;
   var removed=(crmProbate||[]).filter(function(p){ return pbSel.has(+p.id); });
   deleteWithUndo({
     label:'Deleted '+ids.length+' probate lead'+(ids.length!==1?'s':''),
