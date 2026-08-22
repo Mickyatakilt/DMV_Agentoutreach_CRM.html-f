@@ -297,6 +297,39 @@
   .dp-target{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0;font-size:12.5px;}
   .dp-hot{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.3px;padding:1px 7px;border-radius:5px;color:#b91c1c;background:#fee2e2;}
   .dp-hot.no{color:#64748b;background:#f1f5f9;}
+  /* Dispo v2: property builder + deals + public page */
+  .dp-dropzone{border:2px dashed var(--border);border-radius:12px;padding:18px;text-align:center;cursor:pointer;color:var(--text3);font-size:13px;transition:.15s;display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .dp-dropzone:hover,.dp-dropzone.drag{border-color:#6366f1;background:#eef2ff;color:#3730a3;}
+  .dp-drop-ico{font-size:26px;}
+  .dp-photostrip{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+  .dp-thumb{position:relative;width:78px;height:78px;border-radius:8px;overflow:hidden;border:1px solid var(--border);}
+  .dp-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .dp-thumb-x{position:absolute;top:2px;right:2px;width:20px;height:20px;border:none;border-radius:50%;background:rgba(15,23,42,.75);color:#fff;font-size:14px;line-height:1;cursor:pointer;}
+  .dp-linkbox{background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:12px 14px;}
+  .dp-lbl{font-size:12px;font-weight:800;color:#166534;margin-bottom:6px;}
+  .dp-deals-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
+  .dp-deal{border:1.5px solid var(--border);border-radius:12px;overflow:hidden;background:var(--card,#fff);display:flex;flex-direction:column;}
+  .dp-deal-img{height:132px;background-size:cover;background-position:center;background-color:#e2e8f0;}
+  .dp-deal-noimg{display:flex;align-items:center;justify-content:center;font-size:40px;color:#94a3b8;}
+  .dp-deal-body{padding:11px 13px;display:flex;flex-direction:column;gap:6px;}
+  .dp-deal-addr{font-weight:700;font-size:13.5px;line-height:1.35;}
+  .dp-deal-meta{font-size:12px;color:var(--text3);}
+  .dp-deal-acts{display:flex;gap:5px;flex-wrap:wrap;margin-top:2px;}
+  .dp-deal-acts .btn{padding:4px 8px;font-size:12px;}
+  /* public property page */
+  .pp-page{min-height:100vh;background:#f1f5f9;}
+  .pp-wrap{max-width:760px;margin:0 auto;padding:20px 16px 48px;}
+  .pp-card{background:#fff;border-radius:16px;box-shadow:0 6px 30px rgba(15,23,42,.09);padding:26px 26px 30px;}
+  .pp-badge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.5px;color:#3730a3;background:#eef2ff;padding:4px 10px;border-radius:6px;margin-bottom:12px;}
+  .pp-addr{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0 0 6px;line-height:1.2;}
+  .pp-price{font-size:24px;font-weight:800;color:#166534;margin-bottom:10px;}
+  .pp-specs{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:#334155;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;padding:12px 0;margin-bottom:16px;}
+  .pp-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:16px;}
+  .pp-gallery img{width:100%;height:150px;object-fit:cover;border-radius:10px;display:block;}
+  .pp-notes{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;font-size:14px;line-height:1.6;color:#334155;}
+  .pp-notes-h{font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#64748b;margin-bottom:6px;}
+  .pp-cta{margin-top:18px;background:#0f172a;color:#e2e8f0;border-radius:10px;padding:14px 16px;font-size:13.5px;line-height:1.6;}
+  .pp-foot{text-align:center;color:#94a3b8;font-size:12px;margin-top:16px;}
   @media(max-width:900px){ .dp-grid{grid-template-columns:1fr;} }
   @media(max-width:768px){
     .crm-sidebar{transform:translateX(-100%);box-shadow:none;}
@@ -504,6 +537,7 @@ const GHL_BASE = "https://app.gohighlevel.com/v2/location/gF9BSz3b2ZNux9RPKYAG";
 const GHL_CONTACTS_URL = 'https://app.gohighlevel.com/v2/location/' + GHL_LOCATION_ID + '/contacts/';
 const GHL_LOOKUP_URL = SUPABASE_URL + '/functions/v1/ghl-lookup';
 const GHL_CONVO_URL = SUPABASE_URL + '/functions/v1/ghl-conversation';
+const GHL_BUYERS_SYNC_URL = SUPABASE_URL + '/functions/v1/ghl-buyers-sync';
 
 // --- GoHighLevel SMS thread (read-only, fetched when a lead/task detail opens) ---
 function ghlSmsSectionHTML(contactId, kind, id){
@@ -1956,16 +1990,20 @@ function exportListsCSV(){
 // =================== end List Tracking ===================
 
 // ===================== Phase 3: Dispo + Buyers =====================
-// Two parts: (1) a Property Blast composer that formats a clean buyer-blast message from a
-// property (address/price/beds/baths/sqft/photos/notes), and (2) a Buyers roster in Supabase
-// table `crm_buyers` (RLS authenticated-only) with GHL-sample-compatible CSV import, saved
-// with an Area (which doubles as the GHL tag) + a Hot Buyer flag for targeting GHL bulk sends.
+// Two parts: (1) a Property builder — enter address/price/beds/baths/sqft/photos/notes and
+// SAVE a deal, which mints a PUBLIC shareable link (?shared=property&id=) you text to buyers;
+// photos can be dragged in (uploaded to the `dispo-photos` storage bucket) or pasted as links.
+// Deals are saved in `crm_properties` until deleted. (2) a Buyers database in `crm_buyers`
+// (name/phone/tag/etc.) so you can pull up e.g. "DC buyers" any time. Both RLS authenticated;
+// crm_properties also allows anon SELECT so the public buyer link can load.
 const BUY_PATH = 'crm_buyers';
+const PROP_PATH = 'crm_properties';
+const DISPO_BUCKET = 'dispo-photos';
 var crmBuyers = null;                 // null = not loaded yet
+var crmProps  = null;                 // saved deals, null = not loaded yet
 var bySearch = '', byArea = '', byHot = false;
-// blast composer draft (kept so re-renders don't lose typing)
-var dispoDraft = {address:'',price:'',beds:'',baths:'',sqft:'',photos:'',notes:''};
-var dispoTargetArea = '', dispoTargetHot = false;
+// property builder draft (kept so re-renders don't lose typing); photos = array of image URLs
+var dispoDraft = {id:null,address:'',price:'',beds:'',baths:'',sqft:'',notes:'',photos:[],photosLink:''};
 
 function byFromDb(r){ return {id:r.id,name:r.name||'',email:r.email||'',phone:r.phone||'',area:r.area||'',
   hot:!!r.hot,buyBox:r.buy_box||'',tags:r.tags||'',notes:r.notes||''}; }
@@ -1982,142 +2020,227 @@ async function crmBuyerDeleteDb(id){ await sbFetch(BUY_PATH+'?id=eq.'+id,'DELETE
 function crmBuyerById(id){ id=+id; return (crmBuyers||[]).find(function(b){ return +b.id===id; }); }
 function buyerAreas(){ return Array.from(new Set((crmBuyers||[]).map(function(b){return (b.area||'').trim();}).filter(Boolean))).sort(); }
 
-// ---- Blast message ----
+// ---- Property (deal) data layer ----
+function propFromDb(r){ return {id:r.id,address:r.address||'',price:r.price||'',beds:r.beds||'',baths:r.baths||'',
+  sqft:r.sqft||'',notes:r.notes||'',photos:Array.isArray(r.photos)?r.photos:[],photosLink:r.photos_link||'',
+  status:r.status||'active',createdBy:r.created_by||'',createdAt:r.created_at||''}; }
+function propToDb(p){ return {address:p.address||'',price:p.price||'',beds:p.beds||'',baths:p.baths||'',
+  sqft:p.sqft||'',notes:p.notes||'',photos:p.photos||[],photos_link:p.photosLink||'',status:p.status||'active',
+  updated_at:new Date().toISOString()}; }
+async function crmPropsFetch(){
+  try { var rows=await sbFetch(PROP_PATH+'?select=*&order=id.desc&limit=2000'); crmProps=(rows||[]).map(propFromDb); }
+  catch(e){ crmProps=[]; showToast('Could not load deals — check connection','error'); }
+}
+async function crmPropInsert(p){ var b=propToDb(p); b.created_by=(currentUser&&currentUser.name)||''; b.created_at=new Date().toISOString();
+  var rows=await sbFetch(PROP_PATH,'POST',b); return rows&&rows[0]?propFromDb(rows[0]):null; }
+async function crmPropUpdate(p){ await sbFetch(PROP_PATH+'?id=eq.'+p.id,'PATCH',propToDb(p)); }
+async function crmPropDeleteDb(id){ await sbFetch(PROP_PATH+'?id=eq.'+id,'DELETE'); }
+function crmPropById(id){ id=+id; return (crmProps||[]).find(function(p){ return +p.id===id; }); }
+function propShareUrl(id){ return GITHUB_PAGES_URL + '?shared=property&id=' + id; }
+
+// ---- Property builder (draft) ----
 function dispoReadForm(){
-  ['address','price','beds','baths','sqft','photos','notes'].forEach(function(k){
+  ['address','price','beds','baths','sqft','notes'].forEach(function(k){
     var el=document.getElementById('dp-'+k); if(el) dispoDraft[k]=el.value;
   });
+  var pl=document.getElementById('dp-photoslink'); if(pl) dispoDraft.photosLink=pl.value;
   return dispoDraft;
 }
-function dispoBlastText(d){
-  d=d||dispoDraft;
-  var lines=[];
-  lines.push('🏠 NEW DEAL' + (d.address?' — '+d.address.trim():''));
-  if(d.price) lines.push('💰 '+d.price.trim());
-  var spec=[]; if(d.beds) spec.push(d.beds.trim()+' bd'); if(d.baths) spec.push(d.baths.trim()+' ba'); if(d.sqft) spec.push(d.sqft.trim()+' sqft');
-  if(spec.length) lines.push('🛏 '+spec.join('  |  '));
-  if(d.notes) lines.push('', d.notes.trim());
-  if(d.photos) lines.push('', '📸 Photos: '+d.photos.trim());
-  lines.push('', 'Cash buyers — serious inquiries only. Reply for the number to run it.');
-  return lines.join('\n');
+// Upload a dragged/selected image to the public dispo-photos bucket, return its public URL.
+async function dispoUploadFile(file){
+  await authRefreshIfNeeded();
+  var clean=(file.name||'photo').replace(/[^a-zA-Z0-9._-]/g,'_');
+  var path=Date.now()+'-'+Math.random().toString(36).slice(2,8)+'-'+clean;
+  var url=SUPABASE_URL+'/storage/v1/object/'+DISPO_BUCKET+'/'+encodeURIComponent(path);
+  var r=await fetch(url,{ method:'POST',
+    headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(),
+      'Content-Type':file.type||'application/octet-stream', 'x-upsert':'true' },
+    body:file });
+  if(!r.ok) throw new Error('upload failed '+r.status);
+  return SUPABASE_URL+'/storage/v1/object/public/'+DISPO_BUCKET+'/'+encodeURIComponent(path);
 }
-function dispoUpdatePreview(){
+async function dispoHandleFiles(files){
+  files=Array.prototype.slice.call(files||[]).filter(function(f){ return /^image\//.test(f.type); });
+  if(!files.length){ showToast('Drop image files only','error'); return; }
   dispoReadForm();
-  var pv=document.getElementById('dp-preview'); if(pv) pv.textContent=dispoBlastText();
+  var strip=document.getElementById('dp-photostrip');
+  showToast('Uploading '+files.length+' photo'+(files.length!==1?'s':'')+'…','info');
+  for(var i=0;i<files.length;i++){
+    try{ var u=await dispoUploadFile(files[i]); dispoDraft.photos.push(u); }
+    catch(e){ showToast('One photo failed to upload','error'); }
+  }
+  dispoRenderPhotoStrip();
+  showToast('Photos added','success');
 }
-function dispoTargetBuyers(){
-  return (crmBuyers||[]).filter(function(b){
-    if(dispoTargetHot && !b.hot) return false;
-    if(dispoTargetArea && (b.area||'').trim()!==dispoTargetArea) return false;
-    return true;
-  });
+function dispoOnDrop(ev){ ev.preventDefault(); ev.currentTarget.classList.remove('drag'); dispoHandleFiles(ev.dataTransfer.files); }
+function dispoOnDragOver(ev){ ev.preventDefault(); ev.currentTarget.classList.add('drag'); }
+function dispoOnDragLeave(ev){ ev.currentTarget.classList.remove('drag'); }
+function dispoPickFiles(){ var i=document.getElementById('dp-fileinput'); if(i) i.click(); }
+function dispoAddPastedLinks(){
+  var el=document.getElementById('dp-pastelinks'); if(!el) return;
+  var urls=(el.value||'').split(/[\s,]+/).map(function(s){return s.trim();}).filter(function(s){return /^https?:\/\//i.test(s);});
+  if(!urls.length){ showToast('Paste image URLs (http…)','error'); return; }
+  urls.forEach(function(u){ if(dispoDraft.photos.indexOf(u)<0) dispoDraft.photos.push(u); });
+  el.value=''; dispoRenderPhotoStrip(); showToast('Added '+urls.length+' image link'+(urls.length!==1?'s':''),'success');
 }
-function dispoRefreshTarget(){
-  var areaEl=document.getElementById('dp-target-area'); if(areaEl) dispoTargetArea=areaEl.value;
-  var hotEl=document.getElementById('dp-target-hot'); if(hotEl) dispoTargetHot=hotEl.checked;
-  var cnt=document.getElementById('dp-target-count');
-  if(cnt){ var n=dispoTargetBuyers().length; cnt.textContent=n+' buyer'+(n!==1?'s':'')+(dispoTargetArea?' in '+dispoTargetArea:'')+(dispoTargetHot?' (hot)':''); }
+function dispoRemovePhoto(i){ dispoDraft.photos.splice(i,1); dispoRenderPhotoStrip(); }
+function dispoRenderPhotoStrip(){
+  var strip=document.getElementById('dp-photostrip'); if(!strip) return;
+  if(!dispoDraft.photos.length){ strip.innerHTML='<span style="color:var(--text4);font-size:12px">No photos yet.</span>'; return; }
+  strip.innerHTML=dispoDraft.photos.map(function(u,i){
+    return '<div class="dp-thumb"><img src="'+esc(u)+'" alt=""><button class="dp-thumb-x" title="Remove" onclick="dispoRemovePhoto('+i+')">&times;</button></div>';
+  }).join('');
 }
-async function dispoCopyBlast(openGhl){
+async function dispoSaveDeal(){
   dispoReadForm();
   if(!dispoDraft.address && !dispoDraft.price){ showToast('Add at least an address or price first','error'); return; }
-  var txt=dispoBlastText();
-  try { await navigator.clipboard.writeText(txt); }
-  catch(e){ showToast('Copy failed — select the preview text manually','error'); return; }
-  var tag=dispoTargetArea||'', hot=dispoTargetHot;
-  if(openGhl){
-    showToast('Blast copied — in GHL, filter buyers by tag '+(tag?'"'+tag+'"':'(your buyer tag)')+(hot?' + "Hot"':'')+' and paste into Bulk SMS','success');
-    window.open(GHL_CONTACTS_URL,'_blank');
-  } else {
-    showToast('Blast copied to clipboard','success');
-  }
+  var btn=document.getElementById('dp-savebtn'); if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  try{
+    if(dispoDraft.id){ await crmPropUpdate(dispoDraft); var idx=(crmProps||[]).findIndex(function(p){return +p.id===+dispoDraft.id;}); if(idx>=0) crmProps[idx]=JSON.parse(JSON.stringify(dispoDraft)); }
+    else { var saved=await crmPropInsert(dispoDraft); if(saved){ dispoDraft.id=saved.id; (crmProps=crmProps||[]).unshift(saved); } }
+    showToast('Deal saved — link ready','success');
+    var dealsEl=document.getElementById('dp-deals'); if(dealsEl) dealsEl.innerHTML=dispoDealsHTML();
+    if(btn){ btn.disabled=false; btn.textContent='💾 Update Deal'; }
+    dispoShowLink(dispoDraft.id);
+  }catch(e){ showToast('Save failed — check connection','error'); if(btn){ btn.disabled=false; btn.textContent='💾 Save Deal & Get Link'; } }
 }
+function dispoShowLink(id){
+  var wrap=document.getElementById('dp-linkwrap'); if(!wrap) return;
+  var url=propShareUrl(id);
+  wrap.style.display='';
+  wrap.innerHTML='<div class="dp-linkbox"><div class="dp-lbl">🔗 Public buyer link</div>'
+    +'<input id="dp-linkfield" class="form-input" readonly value="'+esc(url)+'" onclick="this.select()">'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+      +'<button class="btn btn-primary btn-sm" onclick="dispoCopyLink('+id+')">📋 Copy Link</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="dispoCopyMessage('+id+')">📋 Copy Message</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="window.open(propShareUrl('+id+'),\'_blank\')">↗ Preview</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="dispoClearDraft()">+ New Deal</button>'
+    +'</div></div>';
+}
+function dispoMessageText(p){
+  var lines=[]; lines.push('🏠 New deal'+(p.address?' — '+p.address.trim():''));
+  var bits=[]; if(p.price) bits.push(p.price.trim()); var spec=[];
+  if(p.beds) spec.push(p.beds.trim()+'bd'); if(p.baths) spec.push(p.baths.trim()+'ba'); if(p.sqft) spec.push(p.sqft.trim()+'sqft');
+  if(spec.length) bits.push(spec.join('/')); if(bits.length) lines.push(bits.join(' · '));
+  lines.push('Details + photos: '+propShareUrl(p.id)); return lines.join('\n');
+}
+async function dispoCopyLink(id){ try{ await navigator.clipboard.writeText(propShareUrl(id)); showToast('Link copied','success'); }catch(e){ showToast('Copy failed','error'); } }
+async function dispoCopyMessage(id){ var p=crmPropById(id)||dispoDraft; try{ await navigator.clipboard.writeText(dispoMessageText(p)); showToast('Message copied','success'); }catch(e){ showToast('Copy failed','error'); } }
+function dispoEditDeal(id){ var p=crmPropById(id); if(!p) return; dispoDraft=JSON.parse(JSON.stringify(p)); renderDispo(); setTimeout(function(){ dispoShowLink(id); },0); }
+async function dispoDeleteDeal(id){
+  if(!confirm('Delete this deal? The public link will stop working.')) return;
+  try{ await crmPropDeleteDb(id); crmProps=(crmProps||[]).filter(function(p){return +p.id!==+id;});
+    if(+dispoDraft.id===+id) dispoClearDraft(); else renderDispo(); showToast('Deal deleted','success'); }
+  catch(e){ showToast('Delete failed','error'); }
+}
+function dispoClearDraft(){ dispoDraft={id:null,address:'',price:'',beds:'',baths:'',sqft:'',notes:'',photos:[],photosLink:''}; renderDispo(); }
 
 // ---- Main section render ----
 function renderDispo(){
   var host=document.getElementById('section-main'); if(!host) return;
-  if(crmBuyers===null){
+  if(crmBuyers===null || crmProps===null){
     host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#127991;&#65039; Dispo</h2></div></div>'
-      +'<div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading buyers&hellip;</div></div>';
-    crmBuyersFetch().then(function(){ if(activeSection==='dispo') renderDispo(); });
+      +'<div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading&hellip;</div></div>';
+    Promise.all([ crmBuyers===null?crmBuyersFetch():Promise.resolve(), crmProps===null?crmPropsFetch():Promise.resolve() ])
+      .then(function(){ if(activeSection==='dispo') renderDispo(); });
     return;
   }
   var areas=buyerAreas();
   var hotCount=(crmBuyers||[]).filter(function(b){return b.hot;}).length;
   var d=dispoDraft;
-  var fld=function(k,label,ph,extra){ return '<div class="form-field'+(extra&&extra.full?' full':'')+'"><label class="form-label">'+label+'</label>'
-    +'<input id="dp-'+k+'" class="form-input" value="'+esc(d[k])+'" placeholder="'+esc(ph||'')+'" oninput="dispoUpdatePreview()"></div>'; };
+  var fld=function(k,label,ph){ return '<div class="form-field"><label class="form-label">'+label+'</label>'
+    +'<input id="dp-'+k+'" class="form-input" value="'+esc(d[k])+'" placeholder="'+esc(ph||'')+'"></div>'; };
   host.innerHTML =
     '<div class="lt-wrap">'
     + '<div class="lt-head">'
       + '<div><h2>&#127991;&#65039; Dispo &amp; Buyers</h2>'
-        + '<p>Build a clean property blast, then send it to your buyers through GoHighLevel. Buyers are tagged by <b>Area</b> (your GHL tag) and flagged <b>Hot</b> for fast targeting.</p></div>'
+        + '<p>Enter a deal and hit <b>Save</b> &mdash; you get a public link to text buyers (drag in photos or paste image links). Saved deals stay below until you delete them. Your <b>Buyers</b> are stored + tagged so you can pull up e.g. "DC buyers" any time.</p></div>'
     + '</div>'
-    + '<div class="dp-grid">'
-      // ---- Blast composer ----
+      // ---- Property builder ----
       + '<div class="dp-card">'
-        + '<h3>&#128241; Property Blast</h3><div class="sub">Fill in the deal &mdash; the message on the right updates live.</div>'
+        + '<h3>&#127968; '+(d.id?'Edit Deal':'New Deal')+'</h3><div class="sub">Fill the property in, add photos, then Save to mint the buyer link.</div>'
         + '<div class="dp-form">'
-          + '<div class="form-field full"><label class="form-label">Address</label><input id="dp-address" class="form-input" value="'+esc(d.address)+'" placeholder="123 Main St, Washington DC" oninput="dispoUpdatePreview()"></div>'
+          + '<div class="form-field full"><label class="form-label">Address</label><input id="dp-address" class="form-input" value="'+esc(d.address)+'" placeholder="123 Main St, Washington DC"></div>'
           + fld('price','Price','$250,000')
           + fld('sqft','Sqft','1,450')
           + fld('beds','Beds','3')
           + fld('baths','Baths','2')
-          + '<div class="form-field full"><label class="form-label">Photos link <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input id="dp-photos" class="form-input" value="'+esc(d.photos)+'" placeholder="Dropbox / Google Drive link" oninput="dispoUpdatePreview()"></div>'
-          + '<div class="form-field full"><label class="form-label">Notes / highlights</label><textarea id="dp-notes" class="form-input" rows="3" placeholder="ARV $400k, needs $60k rehab, ARV comps attached, EMD $5k..." oninput="dispoUpdatePreview()">'+esc(d.notes)+'</textarea></div>'
+          + '<div class="form-field full"><label class="form-label">Notes / highlights</label><textarea id="dp-notes" class="form-input" rows="3" placeholder="ARV $400k, needs $60k rehab, EMD $5k, cash/hard money only...">'+esc(d.notes)+'</textarea></div>'
+          + '<div class="form-field full"><label class="form-label">Photos</label>'
+            + '<div id="dp-dropzone" class="dp-dropzone" onclick="dispoPickFiles()" ondrop="dispoOnDrop(event)" ondragover="dispoOnDragOver(event)" ondragleave="dispoOnDragLeave(event)">'
+              + '<div class="dp-drop-ico">&#128247;</div><div><b>Drag photos here</b> or click to choose</div>'
+              + '<div style="font-size:11.5px;color:var(--text4)">JPG / PNG — uploaded to your CRM</div>'
+            + '</div>'
+            + '<input type="file" id="dp-fileinput" accept="image/*" multiple style="display:none" onchange="dispoHandleFiles(this.files)">'
+            + '<div id="dp-photostrip" class="dp-photostrip"></div>'
+            + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-pastelinks" class="form-input" placeholder="…or paste image URLs (space/comma separated)"><button class="btn btn-secondary btn-sm" onclick="dispoAddPastedLinks()">Add</button></div>'
+          + '</div>'
+          + '<div class="form-field full"><label class="form-label">Photo folder link <span style="font-weight:400;color:var(--text3)">(optional — Dropbox/Drive)</span></label><input id="dp-photoslink" class="form-input" value="'+esc(d.photosLink)+'" placeholder="https://…"></div>'
         + '</div>'
-      + '</div>'
-      // ---- Preview + send ----
-      + '<div class="dp-card">'
-        + '<h3>&#9993;&#65039; Buyer Blast Message</h3><div class="sub">This is exactly what buyers receive. Copy it, then paste into a GHL Bulk SMS/Email to your targeted buyers.</div>'
-        + '<div id="dp-preview" class="dp-preview">'+esc(dispoBlastText())+'</div>'
-        + '<div class="dp-target">'
-          + '<span style="font-weight:700;color:var(--text2)">Target:</span>'
-          + '<select id="dp-target-area" onchange="dispoRefreshTarget()"><option value="">All areas</option>'
-            + areas.map(function(a){return '<option value="'+esc(a)+'"'+(dispoTargetArea===a?' selected':'')+'>'+esc(a)+'</option>';}).join('')+'</select>'
-          + '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="dp-target-hot" onchange="dispoRefreshTarget()"'+(dispoTargetHot?' checked':'')+'> Hot only</label>'
-          + '<span id="dp-target-count" style="color:var(--text3)"></span>'
-        + '</div>'
-        + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-          + '<button class="btn btn-primary btn-sm" onclick="dispoCopyBlast(true)">&#128203; Copy Blast &amp; Open GHL</button>'
-          + '<button class="btn btn-secondary btn-sm" onclick="dispoCopyBlast(false)">Copy only</button>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
+          + '<button class="btn btn-primary btn-sm" id="dp-savebtn" onclick="dispoSaveDeal()">&#128190; Save Deal &amp; Get Link</button>'
           + '<button class="btn btn-secondary btn-sm" onclick="dispoClearDraft()">Clear</button>'
         + '</div>'
+        + '<div id="dp-linkwrap" style="display:none;margin-top:12px"></div>'
       + '</div>'
+    // ---- Saved deals ----
+    + '<div class="lt-head" style="margin:22px 0 10px"><div><h2 style="font-size:16px">&#128188; Saved Deals</h2></div>'
+      + '<div class="lt-actions"><button class="btn btn-secondary btn-sm" onclick="crmProps=null;renderDispo()">&#8635; Refresh</button></div>'
     + '</div>'
+    + '<div id="dp-deals">'+dispoDealsHTML()+'</div>'
     // ---- Buyers roster ----
     + '<div class="lt-stats" style="margin-top:22px">'
       + '<div class="lt-stat"><div class="n">'+(crmBuyers||[]).length+'</div><div class="l">Buyers</div></div>'
       + '<div class="lt-stat"><div class="n" style="color:#b91c1c">'+hotCount+'</div><div class="l">Hot buyers</div></div>'
-      + '<div class="lt-stat"><div class="n">'+areas.length+'</div><div class="l">Areas</div></div>'
+      + '<div class="lt-stat"><div class="n">'+areas.length+'</div><div class="l">Tags / areas</div></div>'
     + '</div>'
-    + '<div class="lt-head" style="margin-bottom:10px"><div><h2 style="font-size:16px">&#128101; Buyers List</h2></div>'
+    + '<div class="lt-head" style="margin-bottom:10px"><div><h2 style="font-size:16px">&#128101; Buyers List</h2><p style="font-size:12px;color:var(--text3);margin:2px 0 0">Search by tag/area to find your buyers (e.g. "DC").</p></div>'
       + '<div class="lt-actions">'
         + '<button class="btn btn-secondary btn-sm" onclick="crmBuyers=null;renderDispo()">&#8635; Refresh</button>'
+        + '<button class="btn btn-primary btn-sm" onclick="openBuyerSyncModal()">&#128260; Sync from GHL</button>'
         + '<button class="btn btn-secondary btn-sm" onclick="openBuyerImportModal()">&#8681; Import CSV</button>'
         + '<button class="btn btn-secondary btn-sm" onclick="exportBuyersCSV()">&#8682; Export</button>'
-        + '<button class="btn btn-primary btn-sm" onclick="openBuyerEditModal(null)">&#43; Add Buyer</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="openBuyerEditModal(null)">&#43; Add Buyer</button>'
       + '</div>'
     + '</div>'
     + '<div class="lt-toolbar">'
-      + '<input id="by-search" type="text" placeholder="&#128269; Search name / area / notes..." oninput="bySetSearch(this.value)" value="'+esc(bySearch)+'" style="flex:1;min-width:170px">'
-      + '<select onchange="byArea=this.value;byRenderArea()"><option value="">All areas</option>'
+      + '<input id="by-search" type="text" placeholder="&#128269; Search name / tag / area / notes..." oninput="bySetSearch(this.value)" value="'+esc(bySearch)+'" style="flex:1;min-width:170px">'
+      + '<select onchange="byArea=this.value;byRenderArea()"><option value="">All tags / areas</option>'
         + areas.map(function(a){return '<option value="'+esc(a)+'"'+(byArea===a?' selected':'')+'>'+esc(a)+'</option>';}).join('')+'</select>'
       + '<label style="display:flex;align-items:center;gap:5px;font-size:12.5px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="by-hot"'+(byHot?' checked':'')+' onchange="byHot=this.checked;byRenderArea()"> Hot only</label>'
     + '</div>'
     + '<div id="by-list-area"></div>'
     + '</div>';
+  dispoRenderPhotoStrip();
   byRenderArea();
-  dispoRefreshTarget();
 }
-function dispoClearDraft(){ dispoDraft={address:'',price:'',beds:'',baths:'',sqft:'',photos:'',notes:''}; renderDispo(); }
+function dispoDealsHTML(){
+  var list=(crmProps||[]);
+  if(!list.length) return '<div style="padding:24px;text-align:center;color:var(--text4);font-size:13px;border:1px dashed var(--border);border-radius:10px">No saved deals yet. Build one above and hit Save.</div>';
+  return '<div class="dp-deals-grid">'+list.map(function(p){
+    var thumb=(p.photos&&p.photos[0])?'<div class="dp-deal-img" style="background-image:url(\''+esc(p.photos[0])+'\')"></div>':'<div class="dp-deal-img dp-deal-noimg">&#127968;</div>';
+    var spec=[]; if(p.beds) spec.push(p.beds+'bd'); if(p.baths) spec.push(p.baths+'ba'); if(p.sqft) spec.push(p.sqft+'sqft');
+    return '<div class="dp-deal">'+thumb
+      +'<div class="dp-deal-body">'
+        +'<div class="dp-deal-addr">'+esc(p.address||'(no address)')+'</div>'
+        +'<div class="dp-deal-meta">'+(p.price?'<b>'+esc(p.price)+'</b>':'')+(spec.length?' &middot; '+esc(spec.join('/')):'')+(p.photos&&p.photos.length?' &middot; '+p.photos.length+' 📷':'')+'</div>'
+        +'<div class="dp-deal-acts">'
+          +'<button class="btn btn-primary btn-sm" onclick="dispoCopyLink('+p.id+')">📋 Link</button>'
+          +'<button class="btn btn-secondary btn-sm" onclick="dispoCopyMessage('+p.id+')">💬 Msg</button>'
+          +'<button class="btn btn-secondary btn-sm" onclick="window.open(propShareUrl('+p.id+'),\'_blank\')">↗</button>'
+          +'<button class="btn btn-secondary btn-sm" onclick="dispoEditDeal('+p.id+')">✏️</button>'
+          +'<button class="btn btn-secondary btn-sm" onclick="dispoDeleteDeal('+p.id+')">🗑</button>'
+        +'</div>'
+      +'</div></div>';
+  }).join('')+'</div>';
+}
 function bySetSearch(v){ bySearch=v; byRenderArea(); }
 function byFilteredBuyers(){
   var q=bySearch.trim().toLowerCase();
   return (crmBuyers||[]).filter(function(b){
     if(byArea && (b.area||'').trim()!==byArea) return false;
     if(byHot && !b.hot) return false;
-    if(q && [b.name,b.area,b.notes,b.buyBox,b.email,b.phone].join(' ').toLowerCase().indexOf(q)<0) return false;
+    if(q && [b.name,b.area,b.tags,b.notes,b.buyBox,b.email,b.phone].join(' ').toLowerCase().indexOf(q)<0) return false;
     return true;
   });
 }
@@ -2162,7 +2285,7 @@ function openBuyerEditModal(id){
         + '<div class="form-field"><label class="form-label">Email</label><input id="be-email" class="form-input" value="'+esc(b.email)+'" placeholder="buyer@email.com"></div>'
       + '</div>'
       + '<div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end">'
-        + '<div class="form-field"><label class="form-label">Area <span style="font-weight:400;color:var(--text3)">(GHL tag)</span></label><input id="be-area" class="form-input" list="be-area-list" value="'+esc(b.area)+'" placeholder="DC Buyers / MD / Cash">'
+        + '<div class="form-field"><label class="form-label">Area / Market <span style="font-weight:400;color:var(--text3)">(e.g. DC, MD, VA)</span></label><input id="be-area" class="form-input" list="be-area-list" value="'+esc(b.area)+'" placeholder="DC / MD / NoVA">'
           + '<datalist id="be-area-list">'+buyerAreas().map(function(a){return '<option value="'+esc(a)+'">';}).join('')+'</datalist></div>'
         + '<div class="form-field"><label class="form-label">Hot?</label><label style="display:flex;align-items:center;gap:6px;height:38px;font-size:13px;cursor:pointer"><input type="checkbox" id="be-hot"'+(b.hot?' checked':'')+'> &#128293; Hot buyer</label></div>'
       + '</div>'
@@ -2274,11 +2397,111 @@ async function doBuyerImport(){
     toAdd.push({name:name,phone:phone,email:email,area:area,hot:hot,buyBox:get('buybox'),tags:tags,notes:get('notes')});
   });
   if(!toAdd.length){ showToast('Nothing to import','warning'); return; }
+  // Skip duplicates: match on phone (last 10 digits), fall back to email. Checks buyers
+  // already in the CRM AND repeats within this same file.
+  var digits=function(p){ return String(p||'').replace(/\D/g,'').slice(-10); };
+  var em=function(e){ return String(e||'').trim().toLowerCase(); };
+  var seenPhone={}, seenEmail={};
+  (crmBuyers||[]).forEach(function(b){ var d=digits(b.phone); if(d) seenPhone[d]=1; var e=em(b.email); if(e) seenEmail[e]=1; });
+  var deduped=[], skipped=0;
+  toAdd.forEach(function(r){
+    var d=digits(r.phone), e=em(r.email);
+    if((d && seenPhone[d]) || (!d && e && seenEmail[e])){ skipped++; return; }
+    if(d) seenPhone[d]=1; if(e) seenEmail[e]=1;
+    deduped.push(r);
+  });
+  if(!deduped.length){ closeModal(); showToast('All '+skipped+' buyer'+(skipped!==1?'s were':' was')+' already in your list — nothing new added','info'); return; }
   try {
-    var inserted=await crmBuyerInsertMany(toAdd);
+    var inserted=await crmBuyerInsertMany(deduped);
     inserted.forEach(function(row){ crmBuyers.push(row); });
-    closeModal(); showToast('Imported '+inserted.length+' buyer'+(inserted.length!==1?'s':''),'success'); renderDispo();
+    closeModal();
+    showToast('Imported '+inserted.length+' buyer'+(inserted.length!==1?'s':'')+(skipped?' · skipped '+skipped+' duplicate'+(skipped!==1?'s':''):''),'success');
+    renderDispo();
   } catch(e){ showToast('Import failed — check the CSV and try again','error'); }
+}
+
+// ---- Sync buyers FROM GoHighLevel (GHL is master; pull contacts by tag) ----
+function buyerSyncGetTags(){ try{ return localStorage.getItem('crm_buyer_sync_tags')||''; }catch(e){ return ''; } }
+function openBuyerSyncModal(){
+  var saved=buyerSyncGetTags();
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px">'
+    + '<div class="modal-header"><div class="modal-title">&#128260; Sync Buyers from GoHighLevel</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:10px">Type the GHL <b>tag</b> that marks your buyers (e.g. <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px">Cash Buyer</code>). Every GHL contact with that tag is pulled into your CRM buyers list. Multiple tags? Separate with commas. Re-running skips anyone already saved.</p>'
+      + '<div class="form-field"><label class="form-label">Buyer tag(s) in GHL</label><input id="bs-tags" class="form-input" value="'+esc(saved)+'" placeholder="Cash Buyer, DC Buyer"></div>'
+      + '<div style="margin:2px 0 4px"><button class="btn btn-secondary btn-sm" id="bs-loadtags" onclick="buyerSyncLoadTags()">&#128270; Show my GHL tags</button> <span id="bs-tagstatus" style="font-size:12px;color:var(--text4)"></span></div>'
+      + '<div id="bs-tagchips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>'
+      + '<div id="bs-result" style="font-size:12.5px;color:var(--text3);margin-top:8px"></div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary" id="bs-go" onclick="doBuyerSync()">&#128260; Sync Now</button>'
+    + '</div></div></div>';
+}
+async function buyerSyncCall(payload){
+  await authRefreshIfNeeded();
+  var doFetch=function(){ return fetch(GHL_BUYERS_SYNC_URL,{ method:'POST',
+    headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+    body:JSON.stringify(payload) }); };
+  var r=await doFetch();
+  if(r.status===401 && await authForceRefresh()){ r=await doFetch(); }
+  var data=await r.json().catch(function(){ return {}; });
+  if(!r.ok) throw new Error(data.error||('HTTP '+r.status));
+  return data;
+}
+async function buyerSyncLoadTags(){
+  var st=document.getElementById('bs-tagstatus'); var btn=document.getElementById('bs-loadtags');
+  if(btn){ btn.disabled=true; } if(st){ st.textContent='Loading your GHL tags…'; }
+  try{
+    var data=await buyerSyncCall({action:'tags'});
+    var chips=document.getElementById('bs-tagchips');
+    chips.innerHTML=(data.tags||[]).slice(0,40).map(function(t){
+      return '<button class="btn btn-secondary btn-sm" style="padding:3px 9px" onclick="buyerSyncAddTag('+JSON.stringify(t.name).replace(/"/g,'&quot;')+')">'+esc(t.name)+' <span style="color:var(--text4)">'+t.count+'</span></button>';
+    }).join('') || '<span style="color:var(--text4);font-size:12px">No tags found.</span>';
+    if(st){ st.textContent='Tap a tag to add it (sampled from your contacts).'; }
+  }catch(e){ if(st){ st.textContent='Could not load tags — just type the tag above.'; } }
+  if(btn){ btn.disabled=false; }
+}
+function buyerSyncAddTag(name){
+  var el=document.getElementById('bs-tags'); if(!el) return;
+  var cur=(el.value||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
+  if(cur.map(function(s){return s.toLowerCase();}).indexOf(name.toLowerCase())<0) cur.push(name);
+  el.value=cur.join(', ');
+}
+async function doBuyerSync(){
+  var raw=(document.getElementById('bs-tags').value||'').trim();
+  var tags=raw.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  if(!tags.length){ showToast('Type at least one buyer tag','error'); return; }
+  try{ localStorage.setItem('crm_buyer_sync_tags', tags.join(', ')); }catch(e){}
+  var go=document.getElementById('bs-go'); if(go){ go.disabled=true; go.textContent='Syncing…'; }
+  var res=document.getElementById('bs-result'); if(res){ res.textContent='Pulling contacts from GoHighLevel…'; }
+  try{
+    var data=await buyerSyncCall({action:'pull', tags:tags});
+    var pulled=data.buyers||[];
+    if(!pulled.length){ if(res){ res.textContent='No GHL contacts found with '+(tags.length>1?'those tags':'that tag')+'.'; } if(go){ go.disabled=false; go.textContent='🔄 Sync Now'; } return; }
+    var digits=function(p){ return String(p||'').replace(/\D/g,'').slice(-10); };
+    var em=function(e){ return String(e||'').trim().toLowerCase(); };
+    // Build a set of buyers already in the CRM (match on phone, fall back to email).
+    var seenPhone={}, seenEmail={};
+    (crmBuyers||[]).forEach(function(b){ var d=digits(b.phone); if(d) seenPhone[d]=1; var e=em(b.email); if(e) seenEmail[e]=1; });
+    var toInsert=[], dupes=0;
+    pulled.forEach(function(g){
+      var d=g.phone10||digits(g.phone), e=em(g.email);
+      var ghlTags=(g.tags||[]).map(function(t){return String(t).trim();}).filter(Boolean);
+      // Already in the CRM, or a repeat within this same pull? -> duplicate, skip it.
+      if((d && seenPhone[d]) || (!d && e && seenEmail[e])){ dupes++; return; }
+      if(d) seenPhone[d]=1; if(e) seenEmail[e]=1;
+      var phoneFmt=(d&&d.length===10)?('('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6)):(g.phone||'');
+      toInsert.push({id:null,name:g.name||'',phone:phoneFmt,email:g.email||'',area:ghlTags[0]||'',hot:false,buyBox:'',tags:ghlTags.join(', '),notes:''});
+    });
+    if(toInsert.length){ var ins=await crmBuyerInsertMany(toInsert); ins.forEach(function(row){ crmBuyers.push(row); }); }
+    closeModal();
+    var msg='✅ '+toInsert.length+' new buyer'+(toInsert.length!==1?'s':'')+' added';
+    msg += ' · '+dupes+' duplicate'+(dupes!==1?'s':'')+' skipped';
+    showToast(msg, toInsert.length?'success':'info');
+    renderDispo();
+  }catch(e){ if(res){ res.textContent='Sync failed: '+e.message; } if(go){ go.disabled=false; go.textContent='🔄 Sync Now'; } }
 }
 function exportBuyersCSV(){
   var header=['Name','Phone','Email','Area','Hot','Buy Box','Tags','Notes'];
@@ -5666,12 +5889,51 @@ async function mtSaveEdit(id){
 }
 
 // ===== Route: shared link vs auth vs full app =====
+// ---- Public shared PROPERTY page (?shared=property&id=) — no login, reads crm_properties by id ----
+async function initSharedPropertyView(id){
+  document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading&#8230;</div>';
+  try{
+    var r = await fetch(SUPABASE_URL+'/rest/v1/'+PROP_PATH+'?id=eq.'+id+'&select=*', {
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY }
+    });
+    var rows = await r.json();
+    if(!rows || !rows.length){ document.getElementById('app').innerHTML='<div style="padding:60px;text-align:center;color:var(--text3)"><h2>Deal not found</h2><p>This link may be out of date. Ask for a new one.</p></div>'; return; }
+    renderSharedPropertyView(propFromDb(rows[0]));
+  }catch(e){ document.getElementById('app').innerHTML='<div style="padding:60px;text-align:center;color:var(--text3)"><h2>Could not load</h2><p>Please try again.</p></div>'; }
+}
+function renderSharedPropertyView(p){
+  var spec=[]; if(p.beds) spec.push('<span><b>'+esc(p.beds)+'</b> beds</span>');
+  if(p.baths) spec.push('<span><b>'+esc(p.baths)+'</b> baths</span>');
+  if(p.sqft) spec.push('<span><b>'+esc(p.sqft)+'</b> sqft</span>');
+  var gallery=(p.photos&&p.photos.length)
+    ? '<div class="pp-gallery">'+p.photos.map(function(u){return '<a href="'+esc(u)+'" target="_blank"><img src="'+esc(u)+'" alt="" loading="lazy"></a>';}).join('')+'</div>'
+    : '';
+  var folder=p.photosLink?'<a class="btn btn-secondary" style="text-decoration:none" href="'+esc(p.photosLink)+'" target="_blank">📁 View all photos</a>':'';
+  document.getElementById('app').innerHTML =
+    '<div class="pp-page">'
+    + '<div class="header"><div class="logo">&#127968; M-Estate — Investment Deal</div></div>'
+    + '<div class="pp-wrap">'
+      + '<div class="pp-card">'
+        + '<div class="pp-badge">CASH BUYERS · OFF-MARKET</div>'
+        + '<h1 class="pp-addr">'+esc(p.address||'Off-market property')+'</h1>'
+        + (p.price?'<div class="pp-price">'+esc(p.price)+'</div>':'')
+        + (spec.length?'<div class="pp-specs">'+spec.join('')+'</div>':'')
+        + gallery
+        + (p.notes?'<div class="pp-notes"><div class="pp-notes-h">Deal notes</div>'+esc(p.notes).replace(/\n/g,'<br>')+'</div>':'')
+        + (folder?'<div style="margin-top:16px">'+folder+'</div>':'')
+        + '<div class="pp-cta">Interested? Reply to the text/email you received for numbers &amp; access. Serious cash buyers only.</div>'
+      + '</div>'
+      + '<div class="pp-foot">M-Estate · This deal is shared for buyer review and is subject to availability.</div>'
+    + '</div></div>';
+}
+
 async function bootApp(){
   var params = new URLSearchParams(window.location.search);
   var sharedKind = params.get('shared');
   var sharedId = params.get('id');
   if (sharedKind === 'lead' && sharedId) { initSharedLeadView(parseInt(sharedId, 10)); return; }
   if (sharedKind === 'task' && sharedId) { initSharedTaskView(parseInt(sharedId, 10)); return; }
+  if (sharedKind === 'property' && sharedId) { initSharedPropertyView(parseInt(sharedId, 10)); return; }
 
   if (!AUTH_ENABLED) { initFullApp(); return; }
 
