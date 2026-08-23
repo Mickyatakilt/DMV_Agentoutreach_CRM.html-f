@@ -357,11 +357,68 @@
     body.sb-collapsed .crm-sb-foot span{display:inline;}
     body.sb-collapsed .crm-sb-item{justify-content:flex-start;gap:12px;}
   }
+  /* ============ Probate batches (grouped by pull-date + state) ============ */
+  .pb-batch{border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;background:var(--surface);}
+  .pb-batch.pb-traced{border-left:4px solid #059669;}
+  .pb-batch-h{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;background:var(--surface2);user-select:none;flex-wrap:wrap;}
+  .pb-batch-h:hover{background:var(--surface3);}
+  .pb-caret{color:var(--text3);font-size:12px;width:12px;display:inline-block;}
+  .pb-bt-date{font-weight:800;font-size:14px;color:var(--text);}
+  .pb-bt-cnt{background:var(--accent-light);color:var(--accent);border-radius:999px;padding:1px 10px;font-size:12px;font-weight:700;}
+  .pb-bt-sub{color:var(--text3);font-size:11.5px;margin-left:auto;}
+  .pb-wf{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;padding:10px 14px;border-top:1px solid var(--border);background:var(--surface);}
+  .pb-wf-f{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.3px;}
+  .pb-wf-f span{white-space:nowrap;}
+  .pb-wf-f select,.pb-wf-f input{border:1.5px solid var(--border2);border-radius:8px;padding:6px 8px;font-size:12.5px;background:var(--surface2);color:var(--text);text-transform:none;font-weight:500;letter-spacing:0;}
+  .pb-wf-grow{flex:1;min-width:180px;}
+  .pb-wf-grow input{width:100%;}
+  .pb-batch-body{padding:0 6px 8px;}
+  /* ============ P5 Ask AI (floating natural-language query) ============ */
+  .ask-fab{position:fixed;right:22px;bottom:22px;z-index:360;display:flex;align-items:center;gap:8px;border:none;cursor:pointer;
+    background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-weight:800;font-size:14px;padding:12px 18px;border-radius:999px;
+    box-shadow:0 8px 24px rgba(79,70,229,.45);transition:transform .12s ease,box-shadow .12s ease;}
+  .ask-fab:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(79,70,229,.55);}
+  .ask-fab-ic{font-size:16px;line-height:1;}
+  .ask-overlay{position:fixed;inset:0;z-index:365;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);display:none;align-items:flex-end;justify-content:flex-end;padding:0 22px 92px;}
+  .ask-overlay.open{display:flex;}
+  .ask-panel{width:420px;max-width:calc(100vw - 32px);max-height:74vh;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden;animation:askpop .16s ease;}
+  @keyframes askpop{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
+  .ask-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;}
+  .ask-title{font-weight:800;font-size:15px;}
+  .ask-title small{display:block;font-weight:500;font-size:11px;opacity:.85;margin-top:1px;}
+  .ask-x{background:rgba(255,255,255,.2);border:none;color:#fff;width:28px;height:28px;border-radius:8px;cursor:pointer;font-size:13px;}
+  .ask-searchbar{display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border);}
+  .ask-input{flex:1;border:1.5px solid var(--border2);border-radius:10px;padding:10px 12px;font-size:14px;background:var(--surface2);color:var(--text);outline:none;}
+  .ask-input:focus{border-color:var(--accent);}
+  .ask-go{border:none;background:var(--accent);color:#fff;font-weight:700;padding:0 16px;border-radius:10px;cursor:pointer;font-size:13px;}
+  .ask-results{padding:12px 14px;overflow-y:auto;}
+  .ask-welcome .ask-w-h{font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;}
+  .ask-ex{display:inline-block;margin:0 6px 6px 0;padding:7px 11px;border-radius:999px;border:1px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:12px;cursor:pointer;}
+  .ask-ex:hover{border-color:var(--accent);color:var(--accent);}
+  .ask-w-note{margin-top:10px;font-size:11px;color:var(--text4);line-height:1.5;}
+  .ask-loading{padding:24px;text-align:center;color:var(--text4);font-size:13px;}
+  .ask-answer{display:flex;align-items:baseline;gap:10px;padding:6px 2px 12px;border-bottom:1px dashed var(--border);margin-bottom:10px;flex-wrap:wrap;}
+  .ask-answer-n{font-size:30px;font-weight:800;color:var(--accent);line-height:1;}
+  .ask-answer-l{font-size:12px;color:var(--text3);}
+  .ask-chip-count{display:inline-block;background:var(--surface3);border-radius:6px;padding:2px 7px;margin:0 3px 3px 0;font-size:11px;color:var(--text2);}
+  .ask-answer-line{font-size:13px;color:var(--text2);margin-bottom:8px;}
+  .ask-grp{margin-bottom:14px;}
+  .ask-grp-h{font-size:12px;font-weight:800;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .ask-grp-h span{background:var(--accent-light);color:var(--accent);border-radius:999px;padding:1px 8px;font-size:11px;}
+  .ask-row{padding:8px 10px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;cursor:pointer;background:var(--surface2);transition:border-color .1s;}
+  .ask-row:hover{border-color:var(--accent);}
+  .ask-row-t{font-weight:700;font-size:13px;color:var(--text);}
+  .ask-row-s{font-size:11.5px;color:var(--text3);margin-top:2px;}
+  .ask-row-d{font-size:11px;color:var(--accent);margin-top:2px;font-weight:600;}
+  .ask-more{font-size:11px;color:var(--text4);padding:2px 4px;}
+  .ask-empty{padding:18px 6px;color:var(--text3);font-size:12.5px;line-height:1.6;}
+  @media(max-width:768px){ .ask-overlay{padding:0;align-items:stretch;justify-content:stretch;} .ask-panel{width:100%;max-width:100%;max-height:100%;border-radius:0;} .ask-fab{right:16px;bottom:16px;padding:11px 16px;} }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="modal-container"></div>
+<div id="ask-root"></div>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -2623,6 +2680,38 @@ async function crmProbateFetch(){
 async function crmProbateUpdate(p){ await sbFetch(PB_PATH+'?id=eq.'+p.id,'PATCH',pbToDb(p)); }
 async function crmProbateDeleteDb(id){ await sbFetch(PB_PATH+'?id=eq.'+id,'DELETE'); }
 function crmProbateById(id){ id=+id; return (crmProbate||[]).find(function(p){ return +p.id===id; }); }
+
+// ---- Probate BATCHES (one per date-pulled + state; holds the batch-level workflow fields) ----
+var crmProbateBatches=null;      // null = not loaded yet
+var pbOpen={};                   // "state|date" -> true when that batch is expanded
+const PBB_PATH='crm_probate_batches';
+function pbbFromDb(r){ return {id:r.id,datePulled:r.date_pulled||'',state:r.state||'',skiptraced:r.skiptraced||'',
+  sendOutDate:r.send_out_date||'',followUpDate:r.follow_up_date||'',ghlLink:r.ghl_link||'',ghlPlacement:r.ghl_placement||'',notes:r.notes||''}; }
+function pbbToDb(b){ return {date_pulled:b.datePulled||null,state:b.state||'',skiptraced:b.skiptraced||'',
+  send_out_date:b.sendOutDate||null,follow_up_date:b.followUpDate||null,ghl_link:b.ghlLink||'',ghl_placement:b.ghlPlacement||'',
+  notes:b.notes||'',updated_at:new Date().toISOString()}; }
+async function crmProbateBatchesFetch(){
+  try { var rows=await sbFetch(PBB_PATH+'?select=*&limit=5000'); crmProbateBatches=(rows||[]).map(pbbFromDb); }
+  catch(e){ crmProbateBatches=[]; }
+}
+function pbbKey(date,state){ return (state||'')+'|'+(date||''); }
+function pbbFind(date,state){ return (crmProbateBatches||[]).find(function(b){ return b.datePulled===date && b.state===state; }); }
+function pbbGet(date,state){ return pbbFind(date,state) || {id:null,datePulled:date,state:state,skiptraced:'',sendOutDate:'',followUpDate:'',ghlLink:'',ghlPlacement:'',notes:''}; }
+// Persist ONE batch field. No re-render (the control already shows the new value) — keeps focus/scroll steady.
+async function pbbSet(date,state,field,val){
+  var b=pbbFind(date,state);
+  var isNew=!b;
+  if(isNew) b={id:null,datePulled:date,state:state,skiptraced:'',sendOutDate:'',followUpDate:'',ghlLink:'',ghlPlacement:'',notes:''};
+  b[field]=val;
+  try {
+    if(b.id){ await sbFetch(PBB_PATH+'?id=eq.'+b.id,'PATCH',pbbToDb(b)); }
+    else {
+      var rows=await sbFetch(PBB_PATH,'POST',pbbToDb(b));
+      if(rows&&rows[0]){ b.id=rows[0].id; (crmProbateBatches=crmProbateBatches||[]).push(pbbFromDb(rows[0])); }
+    }
+    showToast('Saved','success');
+  } catch(e){ showToast('Could not save that field — check connection','error'); }
+}
 async function crmProbateSyncCall(f){
   return await sbFetch('rpc/crm_probate_sync','POST',{
     p_states:(f.states&&f.states.length)?f.states:null,
@@ -2726,10 +2815,11 @@ async function pbUnsend(id){
 // ---- Main section render ----
 function renderProbate(){
   var host=document.getElementById('section-main'); if(!host) return;
-  if(crmProbate===null){
+  if(crmProbate===null || crmProbateBatches===null){
     host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#9878;&#65039; Probate</h2></div></div>'
       +'<div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading probate leads&hellip;</div></div>';
-    crmProbateFetch().then(function(){ if(activeSection==='probate') renderProbate(); });
+    var need=[]; if(crmProbate===null) need.push(crmProbateFetch()); if(crmProbateBatches===null) need.push(crmProbateBatchesFetch());
+    Promise.all(need).then(function(){ if(activeSection==='probate') renderProbate(); });
     return;
   }
   var all=crmProbate||[];
@@ -2744,9 +2834,9 @@ function renderProbate(){
     '<div class="lt-wrap">'
     + '<div class="lt-head">'
       + '<div><h2>&#9878;&#65039; Probate</h2>'
-        + '<p>Probate estate leads pulled from your scanner &mdash; decedent, candidate property, personal representative, and a running send log. One click copies the GHL tag and opens your campaign, then stamps the day it was sent.</p></div>'
+        + '<p>Probate leads from your scanner, grouped into batches by the day they were pulled and the state. Open a batch to see its leads. Mark each batch skiptraced, set its send-out &amp; follow-up dates, and log where it lives in GHL.</p></div>'
       + '<div class="lt-actions">'
-        + '<button class="btn btn-secondary btn-sm" onclick="crmProbate=null;renderProbate()">&#8635; Refresh</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="crmProbate=null;crmProbateBatches=null;renderProbate()">&#8635; Refresh</button>'
         + '<button class="btn btn-secondary btn-sm" onclick="exportProbateCSV()">&#8682; Export</button>'
         + '<button class="btn btn-primary btn-sm" onclick="openProbateSyncModal()">&#128260; Sync from Scanner</button>'
       + '</div>'
@@ -2791,6 +2881,30 @@ function pbFilteredLeads(){
   });
 }
 var PB_CAP=500;
+// One lead row inside an expanded batch (no State column — the batch header carries state+date).
+function pbLeadRow(p){
+  var addr = p.propertyAddress
+    ? '<div style="font-weight:600;font-size:13px">'+esc(p.propertyAddress)+'</div>'
+      + '<div style="font-size:11.5px;color:var(--text3)">'+esc([p.propertyCity,p.propertyZip].filter(Boolean).join(' '))+' '+pbMatchBadge(p)
+      + (p.assessedValue?' <span style="color:var(--text3)">'+pbMoney(p.assessedValue)+'</span>':'')+'</div>'
+    : '<span style="color:var(--text4);font-size:12px">No property matched</span>';
+  var decRep = '<div style="font-weight:600;font-size:12.5px">'+esc(p.decedentName||'—')+'</div>'
+    + (p.prName?'<div style="font-size:11.5px;color:var(--text3)">PR: '+esc(p.prName)+'</div>':'')
+    + '<div style="font-size:11px;color:var(--text4)">'+esc(p.county)+(p.caseNumber?' &middot; #'+esc(p.caseNumber):'')+(p.estateType?' &middot; '+esc(p.estateType):'')+'</div>';
+  var sentCell = p.sentOn
+    ? pbSentBadge(p)+(p.sentTag?'<div style="font-size:11px;color:var(--text4);margin-top:2px">'+esc(p.sentTag)+'</div>':'')
+    : '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();pbSendGhl('+p.id+')" title="Copy the GHL tag, open GHL, and stamp today as the send date">&#128241; Send</button>';
+  return '<tr style="cursor:pointer"'+(pbSel.has(+p.id)?' class="row-sel"':'')+' onclick="openProbateDetail('+p.id+')">'
+    + '<td onclick="event.stopPropagation()" style="border-left:4px solid '+(p.sentOn?'#059669':'#cbd5e1')+'">'+selChk('pbToggle',p.id,pbSel.has(+p.id))+'</td>'
+    + '<td style="max-width:230px">'+addr+'</td>'
+    + '<td style="max-width:230px">'+decRep+'</td>'
+    + '<td style="white-space:nowrap">'+pbScorePill(p.score)+'</td>'
+    + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'+sentCell+'</td>'
+    + '<td style="white-space:nowrap">'+ltDuePill(p.followUpDate)+'</td>'
+    + '<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">&#9998;</button> <button class="btn btn-secondary btn-sm" title="Delete" onclick="deleteProbateLead('+p.id+')">&#128465;</button></td>'
+  + '</tr>';
+}
+// Grouped by scrape-date + state. Each batch shows its workflow bar; click the header to reveal the leads.
 function pbRenderArea(){
   var area=document.getElementById('pb-list-area'); if(!area) return;
   var rows=pbFilteredLeads();
@@ -2798,39 +2912,60 @@ function pbRenderArea(){
     area.innerHTML='<div class="empty"><div class="empty-icon">&#128269;</div><h3>No leads match</h3><p style="color:var(--text3);font-size:12px">Try clearing the search, state, or view filter.</p></div>';
     return;
   }
-  var shown=rows.slice(0,PB_CAP);
-  var body=shown.map(function(p){
-    var addr = p.propertyAddress
-      ? '<div style="font-weight:600;font-size:13px">'+esc(p.propertyAddress)+'</div>'
-        + '<div style="font-size:11.5px;color:var(--text3)">'+esc([p.propertyCity,p.propertyZip].filter(Boolean).join(' '))+' '+pbMatchBadge(p)
-        + (p.assessedValue?' <span style="color:var(--text3)">'+pbMoney(p.assessedValue)+'</span>':'')+'</div>'
-      : '<span style="color:var(--text4);font-size:12px">No property matched</span>';
-    var decRep = '<div style="font-weight:600;font-size:12.5px">'+esc(p.decedentName||'—')+'</div>'
-      + (p.prName?'<div style="font-size:11.5px;color:var(--text3)">PR: '+esc(p.prName)+'</div>':'')
-      + '<div style="font-size:11px;color:var(--text4)">'+esc(p.county)+(p.caseNumber?' &middot; #'+esc(p.caseNumber):'')+(p.estateType?' &middot; '+esc(p.estateType):'')+'</div>';
-    var sentCell = p.sentOn
-      ? pbSentBadge(p)+(p.sentTag?'<div style="font-size:11px;color:var(--text4);margin-top:2px">'+esc(p.sentTag)+'</div>':'')
-      : '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();pbSendGhl('+p.id+')" title="Copy the GHL tag, open GHL, and stamp today as the send date">&#128241; Send</button>';
-    return '<tr style="cursor:pointer"'+(pbSel.has(+p.id)?' class="row-sel"':'')+' onclick="openProbateDetail('+p.id+')">'
-      + '<td onclick="event.stopPropagation()" style="border-left:4px solid '+(p.sentOn?'#059669':'#cbd5e1')+'">'+selChk('pbToggle',p.id,pbSel.has(+p.id))+'</td>'
-      + '<td style="white-space:nowrap;font-size:11.5px">'+pbStateChip(p.state)+'<div style="color:var(--text4);margin-top:3px">'+(p.datePulled?ltFmtDate(p.datePulled):'')+'</div></td>'
-      + '<td style="max-width:230px">'+addr+'</td>'
-      + '<td style="max-width:230px">'+decRep+'</td>'
-      + '<td style="white-space:nowrap">'+pbScorePill(p.score)+'</td>'
-      + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'+sentCell+'</td>'
-      + '<td style="white-space:nowrap">'+ltDuePill(p.followUpDate)+'</td>'
-      + '<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">&#9998;</button> <button class="btn btn-secondary btn-sm" title="Delete" onclick="deleteProbateLead('+p.id+')">&#128465;</button></td>'
-    + '</tr>';
+  var forceOpen = !!pbSearch.trim(); // a live search auto-opens the matching batches
+  var groups={};
+  rows.forEach(function(p){ var k=pbbKey(p.datePulled,p.state); (groups[k]=groups[k]||[]).push(p); });
+  var keys=Object.keys(groups).sort(function(a,b){
+    var A=a.split('|'), B=b.split('|'); // [state,date]
+    if(A[1]!==B[1]) return (B[1]||'').localeCompare(A[1]||''); // newest date first
+    return (A[0]||'').localeCompare(B[0]||'');
+  });
+  var esq=function(s){ return String(s||'').replace(/'/g,"\\'"); };
+  var html=keys.map(function(k){
+    var arr=groups[k], st=arr[0].state||'', dt=arr[0].datePulled||'';
+    var b=pbbGet(dt,st), open=forceOpen||!!pbOpen[k];
+    var sentN=arr.filter(function(p){return p.sentOn;}).length;
+    var hiN=arr.filter(function(p){return +p.score>=5;}).length;
+    var gids=JSON.stringify(arr.map(function(p){return +p.id;}));
+    var gAll=arr.length && arr.every(function(p){ return pbSel.has(+p.id); });
+    var da="'"+esq(dt)+"','"+esq(st)+"'";
+    var wf =
+      '<div class="pb-wf" onclick="event.stopPropagation()">'
+      + '<label class="pb-wf-f"><span>Skiptraced</span><select onchange="pbbSet('+da+',\'skiptraced\',this.value)">'
+          + '<option value="">—</option>'
+          + '<option value="Yes"'+(b.skiptraced==='Yes'?' selected':'')+'>Yes</option>'
+          + '<option value="No"'+(b.skiptraced==='No'?' selected':'')+'>No</option>'
+        + '</select></label>'
+      + '<label class="pb-wf-f"><span>Send-out date</span><input type="date" value="'+esc(b.sendOutDate)+'" onchange="pbbSet('+da+',\'sendOutDate\',this.value)"></label>'
+      + '<label class="pb-wf-f"><span>Follow-up date</span><input type="date" value="'+esc(b.followUpDate)+'" onchange="pbbSet('+da+',\'followUpDate\',this.value)"></label>'
+      + '<label class="pb-wf-f pb-wf-grow"><span>GHL list link</span><input type="url" placeholder="paste GHL smart-list URL" value="'+esc(b.ghlLink)+'" onchange="pbbSet('+da+',\'ghlLink\',this.value)"></label>'
+      + '<label class="pb-wf-f"><span>Placed in GHL as</span><input type="text" placeholder="tag / list name" value="'+esc(b.ghlPlacement)+'" onchange="pbbSet('+da+',\'ghlPlacement\',this.value)"></label>'
+      + (b.ghlLink&&/^https?:/i.test(b.ghlLink) ? '<a href="'+esc(b.ghlLink)+'" target="_blank" class="btn btn-secondary btn-sm" style="align-self:flex-end">&#128241; Open&#8599;</a>' : '')
+      + '</div>';
+    var body = open
+      ? '<div class="pb-batch-body"><div class="table-container"><div class="table-wrap"><table>'
+        + '<thead><tr><th style="width:34px"><input type="checkbox" '+(gAll?'checked':'')+' onchange=\'pbToggleGroup('+gids+',this.checked)\' style="width:15px;height:15px;cursor:pointer"></th><th>Property</th><th>Decedent / PR</th><th>Score</th><th>Send to GHL</th><th>Lead follow-up</th><th></th></tr></thead>'
+        + '<tbody>'+arr.slice(0,PB_CAP).map(pbLeadRow).join('')+'</tbody></table></div></div>'
+        + (arr.length>PB_CAP?'<div style="font-size:12px;color:var(--text4);padding:8px 2px">Showing first '+PB_CAP+' of '+arr.length.toLocaleString()+' in this batch — use search to narrow.</div>':'')
+        + '</div>'
+      : '';
+    return '<div class="pb-batch'+(b.skiptraced==='Yes'?' pb-traced':'')+'">'
+      + '<div class="pb-batch-h" onclick="pbToggleOpen(\''+esq(k)+'\')">'
+        + '<span class="pb-caret">'+(open?'&#9662;':'&#9656;')+'</span>'
+        + pbStateChip(st)
+        + '<span class="pb-bt-date">'+(dt?ltFmtDate(dt):'(no pull date)')+'</span>'
+        + '<span class="pb-bt-cnt">'+arr.length.toLocaleString()+' lead'+(arr.length!==1?'s':'')+'</span>'
+        + '<span class="pb-bt-sub">'+hiN+' &#9733;5 &middot; '+sentN+' sent'+(b.skiptraced?' &middot; skiptraced: '+esc(b.skiptraced):'')+(b.sendOutDate?' &middot; sent-out '+ltFmtDate(b.sendOutDate):'')+'</span>'
+      + '</div>'
+      + wf
+      + body
+      + '</div>';
   }).join('');
-  var cap = rows.length>PB_CAP ? '<div style="font-size:12px;color:var(--text4);padding:8px 2px">Showing first '+PB_CAP+' of '+rows.length.toLocaleString()+' — refine the search or filters to narrow down.</div>' : '';
-  var allShownSel = shown.length && shown.every(function(p){ return pbSel.has(+p.id); });
-  area.innerHTML=bulkBar(pbSel.size,'pbClearSel()','pbDeleteSelected()')
-    + '<div class="table-container"><div class="table-wrap"><table>'
-    + '<thead><tr><th style="width:34px"><input type="checkbox" '+(allShownSel?'checked':'')+' onchange="pbToggleAll(this.checked)" style="width:15px;height:15px;cursor:pointer"></th><th>State</th><th>Property</th><th>Decedent / PR</th><th>Score</th><th>Send to GHL</th><th>Follow-up</th><th></th></tr></thead>'
-    + '<tbody>'+body+'</tbody></table></div></div>'+cap;
+  area.innerHTML=bulkBar(pbSel.size,'pbClearSel()','pbDeleteSelected()')+html;
 }
+function pbToggleOpen(k){ pbOpen[k]=!pbOpen[k]; pbRenderArea(); }
+function pbToggleGroup(ids,c){ ids.forEach(function(id){ if(c)pbSel.add(+id); else pbSel.delete(+id); }); pbRenderArea(); }
 function pbClearSel(){ pbSel.clear(); pbRenderArea(); }
-function pbToggleAll(c){ var shown=pbFilteredLeads().slice(0,PB_CAP); if(c) shown.forEach(function(p){ pbSel.add(+p.id); }); else shown.forEach(function(p){ pbSel.delete(+p.id); }); pbRenderArea(); }
 function pbDeleteSelected(){
   var ids=[...pbSel]; if(!ids.length) return;
   if(!confirm('Delete '+ids.length+' selected probate lead'+(ids.length!==1?'s':'')+'? (You\'ll get a few seconds to Undo.)')) return;
@@ -3081,6 +3216,251 @@ function renderDashboard(){
 }
 // =================== end Dashboard ===================
 
+// =================== P5: Ask AI (free, rule-based NL query over the whole CRM) ===================
+// A floating "Ask AI" button (bottom-right, every page) opens a search panel. Mike types plain
+// English; a deterministic parser maps it to filters and runs them across every section in memory
+// (leads, tasks, lists, probate, buyers, deals). $0, offline, no key, no data leaves the browser.
+var ASK_ST={DC:['dc','washington dc','district of columbia'],MD:['md','maryland'],VA:['va','virginia'],
+  NC:['nc','north carolina'],SC:['sc','south carolina'],TX:['tx','texas'],GA:['ga','georgia'],KY:['ky','kentucky']};
+function askStateOf(text){
+  var s=' '+String(text||'').toLowerCase()+' ', out=[];
+  for(var c in ASK_ST){ for(var i=0;i<ASK_ST[c].length;i++){
+    if(new RegExp('\\b'+ASK_ST[c][i].replace(/ /g,'\\s+')+'\\b').test(s)){ out.push(c); break; }
+  } }
+  return out;
+}
+function askDueMatch(date,due){
+  if(!due) return true; if(!date) return false;
+  var n=ltDaysUntil(date); if(n===null) return false;
+  if(due==='overdue') return n<0;
+  if(due==='today')   return n===0;
+  if(due==='week')    return n>=0&&n<=7;
+  if(due==='due')     return n<=7;
+  return true;
+}
+function askDateInRange(date,range){ if(!range) return true; if(!date) return false; var d=String(date).slice(0,10); return d>=range.from&&d<=range.to; }
+
+var ASK_STOP={};
+('show all me my the a an of for with without list lists tracking buyer buyers probate task tasks jv deal deals '
++'property properties dispo listing listings lead leads seller sellers outreach contact contacts prospect prospects '
++'how many much number count total hot sent unsent yet never due overdue past late today yesterday week weeks month '
++'months this last next follow followup follow-up up date dates no none dc washington district columbia md maryland '
++'va virginia nc north sc south carolina tx texas ga georgia ky kentucky wholesaler wholesalers wholesale realtor '
++'realtors agent agents pulled scanned added imported texted and in on to from are is which what who whose that have '
++'has had i we our us 7 30 days day new missing show all get find give any there do does did doing done have '
++'having having want wanna need needs see show display pull list them then please got ghl gohighlevel go high level '
++'follow-ups followups leads-i can could would should about into over under still yet ones one entry entries '
++'record records people person deal-desk mine not never no none without everything anything something stuff '
++'things thing everyone anybody someone items item info information data current all-of by at as').split(/\s+/).forEach(function(w){ if(w) ASK_STOP[w]=1; });
+
+function askRange(t){
+  var verb=null;
+  if(/\bsent\b/.test(t)) verb='sent';
+  else if(/\bpulled\b|\bscanned\b/.test(t)) verb='pulled';
+  else if(/\badded\b|\bimported\b/.test(t)) verb='added';
+  else if(/\btexted\b/.test(t)) verb='texted';
+  var now=new Date(today()+'T00:00:00');
+  function iso(d){ return d.toISOString().slice(0,10); }
+  function addDays(d,n){ var x=new Date(d); x.setDate(x.getDate()+n); return x; }
+  function weekStart(d){ var x=new Date(d), day=(x.getDay()+6)%7; x.setDate(x.getDate()-day); return x; }
+  var r=null;
+  if(/\byesterday\b/.test(t)){ var y=addDays(now,-1); r={from:iso(y),to:iso(y)}; }
+  else if(/\blast 7 days\b|\bpast 7 days\b|\bpast week\b/.test(t)) r={from:iso(addDays(now,-7)),to:iso(now)};
+  else if(/\blast 30 days\b|\bpast 30 days\b|\bpast month\b/.test(t)) r={from:iso(addDays(now,-30)),to:iso(now)};
+  else if(/\blast week\b/.test(t)){ var lws=addDays(weekStart(now),-7); r={from:iso(lws),to:iso(addDays(lws,6))}; }
+  else if(/\bthis week\b/.test(t)){ var ws=weekStart(now); r={from:iso(ws),to:iso(addDays(ws,6))}; }
+  else if(/\bnext week\b/.test(t)){ var ws2=addDays(weekStart(now),7); r={from:iso(ws2),to:iso(addDays(ws2,6))}; }
+  else if(/\bthis month\b/.test(t)) r={from:iso(new Date(now.getFullYear(),now.getMonth(),1)),to:iso(new Date(now.getFullYear(),now.getMonth()+1,0))};
+  else if(/\blast month\b/.test(t)) r={from:iso(new Date(now.getFullYear(),now.getMonth()-1,1)),to:iso(new Date(now.getFullYear(),now.getMonth(),0))};
+  if(r) r.verb=verb;
+  return r;
+}
+
+function askParse(q){
+  var s={raw:q,sections:null,count:false,states:[],categories:[],hot:false,sent:null,due:null,noFollowup:false,range:null,text:[]};
+  var t=' '+String(q||'').toLowerCase().replace(/[?!,.]/g,' ').replace(/\s+/g,' ')+' ';
+  if(/\b(how many|how much|number of|count of|count|total)\b/.test(t)) s.count=true;
+  // sections (strong keywords win over the generic "leads")
+  var strong=[];
+  if(/\b(buyer|buyers)\b/.test(t)) strong.push('buyers');
+  if(/\b(list|lists|tracking)\b/.test(t)) strong.push('lists');
+  if(/\bprobate\b/.test(t)) strong.push('probate');
+  if(/\b(task|tasks|jv)\b/.test(t)) strong.push('tasks');
+  if(/\b(deal|deals|property|properties|dispo|listing|listings)\b/.test(t)) strong.push('deals');
+  // categories only make sense for lists; "buyer lists" => lists+category buyer, not the Buyers section
+  if(strong.indexOf('lists')>=0){
+    if(/\bwholesaler|wholesalers|wholesale\b/.test(t)) s.categories.push('wholesaler');
+    if(/\brealtor|realtors|agent|agents\b/.test(t)) s.categories.push('realtor');
+    if(/\bseller|sellers\b/.test(t)) s.categories.push('seller');
+    if(/\bbuyer|buyers\b/.test(t)){ s.categories.push('buyer'); var bi=strong.indexOf('buyers'); if(bi>=0) strong.splice(bi,1); }
+  }
+  var weakLeads=/\b(lead|leads|seller|sellers|outreach|contact|contacts|prospect|prospects)\b/.test(t);
+  if(strong.length) s.sections=strong.filter(function(v,i){return strong.indexOf(v)===i;});
+  else if(weakLeads) s.sections=['leads'];
+  else s.sections=null;
+  // states
+  for(var c in ASK_ST){ for(var i=0;i<ASK_ST[c].length;i++){ if(new RegExp('\\b'+ASK_ST[c][i].replace(/ /g,'\\s+')+'\\b').test(t)){ s.states.push(c); break; } } }
+  // flags
+  if(/\bhot\b/.test(t)||/\ud83d\udd25/.test(q)) s.hot=true;
+  if(/\bnot sent\b|\bunsent\b|\bhaven'?t sent\b|\bnever sent\b|\bnot yet sent\b|\bno sent\b/.test(t)) s.sent='no';
+  else if(/\bsent\b/.test(t)) s.sent='yes';
+  if(/\boverdue\b|\bpast due\b/.test(t)) s.due='overdue';
+  else if(/\bdue today\b/.test(t)) s.due='today';
+  else if((/\bthis week\b/.test(t)||/\bweek\b/.test(t))&&/\bdue\b/.test(t)) s.due='week';
+  else if(/\bfollow[- ]?up(s)? due\b|\bdue\b/.test(t)) s.due='due';
+  if(/\bno follow[- ]?up\b|\bwithout (a )?follow[- ]?up\b|\bmissing (a )?follow[- ]?up\b|\bno (follow[- ]?up )?date\b|\bno date\b/.test(t)) s.noFollowup=true;
+  s.range=askRange(t);
+  if(s.due && s.range && !s.range.verb) s.range=null; // a bare "this week"/"today" is handled by due
+  // leftover free text = names/streets/phones to search for
+  s.text=t.trim().split(' ').filter(function(w){ w=w.trim(); return w.length>=2 && !ASK_STOP[w]; });
+  return s;
+}
+
+function askStateHit(recStateCodes,want){ if(!want.length) return true; return want.some(function(x){return recStateCodes.indexOf(x)>=0;}); }
+function askTextHit(hay,terms){ if(!terms.length) return true; hay=String(hay||'').toLowerCase(); return terms.every(function(w){ return hay.indexOf(w)>=0; }); }
+
+function askMatchLead(l,s){
+  if(s.hot && String(l.score||'').toLowerCase()!=='hot') return false;
+  if(s.states.length && !askStateHit(askStateOf(l.location),s.states)) return false;
+  if(s.due && !askDueMatch(l.followUpDate,s.due)) return false;
+  if(s.noFollowup && l.followUpDate) return false;
+  if(s.sent==='yes' && !l.shared) return false;
+  if(s.sent==='no' && l.shared) return false;
+  if(s.range){ var f=(s.range.verb==='added')?l.dateAdded:l.followUpDate; if(!askDateInRange(f,s.range)) return false; }
+  return askTextHit((l.name||'')+' '+(l.phone||'')+' '+(l.location||'')+' '+(l.notes||'')+' '+(l.jvStatus||''),s.text);
+}
+function askMatchList(l,s){
+  if(s.sent) return false; // lists have no "sent" workflow
+  if(s.categories.length && s.categories.indexOf((l.category||'seller').toLowerCase())<0) return false;
+  if(s.states.length){ var reg=(l.region||'').toUpperCase(); if(!(s.states.indexOf(reg)>=0 || askStateHit(askStateOf((l.name||'')+' '+reg),s.states))) return false; }
+  if(s.due && !askDueMatch(l.dueDate,s.due)) return false;
+  if(s.noFollowup && l.dueDate) return false;
+  if(s.range){ var vb=s.range.verb, f=(vb==='added')?l.dateAdded:(vb==='texted'?ltLastTexted(l):l.dueDate); if(!askDateInRange(f,s.range)) return false; }
+  return askTextHit((l.name||'')+' '+(l.region||'')+' '+(l.category||'')+' '+(l.notes||'')+' '+(l.amount||''),s.text);
+}
+function askMatchProbate(p,s){
+  if(s.states.length && s.states.indexOf((p.state||'').toUpperCase())<0) return false;
+  if(s.sent==='yes' && !p.sentOn) return false;
+  if(s.sent==='no' && p.sentOn) return false;
+  if(s.due && !askDueMatch(p.followUpDate,s.due)) return false;
+  if(s.noFollowup && p.followUpDate) return false;
+  if(s.range){ var vb=s.range.verb, f=(vb==='sent')?p.sentOn:((vb==='pulled'||vb==='added')?p.datePulled:p.followUpDate); if(!askDateInRange(f,s.range)) return false; }
+  return askTextHit((p.decedentName||'')+' '+(p.propertyAddress||'')+' '+(p.state||'')+' '+(p.county||'')+' '+(p.prName||'')+' '+(p.prPhone||'')+' '+(p.notes||'')+' '+(p.status||''),s.text);
+}
+function askMatchBuyer(b,s){
+  if(s.due || s.noFollowup) return false; // buyers have no follow-up date — never surface for due/no-follow-up queries
+  if(s.sent) return false;                // nor a "sent" concept
+  if(s.hot && !b.hot) return false;
+  if(s.states.length && !askStateHit(askStateOf((b.area||'')+' '+(b.tags||'')+' '+(b.buyBox||'')),s.states)) return false;
+  return askTextHit((b.name||'')+' '+(b.email||'')+' '+(b.phone||'')+' '+(b.area||'')+' '+(b.tags||'')+' '+(b.buyBox||'')+' '+(b.notes||''),s.text);
+}
+function askMatchDeal(p,s){
+  if(s.due || s.noFollowup || s.sent) return false; // deals have no follow-up/sent workflow
+  if(s.states.length && !askStateHit(askStateOf(p.address),s.states)) return false;
+  if(s.range && !askDateInRange(p.createdAt,s.range)) return false;
+  return askTextHit((p.address||'')+' '+(p.price||'')+' '+(p.notes||'')+' '+(p.status||''),s.text);
+}
+
+function askExec(s){
+  var g={leads:[],tasks:[],lists:[],probate:[],buyers:[],deals:[]};
+  function on(k){ return !s.sections || s.sections.indexOf(k)>=0; }
+  if(on('leads')) (leads||[]).filter(function(l){return !l.deleted;}).forEach(function(l){ if(askMatchLead(l,s)) g.leads.push({kind:'lead',id:l.id,
+    title:l.name||l.phone||('Lead #'+l.id), sub:[l.location,l.jvStatus,(String(l.score||'').toLowerCase()==='hot'?'\ud83d\udd25 Hot':'')].filter(Boolean).join(' \u00b7 '), date:l.followUpDate||''}); });
+  if(on('tasks')) (jvLeads||[]).filter(function(t){return !t.deleted;}).forEach(function(tk){ if(askMatchLead(tk,s)) g.tasks.push({kind:'task',id:tk.id,
+    title:tk.name||tk.phone||('Task #'+tk.id), sub:[tk.location,tk.jvStatus].filter(Boolean).join(' \u00b7 '), date:tk.followUpDate||''}); });
+  if(on('lists')) (crmLists||[]).forEach(function(l){ if(askMatchList(l,s)) g.lists.push({kind:'list',id:l.id,
+    title:l.name||('List #'+l.id), sub:[l.category,l.region,(l.amount?l.amount+' records':'')].filter(Boolean).join(' \u00b7 '), date:l.dueDate||''}); });
+  if(on('probate')) (crmProbate||[]).forEach(function(p){ if(askMatchProbate(p,s)) g.probate.push({kind:'probate',id:p.id,
+    title:p.decedentName||p.propertyAddress||('Probate #'+p.id), sub:[p.state,p.propertyAddress,(p.sentOn?'\u2713 Sent '+ltFmtDate(p.sentOn):'')].filter(Boolean).join(' \u00b7 '), date:p.followUpDate||''}); });
+  if(on('buyers')) (crmBuyers||[]).forEach(function(b){ if(askMatchBuyer(b,s)) g.buyers.push({kind:'buyer',id:b.id,
+    title:b.name||b.phone||('Buyer #'+b.id), sub:[b.area,(b.hot?'\ud83d\udd25 Hot':''),b.buyBox].filter(Boolean).join(' \u00b7 '), date:''}); });
+  if(on('deals')) (crmProps||[]).forEach(function(p){ if(askMatchDeal(p,s)) g.deals.push({kind:'deal',id:p.id,
+    title:p.address||('Deal #'+p.id), sub:[p.price,(p.beds?p.beds+'bd':''),(p.baths?p.baths+'ba':''),p.status].filter(Boolean).join(' \u00b7 '), date:''}); });
+  return g;
+}
+
+var ASK_ORDER=[['leads','\ud83c\udfe0 Leads'],['tasks','\u2705 Tasks'],['lists','\ud83d\udcc7 Lists'],['probate','\u2696\ufe0f Probate'],['buyers','\ud83e\udd1d Buyers'],['deals','\ud83c\udff7\ufe0f Deals']];
+function askRenderResults(g,s,q){
+  var total=0; ASK_ORDER.forEach(function(o){ total+=g[o[0]].length; });
+  var html='';
+  if(s.count){
+    var chips=ASK_ORDER.filter(function(o){return g[o[0]].length;}).map(function(o){return '<span class="ask-chip-count">'+o[1]+' '+g[o[0]].length+'</span>';}).join('');
+    html+='<div class="ask-answer"><div class="ask-answer-n">'+total+'</div><div class="ask-answer-l">'+(total===1?'match':'matches')+(chips?'<br>'+chips:'')+'</div></div>';
+  } else {
+    html+='<div class="ask-answer-line">'+(total?('Found <b>'+total+'</b> '+(total===1?'result':'results')):'No matches')+'</div>';
+  }
+  if(!total){
+    html+='<div class="ask-empty">Nothing matched \u201c'+esc(q)+'\u201d. Try things like <i>DC buyers</i>, <i>lists due this week</i>, <i>overdue follow-ups</i>, or <i>probate sent last week</i>.</div>';
+    return html;
+  }
+  ASK_ORDER.forEach(function(o){
+    var arr=g[o[0]]; if(!arr.length) return;
+    html+='<div class="ask-grp"><div class="ask-grp-h">'+o[1]+' <span>'+arr.length+'</span></div>';
+    arr.slice(0,50).forEach(function(r){
+      html+='<div class="ask-row" onclick="askOpen(\''+r.kind+'\','+r.id+')">'
+        +'<div class="ask-row-t">'+esc(r.title)+'</div>'
+        +(r.sub?'<div class="ask-row-s">'+esc(r.sub)+'</div>':'')
+        +(r.date?'<div class="ask-row-d">Due '+ltFmtDate(r.date)+'</div>':'')
+      +'</div>';
+    });
+    if(arr.length>50) html+='<div class="ask-more">+'+(arr.length-50)+' more\u2026 narrow your question to see them</div>';
+    html+='</div>';
+  });
+  return html;
+}
+function askWelcomeHTML(){
+  var ex=['show all DC buyers','lists due this week','overdue follow-ups','leads with no follow-up','probate sent last week','how many wholesaler lists','hot buyers','MD probate not sent'];
+  return '<div class="ask-welcome"><div class="ask-w-h">Try one of these</div>'
+    + ex.map(function(e){return '<button class="ask-ex" onclick="askRun(this.textContent)">'+esc(e)+'</button>';}).join('')
+    + '<div class="ask-w-note">Searches Leads, Tasks, Lists, Probate, Buyers &amp; Deals \u2014 100% free, instant, and nothing leaves your browser.</div></div>';
+}
+function askEnsureData(){
+  var need=[];
+  if(typeof crmLists!=='undefined' && crmLists===null)   need.push(crmListsFetch());
+  if(typeof crmProbate!=='undefined' && crmProbate===null) need.push(crmProbateFetch());
+  if(typeof crmBuyers!=='undefined' && crmBuyers===null)  need.push(crmBuyersFetch());
+  if(typeof crmProps!=='undefined' && crmProps===null)    need.push(crmPropsFetch());
+  return need.length?Promise.all(need):Promise.resolve();
+}
+function askRun(pref){
+  var inp=document.getElementById('ask-input'); if(!inp) return;
+  if(pref!=null) inp.value=pref;
+  var q=(inp.value||'').trim();
+  var res=document.getElementById('ask-results'); if(!res) return;
+  if(!q){ res.innerHTML=askWelcomeHTML(); return; }
+  res.innerHTML='<div class="ask-loading">\u2728 Thinking\u2026</div>';
+  askEnsureData().then(function(){
+    try { var s=askParse(q); var g=askExec(s); res.innerHTML=askRenderResults(g,s,q); }
+    catch(e){ res.innerHTML='<div class="ask-empty">Something went wrong reading that. Try simpler words like <i>DC buyers</i> or <i>overdue follow-ups</i>.</div>'; }
+  });
+}
+function askMount(){
+  var root=document.getElementById('ask-root'); if(!root||root.getAttribute('data-mounted')==='1') return;
+  root.setAttribute('data-mounted','1');
+  root.innerHTML =
+    '<button id="ask-fab" class="ask-fab" onclick="askToggle(true)" title="Ask AI about your CRM"><span class="ask-fab-ic">\u2728</span><span class="ask-fab-tx">Ask AI</span></button>'
+    +'<div id="ask-overlay" class="ask-overlay" onclick="askOverlayClick(event)">'
+      +'<div class="ask-panel">'
+        +'<div class="ask-head"><span class="ask-title">\u2728 Ask AI <small>your CRM, in plain English</small></span><button class="ask-x" onclick="askToggle(false)">\u2715</button></div>'
+        +'<div class="ask-searchbar"><input id="ask-input" class="ask-input" type="text" placeholder="Ask anything\u2026 e.g. show all DC buyers" onkeydown="if(event.key===\'Enter\')askRun()"><button class="ask-go" onclick="askRun()">Ask</button></div>'
+        +'<div id="ask-results" class="ask-results"></div>'
+      +'</div>'
+    +'</div>';
+}
+function askToggle(open){
+  var ov=document.getElementById('ask-overlay'); if(!ov) return;
+  if(open){ ov.classList.add('open'); var r=document.getElementById('ask-results'); if(r&&!r.innerHTML.trim()) r.innerHTML=askWelcomeHTML(); askEnsureData(); setTimeout(function(){ var i=document.getElementById('ask-input'); if(i) i.focus(); },50); }
+  else ov.classList.remove('open');
+}
+function askOverlayClick(e){ if(e.target&&e.target.id==='ask-overlay') askToggle(false); }
+function askOpen(kind,id){
+  askToggle(false);
+  if(kind==='buyer'){ setSection('dispo'); setTimeout(function(){ openBuyerEditModal(id); },70); return; }
+  if(kind==='deal'){ setSection('dispo'); setTimeout(function(){ dispoEditDeal(id); },70); return; }
+  dashOpen(kind,id); // list / probate / task / lead
+}
+// =================== end Ask AI ===================
+
 function render(){
   // No active user: when auth is ON, always show the access-key login (never the legacy
   // name-picker, which would bypass authentication); when off, show the legacy picker.
@@ -3091,6 +3471,7 @@ function render(){
   }
   // Paint the sidebar shell + the main content container, then fill the active section.
   document.getElementById('app').innerHTML = sidebarHTML() + '<div id="section-main" class="section-main"></div>';
+  askMount(); // floating "Ask AI" button (mounts once to #ask-root; survives re-renders)
   if(activeSection==='lists'){ renderLists(); return; }
   if(activeSection==='dispo'){ renderDispo(); return; }
   if(activeSection==='probate'){ renderProbate(); return; }
