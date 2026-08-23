@@ -433,6 +433,14 @@ const SUPABASE_URL = "https://jwctfsapxrdzznjaaufo.supabase.co";
 // Hardcoded (not window.location.href) so shared links always point to the real live site,
 // even if this file is opened locally from Downloads/Desktop for testing.
 const GITHUB_PAGES_URL = "https://mickyatakilt.github.io/DMV_Agentoutreach_CRM.html-f/DMV_Agent_Outreach_CRM.html";
+// Dispo buyer-link base. Uses an unguessable share_token (NOT the enumerable ?id=).
+// Points at the branded GHL page on mestatedeals.com. (The token + get-property edge fn are
+// identical no matter where the page is hosted; the CRM's own ?shared=property&token= page
+// still works too, as a fallback, since it uses the same edge fn.)
+const DISPO_DEAL_BASE = "https://mestatedeals.com/deal?token=";
+// Tap-to-call/text number + email shown on the buyer flyer CTA (blank = generic "reply to the text" copy).
+const DISPO_CTA_PHONE = "202-509-5722";
+const DISPO_CTA_EMAIL = "contact@mestate.info";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3Y3Rmc2FweHJkenpuamFhdWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNTg0ODksImV4cCI6MjA5NjYzNDQ4OX0._9XUgB2K2O_JlDJgWM_Br_KLqJRVKxKnct7dR-pvMHk";
 
 // ===== AUTH (per-person Supabase Auth logins) =====================================
@@ -2112,7 +2120,7 @@ function buyerAreas(){ return Array.from(new Set((crmBuyers||[]).map(function(b)
 // ---- Property (deal) data layer ----
 function propFromDb(r){ return {id:r.id,address:r.address||'',price:r.price||'',beds:r.beds||'',baths:r.baths||'',
   sqft:r.sqft||'',notes:r.notes||'',photos:Array.isArray(r.photos)?r.photos:[],photosLink:r.photos_link||'',
-  status:r.status||'active',createdBy:r.created_by||'',createdAt:r.created_at||''}; }
+  status:r.status||'active',shareToken:r.share_token||'',createdBy:r.created_by||'',createdAt:r.created_at||''}; }
 function propToDb(p){ return {address:p.address||'',price:p.price||'',beds:p.beds||'',baths:p.baths||'',
   sqft:p.sqft||'',notes:p.notes||'',photos:p.photos||[],photos_link:p.photosLink||'',status:p.status||'active',
   updated_at:new Date().toISOString()}; }
@@ -2125,7 +2133,12 @@ async function crmPropInsert(p){ var b=propToDb(p); b.created_by=(currentUser&&c
 async function crmPropUpdate(p){ await sbFetch(PROP_PATH+'?id=eq.'+p.id,'PATCH',propToDb(p)); }
 async function crmPropDeleteDb(id){ await sbFetch(PROP_PATH+'?id=eq.'+id,'DELETE'); }
 function crmPropById(id){ id=+id; return (crmProps||[]).find(function(p){ return +p.id===id; }); }
-function propShareUrl(id){ return GITHUB_PAGES_URL + '?shared=property&id=' + id; }
+function propShareUrl(id){
+  var p=crmPropById(id);
+  // Prefer the non-enumerable token link; fall back to the legacy id link only if a token isn't loaded yet.
+  return (p&&p.shareToken) ? (DISPO_DEAL_BASE + encodeURIComponent(p.shareToken))
+                           : (GITHUB_PAGES_URL + '?shared=property&id=' + id);
+}
 
 // ---- Property builder (draft) ----
 function dispoReadForm(){
@@ -6835,7 +6848,21 @@ async function mtSaveEdit(id){
 }
 
 // ===== Route: shared link vs auth vs full app =====
-// ---- Public shared PROPERTY page (?shared=property&id=) — no login, reads crm_properties by id ----
+// ---- Public shared PROPERTY page by TOKEN (?shared=property&token=) — no login, no table read,
+//      goes through the public get-property edge fn (unguessable token, marketing fields only). ----
+async function initSharedPropertyByToken(token){
+  document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading&#8230;</div>';
+  try{
+    var r = await fetch(SUPABASE_URL+'/functions/v1/get-property?token='+encodeURIComponent(token), {
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY }
+    });
+    var data = await r.json();
+    if(!r.ok || !data || !data.property){ document.getElementById('app').innerHTML='<div style="padding:60px;text-align:center;color:var(--text3)"><h2>Deal not found</h2><p>This link may be out of date. Ask for a new one.</p></div>'; return; }
+    var q=data.property;
+    renderSharedPropertyView({address:q.address||'',price:q.price||'',beds:q.beds||'',baths:q.baths||'',sqft:q.sqft||'',notes:q.notes||'',photos:Array.isArray(q.photos)?q.photos:[],photosLink:q.photos_link||''});
+  }catch(e){ document.getElementById('app').innerHTML='<div style="padding:60px;text-align:center;color:var(--text3)"><h2>Could not load</h2><p>Please try again.</p></div>'; }
+}
+// ---- Public shared PROPERTY page (?shared=property&id=) — legacy, reads crm_properties by id (for already-sent links) ----
 async function initSharedPropertyView(id){
   document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading&#8230;</div>';
   try{
@@ -6867,7 +6894,13 @@ function renderSharedPropertyView(p){
         + gallery
         + (p.notes?'<div class="pp-notes"><div class="pp-notes-h">Deal notes</div>'+esc(p.notes).replace(/\n/g,'<br>')+'</div>':'')
         + (folder?'<div style="margin-top:16px">'+folder+'</div>':'')
-        + '<div class="pp-cta">Interested? Reply to the text/email you received for numbers &amp; access. Serious cash buyers only.</div>'
+        + ((DISPO_CTA_PHONE||DISPO_CTA_EMAIL)
+            ? '<div class="pp-cta">Interested? Serious cash buyers only.<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center">'
+                + (DISPO_CTA_PHONE?'<a class="btn btn-primary" style="text-decoration:none" href="tel:'+esc(DISPO_CTA_PHONE.replace(/[^+0-9]/g,''))+'">&#128222; Call '+esc(DISPO_CTA_PHONE)+'</a>':'')
+                + (DISPO_CTA_PHONE?'<a class="btn btn-secondary" style="text-decoration:none" href="sms:'+esc(DISPO_CTA_PHONE.replace(/[^+0-9]/g,''))+'">&#128172; Text me</a>':'')
+                + (DISPO_CTA_EMAIL?'<a class="btn btn-secondary" style="text-decoration:none" href="mailto:'+esc(DISPO_CTA_EMAIL)+'">&#9993;&#65039; Email</a>':'')
+              + '</div></div>'
+            : '<div class="pp-cta">Interested? Reply to the text/email you received for numbers &amp; access. Serious cash buyers only.</div>')
       + '</div>'
       + '<div class="pp-foot">M-Estate · This deal is shared for buyer review and is subject to availability.</div>'
     + '</div></div>';
@@ -6879,6 +6912,8 @@ async function bootApp(){
   var sharedId = params.get('id');
   if (sharedKind === 'lead' && sharedId) { initSharedLeadView(parseInt(sharedId, 10)); return; }
   if (sharedKind === 'task' && sharedId) { initSharedTaskView(parseInt(sharedId, 10)); return; }
+  var sharedToken = params.get('token');
+  if (sharedKind === 'property' && sharedToken) { initSharedPropertyByToken(sharedToken); return; }
   if (sharedKind === 'property' && sharedId) { initSharedPropertyView(parseInt(sharedId, 10)); return; }
 
   if (!AUTH_ENABLED) { initFullApp(); return; }
