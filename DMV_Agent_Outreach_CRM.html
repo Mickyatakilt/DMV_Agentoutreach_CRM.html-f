@@ -2155,6 +2155,18 @@ function dispoReadForm(){
   var pl=document.getElementById('dp-photoslink'); if(pl) dispoDraft.photosLink=pl.value;
   return dispoDraft;
 }
+// Live preview of the current (unsaved) form as the branded buyer flyer, in a modal iframe.
+function dispoPreviewDraft(){
+  dispoReadForm();
+  var doc='<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0">'+dispoFlyerHTML(dispoDraft)+'</body></html>';
+  var srcdoc=doc.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">'
+    + '<div class="modal" style="max-width:840px;width:96%;height:90vh;padding:0;overflow:hidden;display:flex;flex-direction:column">'
+      + '<div class="modal-header" style="border-radius:16px 16px 0 0"><div class="modal-title">&#128065; Deal Preview <span style="font-weight:400;color:var(--text3);font-size:12px">&mdash; how buyers see it (not saved yet)</span></div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+      + '<iframe srcdoc="'+srcdoc+'" style="flex:1;width:100%;border:0;background:#f5f7f9"></iframe>'
+    + '</div></div>';
+}
 // Upload a dragged/selected image to the public dispo-photos bucket, return its public URL.
 async function dispoUploadFile(file){
   await authRefreshIfNeeded();
@@ -2347,6 +2359,7 @@ function renderDispo(){
           + '<div class="form-field full"><label class="form-label">Photo folder link <span style="font-weight:400;color:var(--text3)">(optional — Dropbox/Drive)</span></label><input id="dp-photoslink" class="form-input" value="'+esc(d.photosLink)+'" placeholder="https://…"></div>'
         + '</div>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
+          + '<button class="btn btn-secondary btn-sm" onclick="dispoPreviewDraft()">&#128065; Preview</button>'
           + '<button class="btn btn-primary btn-sm" id="dp-savebtn" onclick="dispoSaveDeal()">&#128190; Save Deal &amp; Get Link</button>'
           + '<button class="btn btn-secondary btn-sm" onclick="dispoClearDraft()">Clear</button>'
         + '</div>'
