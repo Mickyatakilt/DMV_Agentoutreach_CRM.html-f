@@ -433,6 +433,18 @@ const SUPABASE_URL = "https://jwctfsapxrdzznjaaufo.supabase.co";
 // Hardcoded (not window.location.href) so shared links always point to the real live site,
 // even if this file is opened locally from Downloads/Desktop for testing.
 const GITHUB_PAGES_URL = "https://mickyatakilt.github.io/DMV_Agentoutreach_CRM.html-f/DMV_Agent_Outreach_CRM.html";
+// Dispo buyer-link base. Uses an unguessable share_token (NOT the enumerable ?id=).
+// FOR TESTING this points at the CRM's own token page (works today). Once the GHL page on
+// mestatedeals.com is live, flip this ONE line to "https://mestatedeals.com/deal?token="
+// (the token + get-property edge fn are identical either way).
+const DISPO_DEAL_BASE = GITHUB_PAGES_URL + "?shared=property&token=";
+// Buyer flyer contact + brand links (blank = hidden / placeholder).
+const DISPO_CTA_PHONE = "202-509-5722";
+const DISPO_CTA_EMAIL = "contact@mestate.info";
+const DISPO_IG_URL    = "";   // Instagram (e.g. https://instagram.com/...)
+const DISPO_SITE_URL  = "";   // public website
+const DISPO_JV_URL    = "";   // Joint-Venture "learn more" page (blank = points at contact)
+const DISPO_LOGO_URL  = "";   // logo image URL (blank = the "M" wordmark)
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3Y3Rmc2FweHJkenpuamFhdWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNTg0ODksImV4cCI6MjA5NjYzNDQ4OX0._9XUgB2K2O_JlDJgWM_Br_KLqJRVKxKnct7dR-pvMHk";
 
 // ===== AUTH (per-person Supabase Auth logins) =====================================
@@ -2092,7 +2104,7 @@ var crmBuyers = null;                 // null = not loaded yet
 var crmProps  = null;                 // saved deals, null = not loaded yet
 var bySearch = '', byArea = '', byHot = false;
 // property builder draft (kept so re-renders don't lose typing); photos = array of image URLs
-var dispoDraft = {id:null,address:'',price:'',beds:'',baths:'',sqft:'',notes:'',photos:[],photosLink:''};
+var dispoDraft = {id:null,address:'',price:'',arv:'',beds:'',baths:'',sqft:'',basement:'',description:'',comps:'',compsPhotos:[],notes:'',photos:[],photosLink:''};
 
 function byFromDb(r){ return {id:r.id,name:r.name||'',email:r.email||'',phone:r.phone||'',area:r.area||'',
   hot:!!r.hot,buyBox:r.buy_box||'',tags:r.tags||'',notes:r.notes||''}; }
@@ -2110,11 +2122,14 @@ function crmBuyerById(id){ id=+id; return (crmBuyers||[]).find(function(b){ retu
 function buyerAreas(){ return Array.from(new Set((crmBuyers||[]).map(function(b){return (b.area||'').trim();}).filter(Boolean))).sort(); }
 
 // ---- Property (deal) data layer ----
-function propFromDb(r){ return {id:r.id,address:r.address||'',price:r.price||'',beds:r.beds||'',baths:r.baths||'',
-  sqft:r.sqft||'',notes:r.notes||'',photos:Array.isArray(r.photos)?r.photos:[],photosLink:r.photos_link||'',
-  status:r.status||'active',createdBy:r.created_by||'',createdAt:r.created_at||''}; }
-function propToDb(p){ return {address:p.address||'',price:p.price||'',beds:p.beds||'',baths:p.baths||'',
-  sqft:p.sqft||'',notes:p.notes||'',photos:p.photos||[],photos_link:p.photosLink||'',status:p.status||'active',
+function propFromDb(r){ return {id:r.id,address:r.address||'',price:r.price||'',arv:r.arv||'',beds:r.beds||'',baths:r.baths||'',
+  sqft:r.sqft||'',basement:r.basement||'',description:r.description||'',comps:r.comps||'',
+  compsPhotos:Array.isArray(r.comps_photos)?r.comps_photos:[],notes:r.notes||'',
+  photos:Array.isArray(r.photos)?r.photos:[],photosLink:r.photos_link||'',
+  status:r.status||'active',shareToken:r.share_token||'',createdBy:r.created_by||'',createdAt:r.created_at||''}; }
+function propToDb(p){ return {address:p.address||'',price:p.price||'',arv:p.arv||'',beds:p.beds||'',baths:p.baths||'',
+  sqft:p.sqft||'',basement:p.basement||'',description:p.description||'',comps:p.comps||'',
+  comps_photos:p.compsPhotos||[],notes:p.notes||'',photos:p.photos||[],photos_link:p.photosLink||'',status:p.status||'active',
   updated_at:new Date().toISOString()}; }
 async function crmPropsFetch(){
   try { var rows=await sbFetch(PROP_PATH+'?select=*&order=id.desc&limit=2000'); crmProps=(rows||[]).map(propFromDb); }
@@ -2125,11 +2140,16 @@ async function crmPropInsert(p){ var b=propToDb(p); b.created_by=(currentUser&&c
 async function crmPropUpdate(p){ await sbFetch(PROP_PATH+'?id=eq.'+p.id,'PATCH',propToDb(p)); }
 async function crmPropDeleteDb(id){ await sbFetch(PROP_PATH+'?id=eq.'+id,'DELETE'); }
 function crmPropById(id){ id=+id; return (crmProps||[]).find(function(p){ return +p.id===id; }); }
-function propShareUrl(id){ return GITHUB_PAGES_URL + '?shared=property&id=' + id; }
+function propShareUrl(id){
+  var p=crmPropById(id);
+  // Prefer the non-enumerable token link; fall back to the legacy id link only if a token isn't loaded yet.
+  return (p&&p.shareToken) ? (DISPO_DEAL_BASE + encodeURIComponent(p.shareToken))
+                           : (GITHUB_PAGES_URL + '?shared=property&id=' + id);
+}
 
 // ---- Property builder (draft) ----
 function dispoReadForm(){
-  ['address','price','beds','baths','sqft','notes'].forEach(function(k){
+  ['address','price','arv','beds','baths','sqft','basement','description','comps','notes'].forEach(function(k){
     var el=document.getElementById('dp-'+k); if(el) dispoDraft[k]=el.value;
   });
   var pl=document.getElementById('dp-photoslink'); if(pl) dispoDraft.photosLink=pl.value;
@@ -2178,6 +2198,35 @@ function dispoRenderPhotoStrip(){
   if(!dispoDraft.photos.length){ strip.innerHTML='<span style="color:var(--text4);font-size:12px">No photos yet.</span>'; return; }
   strip.innerHTML=dispoDraft.photos.map(function(u,i){
     return '<div class="dp-thumb"><img src="'+esc(u)+'" alt=""><button class="dp-thumb-x" title="Remove" onclick="dispoRemovePhoto('+i+')">&times;</button></div>';
+  }).join('');
+}
+// ---- Comp photos (drag-upload OR paste URLs, same as property photos but into compsPhotos) ----
+async function dispoHandleCompFiles(files){
+  files=Array.prototype.slice.call(files||[]).filter(function(f){ return /^image\//.test(f.type); });
+  if(!files.length){ showToast('Drop image files only','error'); return; }
+  dispoReadForm();
+  showToast('Uploading '+files.length+' comp photo'+(files.length!==1?'s':'')+'…','info');
+  for(var i=0;i<files.length;i++){
+    try{ var u=await dispoUploadFile(files[i]); dispoDraft.compsPhotos.push(u); }
+    catch(e){ showToast('One comp photo failed to upload','error'); }
+  }
+  dispoRenderCompStrip(); showToast('Comp photos added','success');
+}
+function dispoCompDrop(ev){ ev.preventDefault(); ev.currentTarget.classList.remove('drag'); dispoHandleCompFiles(ev.dataTransfer.files); }
+function dispoPickCompFiles(){ var i=document.getElementById('dp-compfileinput'); if(i) i.click(); }
+function dispoAddCompLinks(){
+  var el=document.getElementById('dp-comppaste'); if(!el) return;
+  var urls=(el.value||'').split(/[\s,]+/).map(function(s){return s.trim();}).filter(function(s){return /^https?:\/\//i.test(s);});
+  if(!urls.length){ showToast('Paste image URLs (http…)','error'); return; }
+  urls.forEach(function(u){ if(dispoDraft.compsPhotos.indexOf(u)<0) dispoDraft.compsPhotos.push(u); });
+  el.value=''; dispoRenderCompStrip(); showToast('Added '+urls.length+' comp image'+(urls.length!==1?'s':''),'success');
+}
+function dispoRemoveComp(i){ dispoDraft.compsPhotos.splice(i,1); dispoRenderCompStrip(); }
+function dispoRenderCompStrip(){
+  var strip=document.getElementById('dp-compstrip'); if(!strip) return;
+  if(!dispoDraft.compsPhotos.length){ strip.innerHTML='<span style="color:var(--text4);font-size:12px">No comp photos.</span>'; return; }
+  strip.innerHTML=dispoDraft.compsPhotos.map(function(u,i){
+    return '<div class="dp-thumb"><img src="'+esc(u)+'" alt=""><button class="dp-thumb-x" title="Remove" onclick="dispoRemoveComp('+i+')">&times;</button></div>';
   }).join('');
 }
 async function dispoSaveDeal(){
@@ -2241,7 +2290,7 @@ function dpDeleteSelected(){
     reRender:function(){ if(activeSection==='dispo') renderDispo(); }
   });
 }
-function dispoClearDraft(){ dispoDraft={id:null,address:'',price:'',beds:'',baths:'',sqft:'',notes:'',photos:[],photosLink:''}; renderDispo(); }
+function dispoClearDraft(){ dispoDraft={id:null,address:'',price:'',arv:'',beds:'',baths:'',sqft:'',basement:'',description:'',comps:'',compsPhotos:[],notes:'',photos:[],photosLink:''}; renderDispo(); }
 
 // ---- Main section render ----
 function renderDispo(){
@@ -2269,11 +2318,23 @@ function renderDispo(){
         + '<h3>&#127968; '+(d.id?'Edit Deal':'New Deal')+'</h3><div class="sub">Fill the property in, add photos, then Save to mint the buyer link.</div>'
         + '<div class="dp-form">'
           + '<div class="form-field full"><label class="form-label">Address</label><input id="dp-address" class="form-input" value="'+esc(d.address)+'" placeholder="123 Main St, Washington DC"></div>'
-          + fld('price','Price','$250,000')
-          + fld('sqft','Sqft','1,450')
+          + fld('price','Asking Price','$250,000')
+          + fld('arv','ARV','$400,000')
           + fld('beds','Beds','3')
           + fld('baths','Baths','2')
-          + '<div class="form-field full"><label class="form-label">Notes / highlights</label><textarea id="dp-notes" class="form-input" rows="3" placeholder="ARV $400k, needs $60k rehab, EMD $5k, cash/hard money only...">'+esc(d.notes)+'</textarea></div>'
+          + fld('sqft','Sqft','1,450')
+          + fld('basement','Basement','Finished / Unfinished / None')
+          + '<div class="form-field full"><label class="form-label">Header description <span style="font-weight:400;color:var(--text3)">(short blurb under the address)</span></label><textarea id="dp-description" class="form-input" rows="2" placeholder="Solid brick rowhome in a fast-appreciating pocket, full rehab opportunity...">'+esc(d.description)+'</textarea></div>'
+          + '<div class="form-field full"><label class="form-label">Comparable sales <span style="font-weight:400;color:var(--text3)">(written — one per line)</span></label><textarea id="dp-comps" class="form-input" rows="3" placeholder="1210 Mike Ave — sold $940,000 · 3bd/2ba · 0.2 mi (Apr 2026)&#10;1450 Adams St NE — sold $965,000 · 3bd/2.5ba (Mar 2026)">'+esc(d.comps)+'</textarea></div>'
+          + '<div class="form-field full"><label class="form-label">Comp photos <span style="font-weight:400;color:var(--text3)">(optional — screenshots of comps)</span></label>'
+            + '<div id="dp-compdropzone" class="dp-dropzone" onclick="dispoPickCompFiles()" ondrop="dispoCompDrop(event)" ondragover="dispoOnDragOver(event)" ondragleave="dispoOnDragLeave(event)">'
+              + '<div class="dp-drop-ico">&#128202;</div><div><b>Drag comp screenshots here</b> or click to choose</div>'
+            + '</div>'
+            + '<input type="file" id="dp-compfileinput" accept="image/*" multiple style="display:none" onchange="dispoHandleCompFiles(this.files)">'
+            + '<div id="dp-compstrip" class="dp-photostrip"></div>'
+            + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-comppaste" class="form-input" placeholder="…or paste comp image URLs"><button class="btn btn-secondary btn-sm" onclick="dispoAddCompLinks()">Add</button></div>'
+          + '</div>'
+          + '<div class="form-field full"><label class="form-label">Deal notes <span style="font-weight:400;color:var(--text3)">(optional — rehab, terms, EMD)</span></label><textarea id="dp-notes" class="form-input" rows="2" placeholder="Needs $60k rehab, EMD $5k, cash/hard money only...">'+esc(d.notes)+'</textarea></div>'
           + '<div class="form-field full"><label class="form-label">Photos</label>'
             + '<div id="dp-dropzone" class="dp-dropzone" onclick="dispoPickFiles()" ondrop="dispoOnDrop(event)" ondragover="dispoOnDragOver(event)" ondragleave="dispoOnDragLeave(event)">'
               + '<div class="dp-drop-ico">&#128247;</div><div><b>Drag photos here</b> or click to choose</div>'
@@ -2320,6 +2381,7 @@ function renderDispo(){
     + '<div id="by-list-area"></div>'
     + '</div>';
   dispoRenderPhotoStrip();
+  dispoRenderCompStrip();
   byRenderArea();
 }
 function dispoDealsHTML(){
@@ -6835,7 +6897,21 @@ async function mtSaveEdit(id){
 }
 
 // ===== Route: shared link vs auth vs full app =====
-// ---- Public shared PROPERTY page (?shared=property&id=) — no login, reads crm_properties by id ----
+// ---- Public shared PROPERTY page by TOKEN (?shared=property&token=) — no login, no table read,
+//      goes through the public get-property edge fn (unguessable token, marketing fields only). ----
+async function initSharedPropertyByToken(token){
+  document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading&#8230;</div>';
+  try{
+    var r = await fetch(SUPABASE_URL+'/functions/v1/get-property?token='+encodeURIComponent(token), {
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY }
+    });
+    var data = await r.json();
+    if(!r.ok || !data || !data.property){ document.getElementById('app').innerHTML='<div style="padding:60px;text-align:center;color:var(--text3)"><h2>Deal not found</h2><p>This link may be out of date. Ask for a new one.</p></div>'; return; }
+    var q=data.property;
+    renderSharedPropertyView({address:q.address||'',price:q.price||'',arv:q.arv||'',beds:q.beds||'',baths:q.baths||'',sqft:q.sqft||'',basement:q.basement||'',description:q.description||'',comps:q.comps||'',compsPhotos:Array.isArray(q.comps_photos)?q.comps_photos:[],notes:q.notes||'',photos:Array.isArray(q.photos)?q.photos:[],photosLink:q.photos_link||''});
+  }catch(e){ document.getElementById('app').innerHTML='<div style="padding:60px;text-align:center;color:var(--text3)"><h2>Could not load</h2><p>Please try again.</p></div>'; }
+}
+// ---- Public shared PROPERTY page (?shared=property&id=) — legacy, reads crm_properties by id (for already-sent links) ----
 async function initSharedPropertyView(id){
   document.getElementById('app').innerHTML = '<div style="padding:60px;text-align:center;color:var(--text3)">Loading&#8230;</div>';
   try{
@@ -6847,31 +6923,75 @@ async function initSharedPropertyView(id){
     renderSharedPropertyView(propFromDb(rows[0]));
   }catch(e){ document.getElementById('app').innerHTML='<div style="padding:60px;text-align:center;color:var(--text3)"><h2>Could not load</h2><p>Please try again.</p></div>'; }
 }
-function renderSharedPropertyView(p){
-  var spec=[]; if(p.beds) spec.push('<span><b>'+esc(p.beds)+'</b> beds</span>');
-  if(p.baths) spec.push('<span><b>'+esc(p.baths)+'</b> baths</span>');
-  if(p.sqft) spec.push('<span><b>'+esc(p.sqft)+'</b> sqft</span>');
-  var gallery=(p.photos&&p.photos.length)
-    ? '<div class="pp-gallery">'+p.photos.map(function(u){return '<a href="'+esc(u)+'" target="_blank"><img src="'+esc(u)+'" alt="" loading="lazy"></a>';}).join('')+'</div>'
-    : '';
-  var folder=p.photosLink?'<a class="btn btn-secondary" style="text-decoration:none" href="'+esc(p.photosLink)+'" target="_blank">📁 View all photos</a>':'';
-  document.getElementById('app').innerHTML =
-    '<div class="pp-page">'
-    + '<div class="header"><div class="logo">&#127968; M-Estate — Investment Deal</div></div>'
-    + '<div class="pp-wrap">'
-      + '<div class="pp-card">'
-        + '<div class="pp-badge">CASH BUYERS · OFF-MARKET</div>'
-        + '<h1 class="pp-addr">'+esc(p.address||'Off-market property')+'</h1>'
-        + (p.price?'<div class="pp-price">'+esc(p.price)+'</div>':'')
-        + (spec.length?'<div class="pp-specs">'+spec.join('')+'</div>':'')
-        + gallery
-        + (p.notes?'<div class="pp-notes"><div class="pp-notes-h">Deal notes</div>'+esc(p.notes).replace(/\n/g,'<br>')+'</div>':'')
-        + (folder?'<div style="margin-top:16px">'+folder+'</div>':'')
-        + '<div class="pp-cta">Interested? Reply to the text/email you received for numbers &amp; access. Serious cash buyers only.</div>'
-      + '</div>'
-      + '<div class="pp-foot">M-Estate · This deal is shared for buyer review and is subject to availability.</div>'
-    + '</div></div>';
+function mfMoney(v){ v=String(v==null?'':v).trim(); if(!v) return ''; return v.charAt(0)==='$'?v:'$'+v; }
+// Full branded buyer flyer (navy + gold). Self-contained styles; used by the CRM's own shared
+// page AND mirrored in the GHL page snippet. Reads the crm_properties fields + brand constants.
+function dispoFlyerHTML(p){
+  var phone=(DISPO_CTA_PHONE||'').replace(/[^+0-9]/g,'');
+  var ig=DISPO_IG_URL||'', site=DISPO_SITE_URL||'', jv=DISPO_JV_URL||(phone?('tel:'+phone):'#');
+  var IG='<svg viewBox="0 0 24 24"><path d="M12 2.2c3.2 0 3.6 0 4.9.1 1.2.1 1.8.2 2.2.4.6.2 1 .5 1.4.9.4.4.7.8.9 1.4.2.4.3 1 .4 2.2.1 1.3.1 1.7.1 4.9s0 3.6-.1 4.9c-.1 1.2-.2 1.8-.4 2.2-.2.6-.5 1-.9 1.4-.4.4-.8.7-1.4.9-.4.2-1 .3-2.2.4-1.3.1-1.7.1-4.9.1s-3.6 0-4.9-.1c-1.2-.1-1.8-.2-2.2-.4-.6-.2-1-.5-1.4-.9-.4-.4-.7-.8-.9-1.4-.2-.4-.3-1-.4-2.2C2.2 15.6 2.2 15.2 2.2 12s0-3.6.1-4.9c.1-1.2.2-1.8.4-2.2.2-.6.5-1 .9-1.4.4-.4.8-.7 1.4-.9.4-.2 1-.3 2.2-.4C8.4 2.2 8.8 2.2 12 2.2m0 5.88a3.92 3.92 0 100 7.84 3.92 3.92 0 000-7.84m0 6.47a2.55 2.55 0 110-5.1 2.55 2.55 0 010 5.1m5-6.63a.92.92 0 11-1.84 0 .92.92 0 011.84 0"/></svg>';
+  var WEB='<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20m6.9 6h-2.9a15.7 15.7 0 00-1.3-3.4A8 8 0 0118.9 8M12 4c.8 1.1 1.4 2.4 1.8 4h-3.6c.4-1.6 1-2.9 1.8-4M4.3 14a7.8 7.8 0 010-4h3a17.6 17.6 0 000 4m.8 2h2.9c.3 1.2.7 2.4 1.3 3.4A8 8 0 015.1 16m2.6-8H5.1a8 8 0 013.9-3.4C8.5 5.6 8 6.8 7.7 8M12 20c-.8-1.1-1.4-2.4-1.8-4h3.6c-.4 1.6-1 2.9-1.8 4m2.2-6H9.8a15.6 15.6 0 010-4h4.4a15.6 15.6 0 010 4m.5 5.4c.5-1 1-2.2 1.3-3.4h2.9a8 8 0 01-4.2 3.4M16.7 14a17.6 17.6 0 000-4h3a7.8 7.8 0 010 4"/></svg>';
+  var logo=DISPO_LOGO_URL?('<img src="'+esc(DISPO_LOGO_URL)+'" alt="Mestate" style="height:38px;display:block">')
+    :('<span class="mf-mark">M</span><span class="mf-word">MESTATE<small>PROPERTIES</small></span>');
+  var social=function(cls){ return '<div class="'+cls+'">'
+      +'<a href="'+esc(ig||'#')+'" target="_blank" title="Instagram">'+IG+'</a>'
+      +'<a href="'+esc(site||'#')+'" target="_blank" title="Website">'+WEB+'</a></div>'; };
+  var stats=[];
+  if(p.beds) stats.push(['#',p.beds,'Beds']); if(p.baths) stats.push(['#',p.baths,'Baths']);
+  if(p.sqft) stats.push(['#',p.sqft,'Sq Ft']); if(p.basement) stats.push(['#',p.basement,'Basement']);
+  var statHTML=stats.length?('<div class="mf-card"><h2>&#127968; Property Details</h2><div class="mf-stats">'
+    +stats.map(function(s){return '<div class="mf-stat"><div class="v">'+esc(s[1])+'</div><div class="k">'+esc(s[2])+'</div></div>';}).join('')+'</div></div>'):'';
+  var gal=(p.photos&&p.photos.length)?('<div class="mf-card"><h2>&#128247; Property Photos</h2><div class="mf-gal">'
+    +p.photos.map(function(u){return '<a href="'+esc(u)+'" target="_blank"><img src="'+esc(u)+'" loading="lazy" alt=""></a>';}).join('')+'</div>'
+    +(p.photosLink?'<a class="mf-link" href="'+esc(p.photosLink)+'" target="_blank">&#128193; View all photos</a>':'')+'</div>')
+    :(p.photosLink?('<div class="mf-card"><h2>&#128247; Property Photos</h2><a class="mf-link" href="'+esc(p.photosLink)+'" target="_blank">&#128193; View all photos</a></div>'):'');
+  var priceHTML=(p.price||p.arv)?('<div class="mf-card"><h2>&#128176; The Numbers</h2><div class="mf-price-grid">'
+    +(p.price?'<div class="mf-pb mf-ask"><div class="lbl">Asking Price</div><div class="amt">'+esc(mfMoney(p.price))+'</div></div>':'')
+    +(p.arv?'<div class="mf-pb mf-arv"><div class="lbl">ARV</div><div class="amt">'+esc(mfMoney(p.arv))+'</div></div>':'')+'</div></div>'):'';
+  var compImgs=(p.compsPhotos&&p.compsPhotos.length)?('<div class="mf-gal" style="margin-top:12px">'
+    +p.compsPhotos.map(function(u){return '<a href="'+esc(u)+'" target="_blank"><img src="'+esc(u)+'" loading="lazy" alt=""></a>';}).join('')+'</div>'):'';
+  var compsHTML=(p.comps||compImgs)?('<div class="mf-card"><h2>&#128202; Comparable Sales</h2>'
+    +(p.comps?'<div class="mf-comps">'+esc(p.comps).replace(/\n/g,'<br>')+'</div>':'')+compImgs+'</div>'):'';
+  var notesHTML=p.notes?('<div class="mf-card"><h2>&#128221; Deal Notes</h2><div class="mf-comps">'+esc(p.notes).replace(/\n/g,'<br>')+'</div></div>'):'';
+  var ctaBtns='';
+  if(phone) ctaBtns+='<a class="mf-btn mf-gold" href="tel:'+esc(phone)+'">&#128222; Contact Us</a>';
+  if(phone) ctaBtns+='<a class="mf-btn mf-ghost" href="sms:'+esc(phone)+'">&#128172; Text Micky</a>';
+  if(DISPO_CTA_EMAIL) ctaBtns+='<a class="mf-btn mf-ghost" href="mailto:'+esc(DISPO_CTA_EMAIL)+'">&#9993;&#65039; Email</a>';
+  return ''
+  +'<style>'
+  +'.mf *{box-sizing:border-box;margin:0;padding:0}.mf{--nv:#0e2438;--nv2:#16324b;--gd:#c69a4c;--gdd:#a97f34;--ink:#0f172a;--mut:#5b6b7b;--ln:#e6ebf0;--grn:#1c7a4d;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#f5f7f9;color:var(--ink);line-height:1.55}'
+  +'.mf a{color:inherit}.mf .wrap{max-width:760px;margin:0 auto}'
+  +'.mf-head{background:var(--nv);color:#fff;position:sticky;top:0;z-index:20}.mf-head .wrap{display:flex;align-items:center;justify-content:space-between;padding:12px 20px}'
+  +'.mf-logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px}.mf-mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--gd),var(--gdd));display:flex;align-items:center;justify-content:center;color:#0e2438;font-weight:900;font-size:18px}.mf-word{line-height:1.05}.mf-word small{display:block;font-size:9px;letter-spacing:3px;color:var(--gd);font-weight:700}'
+  +'.mf-soc,.mf-fsoc{display:flex;gap:10px}.mf-soc a{width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;color:#fff}.mf-soc a:hover,.mf-fsoc a:hover{background:var(--gd);color:var(--nv)}.mf-soc svg,.mf-fsoc svg{width:17px;height:17px;fill:currentColor}'
+  +'.mf-hero{background:var(--nv);color:#fff;padding:6px 20px 30px}.mf-badge{display:inline-block;background:var(--gd);color:var(--nv);font-size:11px;font-weight:800;letter-spacing:1px;padding:6px 12px;border-radius:999px;text-transform:uppercase}.mf-hero h1{font-size:29px;line-height:1.15;margin:14px 0 6px;font-weight:800}.mf-hero .desc{color:#cdd8e2;font-size:15px;max-width:620px}'
+  +'.mf-body{padding:22px 20px 40px}.mf-card{background:#fff;border:1px solid var(--ln);border-radius:16px;box-shadow:0 6px 24px rgba(14,36,56,.06);padding:22px;margin-bottom:18px}.mf-card h2{font-size:13px;text-transform:uppercase;letter-spacing:1.2px;color:var(--gdd);font-weight:800;margin-bottom:14px}'
+  +'.mf-gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.mf-gal a{border-radius:11px;overflow:hidden;aspect-ratio:4/3;background:#dde5ec;display:block}.mf-gal img{width:100%;height:100%;object-fit:cover;display:block}'
+  +'.mf-link{display:inline-flex;align-items:center;gap:8px;margin-top:14px;text-decoration:none;font-weight:700;font-size:14px;color:var(--nv);border:1.5px solid var(--ln);border-radius:11px;padding:11px 16px}.mf-link:hover{border-color:var(--gd)}'
+  +'.mf-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.mf-stat{background:#f7f9fb;border:1px solid var(--ln);border-radius:13px;padding:16px 8px;text-align:center}.mf-stat .v{font-size:20px;font-weight:800;color:var(--nv)}.mf-stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin-top:3px;font-weight:600}'
+  +'.mf-price-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.mf-pb{border-radius:14px;padding:18px;text-align:center}.mf-ask{background:linear-gradient(135deg,var(--nv),var(--nv2));color:#fff}.mf-arv{background:#f2f8f4;border:1.5px solid #cfe7da}.mf-pb .lbl{font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:800}.mf-ask .lbl{color:var(--gd)}.mf-arv .lbl{color:var(--grn)}.mf-pb .amt{font-size:28px;font-weight:900;margin-top:6px}'
+  +'.mf-comps{font-size:14.5px;color:#33414f;white-space:pre-line}'
+  +'.mf-cta{background:linear-gradient(135deg,var(--nv),var(--nv2));color:#fff;border-radius:16px;padding:26px 22px;text-align:center;margin-bottom:18px}.mf-cta h3{font-size:20px;font-weight:800;margin-bottom:6px}.mf-cta p{color:#cdd8e2;font-size:14px;max-width:480px;margin:0 auto 16px}.mf-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}.mf-btn{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-weight:800;font-size:15px;padding:14px 22px;border-radius:12px}.mf-gold{background:linear-gradient(135deg,var(--gd),var(--gdd));color:var(--nv)}.mf-ghost{background:rgba(255,255,255,.12);color:#fff;border:1.5px solid rgba(255,255,255,.25)}'
+  +'.mf-jv{display:block;text-decoration:none;background:#fff;border:2px dashed var(--gd);border-radius:16px;padding:20px;text-align:center;margin-bottom:26px}.mf-jv:hover{background:#fffaf0}.mf-jv .t{font-weight:800;color:var(--nv);font-size:16px}.mf-jv .s{color:var(--gdd);font-weight:700;font-size:13px;margin-top:4px}'
+  +'.mf-foot{background:var(--nv);color:#aebccb;font-size:12.5px}.mf-foot .wrap{padding:28px 20px 34px;text-align:center}.mf-fsoc{justify-content:center;margin-bottom:16px}.mf-fsoc a{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:#fff}.mf-fbrand{color:#fff;font-weight:800;letter-spacing:1px;margin-bottom:4px}.mf-faddr{margin-bottom:14px;line-height:1.7}.mf-legal{border-top:1px solid rgba(255,255,255,.12);padding-top:14px;font-size:11.5px;line-height:1.7;color:#8ea0b2;max-width:640px;margin:6px auto 0}.mf-legal .warn{color:#e7bd73}'
+  +'@media(max-width:560px){.mf-hero h1{font-size:23px}.mf-stats{grid-template-columns:repeat(2,1fr)}.mf-pb .amt{font-size:22px}}'
+  +'</style>'
+  +'<div class="mf">'
+  +'<header class="mf-head"><div class="wrap"><div class="mf-logo">'+logo+'</div>'+social('mf-soc')+'</div></header>'
+  +'<section class="mf-hero"><div class="wrap"><span class="mf-badge">Off-Market &middot; Cash Deal</span>'
+    +'<h1>'+esc(p.address||'Off-market property')+'</h1>'
+    +(p.description?'<p class="desc">'+esc(p.description)+'</p>':'')+'</div></section>'
+  +'<div class="mf-body"><div class="wrap">'+gal+statHTML+priceHTML+compsHTML+notesHTML
+    +'<div class="mf-cta"><h3>Interested in this deal?</h3><p>Showings are by appointment only. Call or text Micky at '+esc(DISPO_CTA_PHONE||'')+(DISPO_CTA_EMAIL?', or email us':'')+' &mdash; serious cash buyers only.</p>'
+      +(ctaBtns?'<div class="mf-btns">'+ctaBtns+'</div>':'')+'</div>'
+    +'<a class="mf-jv" href="'+esc(jv)+'" target="_blank"><div class="t">Are you an Agent or Wholesaler?</div><div class="s">Click here to learn about our Joint Venture Program &rarr;</div></a>'
+  +'</div></div>'
+  +'<footer class="mf-foot"><div class="wrap">'+social('mf-fsoc')
+    +'<div class="mf-fbrand">MESTATE</div><div class="mf-faddr">2300 Wilson Blvd &middot; Arlington, VA 22201</div>'
+    +'<div class="mf-legal">&copy; 2025 Mestate. All rights reserved.<br>All properties are sold as-is via assignment of contract. Buyers are responsible for conducting their own due diligence prior to purchase.<br><span class="warn">Unauthorized direct contact with any realtor, seller, or partner affiliated with Mestate during an active contract period is strictly prohibited and will result in legal action.</span></div>'
+  +'</div></footer></div>';
 }
+function renderSharedPropertyView(p){ document.getElementById('app').innerHTML = dispoFlyerHTML(p); }
 
 async function bootApp(){
   var params = new URLSearchParams(window.location.search);
@@ -6879,6 +6999,8 @@ async function bootApp(){
   var sharedId = params.get('id');
   if (sharedKind === 'lead' && sharedId) { initSharedLeadView(parseInt(sharedId, 10)); return; }
   if (sharedKind === 'task' && sharedId) { initSharedTaskView(parseInt(sharedId, 10)); return; }
+  var sharedToken = params.get('token');
+  if (sharedKind === 'property' && sharedToken) { initSharedPropertyByToken(sharedToken); return; }
   if (sharedKind === 'property' && sharedId) { initSharedPropertyView(parseInt(sharedId, 10)); return; }
 
   if (!AUTH_ENABLED) { initFullApp(); return; }
