@@ -420,6 +420,23 @@
   .ask-more{font-size:11px;color:var(--text4);padding:2px 4px;}
   .ask-empty{padding:18px 6px;color:var(--text3);font-size:12.5px;line-height:1.6;}
   @media(max-width:768px){ .ask-overlay{padding:0;align-items:stretch;justify-content:stretch;} .ask-panel{width:100%;max-width:100%;max-height:100%;border-radius:0;} .ask-fab{right:16px;bottom:16px;padding:11px 16px;} }
+  /* ---- Checklist Notes (additive, sits under the free-text notes box) ---- */
+  .nci-wrap{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border,#e2e8f0);}
+  .nci-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);margin-bottom:7px;}
+  .nci-add{display:flex;gap:6px;margin-bottom:8px;}
+  .nci-input{flex:1;min-width:0;}
+  .nci-list{display:flex;flex-direction:column;gap:4px;}
+  .nci-empty{color:var(--text4);font-size:12px;padding:2px 0;}
+  .nci-loading{color:var(--text4);font-size:12px;padding:2px 0;}
+  /* Still-to-do items = strong yellow so they're easy to spot; done items go plain + dimmed. */
+  .nci-row{display:flex;align-items:flex-start;gap:8px;padding:5px 7px;border:1px solid #eab308;border-radius:7px;background:#fde047;}
+  .nci-row .nci-chk{margin-top:2px;width:15px;height:15px;cursor:pointer;flex:0 0 auto;}
+  .nci-text{flex:1;font-size:13px;line-height:1.4;color:var(--text,#0f172a);cursor:text;word-break:break-word;}
+  .nci-row.nci-done{opacity:.6;background:var(--card,#fff);border-color:var(--border,#e2e8f0);}
+  .nci-row.nci-done .nci-text{text-decoration:line-through;color:var(--text3);}
+  .nci-del{border:none;background:none;cursor:pointer;font-size:13px;opacity:.55;padding:0 2px;flex:0 0 auto;line-height:1.4;}
+  .nci-del:hover{opacity:1;}
+  .nci-del:disabled{opacity:.25;cursor:default;}
 </style>
 </head>
 <body>
@@ -1868,7 +1885,8 @@ function openListDetail(id){
         + '<div><div class="lt-lbl">Next Due</div><div style="margin-top:2px">'+ltDuePill(l.dueDate)+'</div></div>'
       + '</div>'
       + (l.notes?'<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:14px;white-space:pre-wrap">'+esc(l.notes)+'</div>':'')
-      + '<div style="font-size:12px;font-weight:800;margin:6px 0 8px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2)">&#128172; Outreach Log ('+touches.length+')</div>'
+      + noteChecklistHTML('list', l.id)
+      + '<div style="font-size:12px;font-weight:800;margin:16px 0 8px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2)">&#128172; Outreach Log ('+touches.length+')</div>'
       + touchLog
       + '<div style="display:flex;gap:6px;margin-top:10px;align-items:flex-end;flex-wrap:wrap">'
         + '<div style="flex:1;min-width:120px"><label class="lt-lbl">Date</label><input type="date" id="lt-touch-date" class="form-input" value="'+today()+'" style="font-size:12px"></div>'
@@ -1881,6 +1899,7 @@ function openListDetail(id){
       + '<button class="btn btn-secondary btn-sm" onclick="openListEditModal('+l.id+')">Edit Details</button>'
       + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button>'
     + '</div></div></div>';
+  nciMount('list', l.id);
 }
 
 // ---- Add / Edit modal ----
@@ -2398,6 +2417,7 @@ function renderDispo(){
             + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-comppaste" class="form-input"><button class="btn btn-secondary btn-sm" onclick="dispoAddCompLinks()">Add</button></div>'
           + '</div>'
           + '<div class="form-field full"><label class="form-label">Deal notes <span style="font-weight:400;color:var(--text3)">(optional — rehab, terms, EMD)</span></label>'+dispoRtBar('dp-notes')+'<div id="dp-notes" class="form-input dp-rt" contenteditable="true" data-ph="">'+mfSanitize(d.notes)+'</div></div>'
+          + (d.id?'<div class="form-field full">'+noteChecklistHTML('property', d.id)+'</div>':'')
           + '<div class="form-field full"><label class="form-label">Photos</label>'
             + '<div id="dp-dropzone" class="dp-dropzone" onclick="dispoPickFiles()" ondrop="dispoOnDrop(event)" ondragover="dispoOnDragOver(event)" ondragleave="dispoOnDragLeave(event)">'
               + '<div class="dp-drop-ico">&#128247;</div><div><b>Drag photos here</b> or click to choose</div>'
@@ -2448,6 +2468,7 @@ function renderDispo(){
   dispoRenderPhotoStrip();
   dispoRenderCompStrip();
   byRenderArea();
+  if(dispoDraft && dispoDraft.id) nciMount('property', dispoDraft.id);
 }
 function dispoDealsHTML(){
   var list=(crmProps||[]);
@@ -2544,11 +2565,13 @@ function openBuyerEditModal(id){
       + '<div class="form-field"><label class="form-label">Buy Box</label><input id="be-buybox" class="form-input" value="'+esc(b.buyBox)+'" placeholder="SFH, $100k-$400k, DC/PG, ARV 70%..."></div>'
       + '<div class="form-field"><label class="form-label">Tags <span style="font-weight:400;color:var(--text3)">(comma-separated, optional)</span></label><input id="be-tags" class="form-input" value="'+esc(b.tags)+'" placeholder="Cash Buyers, Fix &amp; Flip"></div>'
       + '<div class="form-field"><label class="form-label">Notes</label><textarea id="be-notes" class="form-input" rows="2" placeholder="Optional">'+esc(b.notes)+'</textarea></div>'
+      + noteChecklistHTML('buyer', isNew?'':b.id)
     + '</div>'
     + '<div class="modal-footer">'
       + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
       + '<button class="btn btn-primary" onclick="saveBuyer('+(isNew?'null':b.id)+')">'+(isNew?'Add Buyer':'Save Changes')+'</button>'
     + '</div></div></div>';
+  if(!isNew) nciMount('buyer', b.id);
 }
 function beReadForm(){
   return {
@@ -3134,7 +3157,8 @@ function openProbateDetail(id){
         + row('GHL Tag', '<b>'+esc(tag)+'</b>')
       + '</div>'
       + (p.notes?'<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:14px;white-space:pre-wrap">'+esc(p.notes)+'</div>':'')
-      + '<div style="font-size:12px;font-weight:800;margin:6px 0 8px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2)">&#128228; Send Log ('+touches.length+')</div>'
+      + noteChecklistHTML('probate', p.id)
+      + '<div style="font-size:12px;font-weight:800;margin:16px 0 8px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2)">&#128228; Send Log ('+touches.length+')</div>'
       + touchLog
     + '</div>'
     + '<div class="modal-footer">'
@@ -3143,6 +3167,7 @@ function openProbateDetail(id){
       + '<button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">Edit</button>'
       + '<button class="btn btn-primary btn-sm" onclick="pbSendGhl('+p.id+')">&#128241; '+(p.sentOn?'Send Again':'Send to GHL')+'</button>'
     + '</div></div></div>';
+  nciMount('probate', p.id);
 }
 
 // ---- Edit modal (workflow fields only) ----
@@ -3244,6 +3269,124 @@ function selChk(setName, id, checked){
   return '<input type="checkbox" '+(checked?'checked':'')+' onclick="event.stopPropagation()" onchange="'+setName+'('+id+',this.checked)" style="width:15px;height:15px;cursor:pointer">';
 }
 // =================== end shared delete ===================
+
+// =================== Checklist Notes (crm_note_items) — additive, CRM-side only ===================
+// A reusable checklist that lives UNDER each existing free-text notes box (never replaces it).
+// Not-done items sort first, done (crossed-out) items sink to the bottom. Persists to its own
+// table keyed by (entity_type, entity_id) so no existing table/column is touched.
+const NCI_PATH = 'crm_note_items';
+var nciCache = {};    // "type:id" -> array of {id,entityType,entityId,text,done,position}
+var nciLoading = {};  // "type:id" -> bool (guards double-load)
+function nciKey(t,id){ return t+':'+id; }
+function nciFromDb(r){ return {id:r.id,entityType:r.entity_type,entityId:r.entity_id,text:r.text||'',done:!!r.done,position:r.position||0,createdAt:r.created_at||''}; }
+function nciToDb(it){ return {entity_type:it.entityType,entity_id:it.entityId,text:it.text||'',done:!!it.done,position:it.position||0,created_by:(typeof currentUser!=='undefined'&&currentUser?currentUser.name:'')||'',updated_at:new Date().toISOString()}; }
+// not-done first, then manual position, then id — mirrors the DB order clause.
+function nciSort(arr){ return (arr||[]).slice().sort(function(a,b){
+  if(a.done!==b.done) return a.done?1:-1;
+  if((a.position||0)!==(b.position||0)) return (a.position||0)-(b.position||0);
+  return (a.id>b.id?1:(a.id<b.id?-1:0)); }); }
+function nciItem(key,itemId){ return (nciCache[key]||[]).find(function(x){ return x.id===itemId; }); }
+function nciPending(it){ return !it || typeof it.id!=='number'; } // temp (not-yet-saved) rows have string ids
+
+// HTML for the checklist section — a container that nciMount() fills in after the modal paints.
+// Returns '' (renders nothing) for unsaved/new records that have no id yet.
+function noteChecklistHTML(entityType, entityId){
+  if(entityId===null||entityId===undefined||entityId==='') return '';
+  var cid='nci-'+entityType+'-'+entityId;
+  return '<div class="nci-wrap">'
+    + '<div class="nci-title">&#9745; Checklist</div>'
+    + '<div class="nci-add"><input id="'+cid+'-input" class="form-input nci-input" placeholder="Add a checklist item&hellip;" '
+      + 'onkeydown="if(event.key===&quot;Enter&quot;){event.preventDefault();nciAdd(&quot;'+entityType+'&quot;,'+entityId+')}">'
+      + '<button type="button" class="btn btn-secondary btn-sm" onclick="nciAdd(&quot;'+entityType+'&quot;,'+entityId+')">&#43; Add</button></div>'
+    + '<div id="'+cid+'" class="nci-list"><div class="nci-loading">Loading&hellip;</div></div>'
+    + '</div>';
+}
+// Lazy-load an entity's items (cached), then paint. Call right after a modal/section innerHTML is set.
+async function nciMount(entityType, entityId){
+  if(entityId===null||entityId===undefined||entityId==='') return;
+  var key=nciKey(entityType,entityId);
+  if(nciCache[key]){ nciRender(entityType,entityId); return; }
+  if(nciLoading[key]) return;
+  nciLoading[key]=true;
+  try {
+    var rows=await sbFetch(NCI_PATH+'?entity_type=eq.'+encodeURIComponent(entityType)+'&entity_id=eq.'+entityId+'&order=done.asc,position.asc,id.asc&limit=1000');
+    nciCache[key]=(rows||[]).map(nciFromDb);
+  } catch(e){ nciCache[key]=[]; }
+  nciLoading[key]=false;
+  nciRender(entityType,entityId);
+}
+// Re-render ONLY the checklist container (keeps modal focus/scroll steady, like pbbSet).
+function nciRender(entityType, entityId){
+  var box=document.getElementById('nci-'+entityType+'-'+entityId); if(!box) return;
+  var items=nciSort(nciCache[nciKey(entityType,entityId)]||[]);
+  if(!items.length){ box.innerHTML='<div class="nci-empty">No checklist items yet.</div>'; return; }
+  box.innerHTML=items.map(function(it){
+    return '<div class="nci-row'+(it.done?' nci-done':'')+'">'
+      + '<input type="checkbox" class="nci-chk"'+(it.done?' checked':'')+(nciPending(it)?' disabled':'')+' onchange="nciToggle(&quot;'+entityType+'&quot;,'+entityId+',this.getAttribute(&quot;data-iid&quot;)*1)" data-iid="'+it.id+'">'
+      + '<span class="nci-text" title="Double-click to edit" ondblclick="nciEditText(&quot;'+entityType+'&quot;,'+entityId+','+(nciPending(it)?'0':it.id)+')">'+esc(it.text)+'</span>'
+      + '<button type="button" class="nci-del" title="Delete"'+(nciPending(it)?' disabled':'')+' onclick="nciDelete(&quot;'+entityType+'&quot;,'+entityId+','+(nciPending(it)?'0':it.id)+')">&#128465;</button>'
+      + '</div>';
+  }).join('');
+}
+// Add an item (optimistic; rolls back if the insert fails).
+async function nciAdd(entityType, entityId){
+  var inp=document.getElementById('nci-'+entityType+'-'+entityId+'-input'); if(!inp) return;
+  var txt=(inp.value||'').trim(); if(!txt) return;
+  var key=nciKey(entityType,entityId);
+  var arr=nciCache[key]||(nciCache[key]=[]);
+  var maxPos=arr.reduce(function(m,x){ return Math.max(m,x.position||0); },0);
+  var temp={id:'tmp'+Date.now(),entityType:entityType,entityId:+entityId,text:txt,done:false,position:maxPos+1};
+  arr.push(temp); inp.value=''; nciRender(entityType,entityId);
+  try {
+    var rows=await sbFetch(NCI_PATH,'POST',nciToDb(temp));
+    if(rows&&rows[0]) temp.id=rows[0].id;
+    nciRender(entityType,entityId);
+  } catch(e){
+    var i=arr.indexOf(temp); if(i>=0) arr.splice(i,1);
+    nciRender(entityType,entityId);
+    showToast('Could not add item — check connection','error');
+  }
+  var again=document.getElementById('nci-'+entityType+'-'+entityId+'-input'); if(again) again.focus();
+}
+// Check/uncheck -> cross out + re-sort (done sinks to bottom), then persist.
+async function nciToggle(entityType, entityId, itemId){
+  var key=nciKey(entityType,entityId);
+  var it=nciItem(key,itemId); if(!it || nciPending(it)) return;
+  it.done=!it.done;
+  nciRender(entityType,entityId);
+  try { await sbFetch(NCI_PATH+'?id=eq.'+itemId,'PATCH',{done:it.done,updated_at:new Date().toISOString()}); }
+  catch(e){ it.done=!it.done; nciRender(entityType,entityId); showToast('Could not update — check connection','error'); }
+}
+// Inline edit via prompt (empty text deletes).
+function nciEditText(entityType, entityId, itemId){
+  if(!itemId) return;
+  var key=nciKey(entityType,entityId);
+  var it=nciItem(key,itemId); if(!it || nciPending(it)) return;
+  var nv=prompt('Edit checklist item:', it.text);
+  if(nv===null) return;
+  nv=nv.trim();
+  if(!nv){ nciDelete(entityType,entityId,itemId); return; }
+  var old=it.text; it.text=nv; nciRender(entityType,entityId);
+  sbFetch(NCI_PATH+'?id=eq.'+itemId,'PATCH',{text:nv,updated_at:new Date().toISOString()})
+    .catch(function(){ it.text=old; nciRender(entityType,entityId); showToast('Could not save edit — check connection','error'); });
+}
+// Delete with the app's shared 6s Undo (safe against accidental removal).
+function nciDelete(entityType, entityId, itemId){
+  if(!itemId) return;
+  var key=nciKey(entityType,entityId);
+  var arr=nciCache[key]||[];
+  var idx=arr.findIndex(function(x){ return x.id===itemId; });
+  if(idx<0) return;
+  var removed=arr[idx];
+  deleteWithUndo({
+    label:'Checklist item deleted',
+    removeMem:function(){ var i=arr.findIndex(function(x){ return x.id===itemId; }); if(i>=0) arr.splice(i,1); },
+    restoreMem:function(){ arr.splice(Math.min(idx,arr.length),0,removed); },
+    dbDelete:function(){ return sbFetch(NCI_PATH+'?id=eq.'+itemId,'DELETE'); },
+    reRender:function(){ nciRender(entityType,entityId); }
+  });
+}
+// =================== end Checklist Notes ===================
 
 // =================== Dashboard (KPIs + Follow-up Hub) ===================
 function ltCatCount(cat){ return (crmLists||[]).filter(function(l){ return (l.category||'seller')===cat; }).length; }
@@ -4263,7 +4406,7 @@ function renderDetailModal(){
               <div class="detail-item"><span class="detail-label">Follow-Up</span><span class="detail-val">${l.followUpDate?followUpChip(l.followUpDate)+' <a href="'+buildGCalUrl(l.followUpDate,'Follow up: '+(l.address||'Lead'),'Lead follow-up reminder for '+(l.address||''))+'" target="_blank" class="detail-link" style="font-size:11px">&#128197; Add to Calendar</a>':''}</span></div>
             </div>
           </div>
-          <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>'}</div>
+          <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>'}${noteChecklistHTML('lead',l.id)}</div>
           ${(l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':''}
           <div class="detail-section"><div class="detail-section-title">Links</div>
             <div style="display:flex;flex-direction:column;gap:6px">
@@ -4287,6 +4430,7 @@ function renderDetailModal(){
         </div>
       </div>
     </div>`;
+  nciMount('lead', l.id);
   if(l.ghlContactId) loadGhlSms(l.ghlContactId);
 }
 function switchToEdit(){editMode=true;renderEditModal();}
@@ -5110,13 +5254,14 @@ function openJVDetail(id){
     +'<div class="form-field"><label class="form-label">&#128197; Follow-Up Date</label><input type="date" id="jv-fu-date" class="form-input" value="'+(l.followUpDate||'')+'"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared(\'jv-fu-date\',\''+esc(l.name||'Task')+'\');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div></div>'
     +'<button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="saveJVDetail('+l.id+')">&#128190; Save Changes</button>'
     +'</div>'
-    +'<div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>'+(l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>')+'</div>'
+    +'<div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>'+(l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>')+noteChecklistHTML('task',l.id)+'</div>'
     +((l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':'')
     +agreementSectionHTML(l.id,'task',l.agreementStatus,l.agreementAcceptedAt)
     +(l.ghlContactId?ghlSmsSectionHTML(l.ghlContactId,'task',l.id):'')
     +renderAttachmentsSection('task', l.id)
     +renderActivityLog('task', l.id, l.activityLog)
     +'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
+  nciMount('task', l.id);
   if(l.ghlContactId) loadGhlSms(l.ghlContactId);
 }
 async function saveJVDetail(id){
