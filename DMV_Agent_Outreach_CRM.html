@@ -2361,7 +2361,7 @@ function renderDispo(){
   var hotCount=(crmBuyers||[]).filter(function(b){return b.hot;}).length;
   var d=dispoDraft;
   var fld=function(k,label,ph){ return '<div class="form-field"><label class="form-label">'+label+'</label>'
-    +'<input id="dp-'+k+'" class="form-input" value="'+esc(d[k])+'" placeholder="'+esc(ph||'')+'"></div>'; };
+    +'<input id="dp-'+k+'" class="form-input" value="'+esc(d[k])+'"></div>'; };
   host.innerHTML =
     '<div class="lt-wrap">'
     + '<div class="lt-head">'
@@ -2372,32 +2372,32 @@ function renderDispo(){
       + '<div class="dp-card">'
         + '<h3>&#127968; '+(d.id?'Edit Deal':'New Deal')+'</h3><div class="sub">Fill the property in, add photos, then Save to mint the buyer link.</div>'
         + '<div class="dp-form">'
-          + '<div class="form-field full"><label class="form-label">Address</label><input id="dp-address" class="form-input" value="'+esc(d.address)+'" placeholder="123 Main St, Washington DC"></div>'
+          + '<div class="form-field full"><label class="form-label">Address</label><input id="dp-address" class="form-input" value="'+esc(d.address)+'"></div>'
           + '<div class="form-field full"><label class="form-label">Header photo <span style="font-weight:400;color:var(--text3)">(one image — shown next to the address at the top of the flyer)</span></label>'
             + '<div id="dp-hdrdrop" class="dp-dropzone" onclick="dispoPickHeaderFile()" ondrop="dispoHeaderDrop(event)" ondragover="dispoOnDragOver(event)" ondragleave="dispoOnDragLeave(event)">'
               + '<div class="dp-drop-ico">&#127968;</div><div><b>Drag a header photo</b> or click to choose</div>'
             + '</div>'
             + '<input type="file" id="dp-hdrfileinput" accept="image/*" style="display:none" onchange="dispoHandleHeaderFile(this.files)">'
             + '<div id="dp-hdrstrip" class="dp-photostrip"></div>'
-            + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-hdrpaste" class="form-input" placeholder="…or paste one image URL"><button class="btn btn-secondary btn-sm" onclick="dispoAddHeaderLink()">Add</button></div>'
+            + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-hdrpaste" class="form-input"><button class="btn btn-secondary btn-sm" onclick="dispoAddHeaderLink()">Add</button></div>'
           + '</div>'
-          + '<div class="form-field full"><label class="form-label">Header description <span style="font-weight:400;color:var(--text3)">(short blurb under the address — use B / lists)</span></label>'+dispoRtBar('dp-description')+'<div id="dp-description" class="form-input dp-rt" contenteditable="true" data-ph="Solid brick rowhome in a fast-appreciating pocket, full rehab opportunity...">'+mfSanitize(d.description)+'</div></div>'
+          + '<div class="form-field full"><label class="form-label">Header description <span style="font-weight:400;color:var(--text3)">(short blurb under the address — use B / lists)</span></label>'+dispoRtBar('dp-description')+'<div id="dp-description" class="form-input dp-rt" contenteditable="true" data-ph="">'+mfSanitize(d.description)+'</div></div>'
           + fld('price','Asking Price','$250,000')
           + fld('arv','ARV','$400,000')
           + fld('beds','Beds','3')
           + fld('baths','Baths','2')
           + fld('sqft','Sqft','1,450')
           + fld('basement','Basement','Finished / Unfinished / None')
-          + '<div class="form-field full"><label class="form-label">Comparable sales <span style="font-weight:400;color:var(--text3)">(use bullets or numbered list)</span></label>'+dispoRtBar('dp-comps')+'<div id="dp-comps" class="form-input dp-rt" contenteditable="true" data-ph="1210 Mike Ave — sold $940,000 · 3bd/2ba · 0.2 mi (Apr 2026)">'+mfSanitize(d.comps)+'</div></div>'
+          + '<div class="form-field full"><label class="form-label">Comparable sales <span style="font-weight:400;color:var(--text3)">(use bullets or numbered list)</span></label>'+dispoRtBar('dp-comps')+'<div id="dp-comps" class="form-input dp-rt" contenteditable="true" data-ph="">'+mfSanitize(d.comps)+'</div></div>'
           + '<div class="form-field full"><label class="form-label">Comp photos <span style="font-weight:400;color:var(--text3)">(optional — screenshots of comps)</span></label>'
             + '<div id="dp-compdropzone" class="dp-dropzone" onclick="dispoPickCompFiles()" ondrop="dispoCompDrop(event)" ondragover="dispoOnDragOver(event)" ondragleave="dispoOnDragLeave(event)">'
               + '<div class="dp-drop-ico">&#128202;</div><div><b>Drag comp screenshots here</b> or click to choose</div>'
             + '</div>'
             + '<input type="file" id="dp-compfileinput" accept="image/*" multiple style="display:none" onchange="dispoHandleCompFiles(this.files)">'
             + '<div id="dp-compstrip" class="dp-photostrip"></div>'
-            + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-comppaste" class="form-input" placeholder="…or paste comp image URLs"><button class="btn btn-secondary btn-sm" onclick="dispoAddCompLinks()">Add</button></div>'
+            + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-comppaste" class="form-input"><button class="btn btn-secondary btn-sm" onclick="dispoAddCompLinks()">Add</button></div>'
           + '</div>'
-          + '<div class="form-field full"><label class="form-label">Deal notes <span style="font-weight:400;color:var(--text3)">(optional — rehab, terms, EMD)</span></label>'+dispoRtBar('dp-notes')+'<div id="dp-notes" class="form-input dp-rt" contenteditable="true" data-ph="Needs $60k rehab, EMD $5k, cash/hard money only...">'+mfSanitize(d.notes)+'</div></div>'
+          + '<div class="form-field full"><label class="form-label">Deal notes <span style="font-weight:400;color:var(--text3)">(optional — rehab, terms, EMD)</span></label>'+dispoRtBar('dp-notes')+'<div id="dp-notes" class="form-input dp-rt" contenteditable="true" data-ph="">'+mfSanitize(d.notes)+'</div></div>'
           + '<div class="form-field full"><label class="form-label">Photos</label>'
             + '<div id="dp-dropzone" class="dp-dropzone" onclick="dispoPickFiles()" ondrop="dispoOnDrop(event)" ondragover="dispoOnDragOver(event)" ondragleave="dispoOnDragLeave(event)">'
               + '<div class="dp-drop-ico">&#128247;</div><div><b>Drag photos here</b> or click to choose</div>'
@@ -2405,9 +2405,9 @@ function renderDispo(){
             + '</div>'
             + '<input type="file" id="dp-fileinput" accept="image/*" multiple style="display:none" onchange="dispoHandleFiles(this.files)">'
             + '<div id="dp-photostrip" class="dp-photostrip"></div>'
-            + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-pastelinks" class="form-input" placeholder="…or paste image URLs (space/comma separated)"><button class="btn btn-secondary btn-sm" onclick="dispoAddPastedLinks()">Add</button></div>'
+            + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-pastelinks" class="form-input"><button class="btn btn-secondary btn-sm" onclick="dispoAddPastedLinks()">Add</button></div>'
           + '</div>'
-          + '<div class="form-field full"><label class="form-label">Photo folder link <span style="font-weight:400;color:var(--text3)">(optional — Dropbox/Drive)</span></label><input id="dp-photoslink" class="form-input" value="'+esc(d.photosLink)+'" placeholder="https://…"></div>'
+          + '<div class="form-field full"><label class="form-label">Photo folder link <span style="font-weight:400;color:var(--text3)">(optional — Dropbox/Drive)</span></label><input id="dp-photoslink" class="form-input" value="'+esc(d.photosLink)+'"></div>'
         + '</div>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
           + '<button class="btn btn-secondary btn-sm" onclick="dispoPreviewDraft()">&#128065; Preview</button>'
