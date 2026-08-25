@@ -2381,13 +2381,13 @@ function renderDispo(){
             + '<div id="dp-hdrstrip" class="dp-photostrip"></div>'
             + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-hdrpaste" class="form-input" placeholder="…or paste one image URL"><button class="btn btn-secondary btn-sm" onclick="dispoAddHeaderLink()">Add</button></div>'
           + '</div>'
+          + '<div class="form-field full"><label class="form-label">Header description <span style="font-weight:400;color:var(--text3)">(short blurb under the address — use B / lists)</span></label>'+dispoRtBar('dp-description')+'<div id="dp-description" class="form-input dp-rt" contenteditable="true" data-ph="Solid brick rowhome in a fast-appreciating pocket, full rehab opportunity...">'+mfSanitize(d.description)+'</div></div>'
           + fld('price','Asking Price','$250,000')
           + fld('arv','ARV','$400,000')
           + fld('beds','Beds','3')
           + fld('baths','Baths','2')
           + fld('sqft','Sqft','1,450')
           + fld('basement','Basement','Finished / Unfinished / None')
-          + '<div class="form-field full"><label class="form-label">Header description <span style="font-weight:400;color:var(--text3)">(short blurb under the address — use B / lists)</span></label>'+dispoRtBar('dp-description')+'<div id="dp-description" class="form-input dp-rt" contenteditable="true" data-ph="Solid brick rowhome in a fast-appreciating pocket, full rehab opportunity...">'+mfSanitize(d.description)+'</div></div>'
           + '<div class="form-field full"><label class="form-label">Comparable sales <span style="font-weight:400;color:var(--text3)">(use bullets or numbered list)</span></label>'+dispoRtBar('dp-comps')+'<div id="dp-comps" class="form-input dp-rt" contenteditable="true" data-ph="1210 Mike Ave — sold $940,000 · 3bd/2ba · 0.2 mi (Apr 2026)">'+mfSanitize(d.comps)+'</div></div>'
           + '<div class="form-field full"><label class="form-label">Comp photos <span style="font-weight:400;color:var(--text3)">(optional — screenshots of comps)</span></label>'
             + '<div id="dp-compdropzone" class="dp-dropzone" onclick="dispoPickCompFiles()" ondrop="dispoCompDrop(event)" ondragover="dispoOnDragOver(event)" ondragleave="dispoOnDragLeave(event)">'
