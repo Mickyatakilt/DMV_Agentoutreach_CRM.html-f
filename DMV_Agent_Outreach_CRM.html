@@ -464,11 +464,10 @@ const SUPABASE_URL = "https://jwctfsapxrdzznjaaufo.supabase.co";
 // Hardcoded (not window.location.href) so shared links always point to the real live site,
 // even if this file is opened locally from Downloads/Desktop for testing.
 const GITHUB_PAGES_URL = "https://mickyatakilt.github.io/DMV_Agentoutreach_CRM.html-f/DMV_Agent_Outreach_CRM.html";
-// Dispo buyer-link base. Uses an unguessable share_token (NOT the enumerable ?id=).
-// FOR TESTING this points at the CRM's own token page (works today). Once the GHL page on
-// mestatedeals.com is live, flip this ONE line to "https://mestatedeals.com/deal?token="
-// (the token + get-property edge fn are identical either way).
-const DISPO_DEAL_BASE = "https://mestatedeals.com/deal?token=";
+// Dispo buyer-link base. Uses a readable-but-unguessable share_token (address-slug + short
+// random tail, NOT the enumerable ?id=). The GHL page reads the bare "?<token>" query (no
+// param name) but still accepts ?token=/?p=/?deal= for older links.
+const DISPO_DEAL_BASE = "https://mestatedeals.com/deal?";
 // Buyer flyer contact + brand links (blank = hidden / placeholder).
 const DISPO_CTA_PHONE = "202-509-5722";
 const DISPO_CTA_EMAIL = "contact@mestate.info";
