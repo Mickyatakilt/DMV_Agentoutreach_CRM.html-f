@@ -2275,6 +2275,7 @@ async function crmPropsFetch(){
   catch(e){ crmProps=[]; showToast('Could not load deals — check connection','error'); }
 }
 async function crmPropInsert(p){ var b=propToDb(p); b.created_by=(currentUser&&currentUser.name)||''; b.created_at=new Date().toISOString();
+  if(!b.share_token) b.share_token=dispoSlugToken(p.address); // readable, non-enumerable link
   var rows=await sbFetch(PROP_PATH,'POST',b); return rows&&rows[0]?propFromDb(rows[0]):null; }
 async function crmPropUpdate(p){ await sbFetch(PROP_PATH+'?id=eq.'+p.id,'PATCH',propToDb(p)); }
 async function crmPropDeleteDb(id){ await sbFetch(PROP_PATH+'?id=eq.'+id,'DELETE'); }
@@ -2284,6 +2285,15 @@ function propShareUrl(id){
   // Prefer the non-enumerable token link; fall back to the legacy id link only if a token isn't loaded yet.
   return (p&&p.shareToken) ? (DISPO_DEAL_BASE + encodeURIComponent(p.shareToken))
                            : (GITHUB_PAGES_URL + '?shared=property&id=' + id);
+}
+// Readable-but-unguessable share token: street-address slug + a short random tail.
+// (e.g. "2404-metts-dr-k7f2a") — friendlier than raw hex, still not enumerable.
+function dispoSlugToken(address){
+  var base=String(address||'').split(',')[0].toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
+  if(!base) base='deal';
+  var chars='abcdefghijklmnopqrstuvwxyz0123456789', tail='';
+  for(var i=0;i<5;i++) tail+=chars.charAt(Math.floor(Math.random()*chars.length));
+  return base+'-'+tail;
 }
 
 // ---- Property builder (draft) ----
