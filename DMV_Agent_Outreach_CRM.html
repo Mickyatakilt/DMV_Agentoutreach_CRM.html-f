@@ -282,6 +282,13 @@
   .lt-group-h .cnt{font-size:11px;font-weight:700;color:var(--text3);background:var(--accent-light);border-radius:20px;padding:2px 9px;}
   .lt-group-h .rec{font-size:11px;font-weight:600;color:var(--text3);margin-left:auto;}
   .lt-chip{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.3px;padding:1px 7px;border-radius:5px;vertical-align:middle;}
+  .lt-row-open>td{background:#eff6ff;}
+  .lt-sub-row>td{border-top:0;}
+  .lt-contacts-wrap{border-left:3px solid var(--accent);margin:0 0 4px;}
+  .lt-contacts-tbl{width:100%;border-collapse:collapse;}
+  .lt-contacts-tbl th{position:sticky;top:0;background:#eef2f7;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);text-align:left;padding:6px 10px;}
+  .lt-contacts-tbl td{padding:5px 10px;border-top:1px solid #eef2f7;}
+  .lt-contacts-wrap .table-wrap{max-height:340px;overflow:auto;}
   .lt-touch{font-size:11px;color:var(--text3);background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:1px 7px;margin:1px 3px 1px 0;display:inline-block;white-space:nowrap;}
   .lt-due-pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;}
   .lt-lbl{font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;}
@@ -1641,6 +1648,30 @@ async function crmListUpdate(l){ await sbFetch(LT_PATH+'?id=eq.'+l.id,'PATCH',lt
 async function crmListDeleteDb(id){ await sbFetch(LT_PATH+'?id=eq.'+id,'DELETE'); }
 function crmListById(id){ id=+id; return (crmLists||[]).find(function(l){ return +l.id===id; }); }
 
+// ---- Individual contacts inside an uploaded file/list (additive table crm_list_contacts) ----
+const LTC_PATH='crm_list_contacts';
+var ltcCache={};            // list_id -> array of contacts (undefined = not loaded yet)
+var ltExpanded=new Set();   // list ids currently expanded inline
+function ltcFromDb(r){ return {id:r.id,listId:r.list_id,name:r.name||'',phone:r.phone||'',email:r.email||'',extra:(r.extra&&typeof r.extra==='object')?r.extra:{}}; }
+function ltcToDb(c,listId){ return {list_id:+listId,name:c.name||'',phone:c.phone||'',email:c.email||'',extra:c.extra||{}}; }
+async function crmListContactsFetch(listId){
+  try{ var rows=await sbFetch(LTC_PATH+'?list_id=eq.'+(+listId)+'&select=*&order=id.asc&limit=50000'); ltcCache[listId]=(rows||[]).map(ltcFromDb); }
+  catch(e){ ltcCache[listId]=[]; }
+  return ltcCache[listId];
+}
+async function crmListContactsInsertMany(listId,contacts){
+  var total=0;
+  for(var i=0;i<contacts.length;i+=500){
+    var chunk=contacts.slice(i,i+500).map(function(c){ return ltcToDb(c,listId); });
+    var rows=await sbFetch(LTC_PATH,'POST',chunk);
+    total+=(rows?rows.length:chunk.length);
+  }
+  return total;
+}
+async function crmListContactsDeleteForList(listId){ try{ await sbFetch(LTC_PATH+'?list_id=eq.'+(+listId),'DELETE'); }catch(e){} delete ltcCache[listId]; }
+// "August 2026" style label from a YYYY-MM-DD date (keeps the legacy period column populated).
+function ltMonthLabel(dateStr){ if(!dateStr) return ''; var d=new Date(dateStr+'T00:00:00'); if(isNaN(d)) return ''; return d.toLocaleString('en-US',{month:'long'})+' '+d.getFullYear(); }
+
 // ---- small helpers ----
 function ltLastTexted(l){
   if(l.lastTexted) return l.lastTexted;
@@ -1718,7 +1749,6 @@ function renderLists(){
   var dueCount=all.filter(function(l){ var n=ltDaysUntil(l.dueDate); return n!==null && n<=0; }).length;
   var soonCount=all.filter(function(l){ var n=ltDaysUntil(l.dueDate); return n!==null && n>0 && n<=7; }).length;
   var regions=Array.from(new Set(all.map(function(l){return l.region;}).filter(Boolean))).sort();
-  var periods=ltPeriodOrder();
   function catChip(v,label){
     var on=ltCat===v; var col=v?ltCatColor(v):['#334155','#e2e8f0'];
     return '<button class="btn btn-sm" style="'+(on?'background:'+col[0]+';color:#fff;border-color:'+col[0]:'background:#fff;color:'+col[0]+';border:1.5px solid '+col[1])+'" onclick="ltCat=\''+v+'\';ltRenderListArea();ltSyncCatChips()">'+label+'</button>';
@@ -1727,10 +1757,10 @@ function renderLists(){
     '<div class="lt-wrap">'
     + '<div class="lt-head">'
       + '<div><h2>&#128199; List Tracking</h2>'
-        + '<p>Every purchased list &mdash; record count, source link, GHL bulk link, and a running log of every text/call round &mdash; grouped by the month you got it, with a Next-Due queue so nothing goes cold.</p></div>'
+        + '<p>One row per uploaded file &mdash; contact count, import date, tag, MLS/source link and follow-up date. <b>Click a list name to reveal the people inside.</b></p></div>'
       + '<div class="lt-actions">'
-        + '<button class="btn btn-secondary btn-sm" onclick="crmLists=null;renderLists()">&#8635; Refresh</button>'
-        + '<button class="btn btn-secondary btn-sm" onclick="openListImportModal()">&#8681; Import CSV</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="crmLists=null;ltcCache={};renderLists()">&#8635; Refresh</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="openListImportModal()">&#8681; Import File</button>'
         + '<button class="btn btn-secondary btn-sm" onclick="exportListsCSV()">&#8682; Export</button>'
         + '<button class="btn btn-primary btn-sm" onclick="openListEditModal(null)">&#43; New List</button>'
       + '</div>'
@@ -1746,8 +1776,6 @@ function renderLists(){
       + '<input id="lt-search" type="text" placeholder="&#128269; Search list name..." oninput="ltSetSearch(this.value)" value="'+esc(ltSearch)+'" style="flex:1;min-width:170px">'
       + '<select onchange="ltRegion=this.value;ltRenderListArea()"><option value="">All regions</option>'
         + regions.map(function(r){return '<option value="'+esc(r)+'"'+(ltRegion===r?' selected':'')+'>'+esc(r)+'</option>';}).join('')+'</select>'
-      + '<select onchange="ltPeriod=this.value;ltRenderListArea()"><option value="">All months</option>'
-        + periods.map(function(p){return '<option value="'+esc(p)+'"'+(ltPeriod===p?' selected':'')+'>'+esc(p||'(none)')+'</option>';}).join('')+'</select>'
     + '</div>'
     + '<div id="lt-cat-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
       + catChip('','All types')
@@ -1771,53 +1799,92 @@ function ltFilteredLists(){
   });
 }
 
-function ltRenderListArea(){
-  var area=document.getElementById('lt-list-area'); if(!area) return;
-  var rows=ltFilteredLists();
-  if(!rows.length){
-    area.innerHTML='<div class="empty"><div class="empty-icon">&#128199;</div><h3>No lists match</h3><p style="color:var(--text3);font-size:12px">Try clearing the filters, or add a new list.</p></div>';
-    return;
-  }
-  var order=ltPeriodOrder();
-  var groups={}; rows.forEach(function(l){ (groups[l.period||'']=groups[l.period||'']||[]).push(l); });
-  var html=order.filter(function(p){return groups[p];}).map(function(p){
-    var gr=groups[p];
-    var recs=gr.reduce(function(s,l){ var n=parseInt(String(l.amount||'').replace(/[^0-9]/g,''),10); return s+(isNaN(n)?0:n); },0);
-    var body=gr.map(function(l){
-      var lt=ltLastTexted(l);
-      var cc=ltCatColor(l.category||'seller');
-      var touches=(l.touches||[]);
-      var touchHtml=touches.length
-        ? touches.slice(-3).map(function(t){ return '<span class="lt-touch">'+(t.date?ltFmtDate(t.date)+' ':'')+esc(t.note||'')+'</span>'; }).join('')
-          + (touches.length>3?'<span class="lt-touch" style="background:#e2e8f0">+'+(touches.length-3)+' more</span>':'')
-        : '<span style="color:var(--text4);font-size:11.5px">No outreach yet</span>';
-      var linkCell = l.link ? '<a href="'+(/^https?:/i.test(l.link)?esc(l.link):'#')+'" '+(/^https?:/i.test(l.link)?'target="_blank"':'onclick="event.preventDefault();openListDetail('+l.id+')"')+' class="detail-link">'+esc(l.link)+'&#8599;</a>' : '<span style="color:var(--text4)">&mdash;</span>';
-      return '<tr style="cursor:pointer"'+(ltSel.has(+l.id)?' class="row-sel"':'')+' onclick="openListDetail('+l.id+')">'
-        + '<td onclick="event.stopPropagation()" style="border-left:4px solid '+cc[0]+'">'+selChk('ltToggle',l.id,ltSel.has(+l.id))+'</td>'
-        + '<td><div style="font-weight:600;font-size:13px">'+esc(l.name)+'</div><div style="margin-top:3px">'+ltCatBadge(l.category)+' '+ltRegionChip(l.region)+'</div></td>'
-        + '<td style="white-space:nowrap;font-weight:600">'+(l.amount?esc(l.amount):'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
-        + '<td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="event.stopPropagation()">'+linkCell+' '+ltGhlBtn(l,true)+'</td>'
-        + '<td style="max-width:260px">'+touchHtml+'</td>'
-        + '<td style="white-space:nowrap;font-size:11.5px">'+(lt?ltFmtDate(lt):'<span style="color:var(--text4)">never</span>')+'</td>'
-        + '<td style="white-space:nowrap">'+ltDuePill(l.dueDate)+'</td>'
-        + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'
-          + '<button class="btn btn-secondary btn-sm" title="Log a text/call round now" onclick="logListText('+l.id+')">&#128172; Log</button> '
-          + '<button class="btn btn-secondary btn-sm" onclick="openListEditModal('+l.id+')">&#9998;</button> '
-          + '<button class="btn btn-secondary btn-sm" title="Delete" onclick="deleteListEntry('+l.id+')">&#128465;</button>'
-        + '</td>'
+// Sort filtered lists by import date (newest file first), then newest id.
+function ltSortedLists(){
+  return ltFilteredLists().slice().sort(function(a,b){
+    var da=a.dateAdded||'', db=b.dateAdded||'';
+    if(da!==db) return da<db?1:-1;
+    return (+b.id)-(+a.id);
+  });
+}
+// Inline sub-row showing the individual people inside a file (lazy-loaded into ltcCache).
+function ltContactsSubRow(l,colspan){
+  var cs=ltcCache[l.id];
+  var inner;
+  if(cs===undefined){ inner='<div style="padding:10px 14px;color:var(--text4);font-size:12px">Loading contacts&hellip;</div>'; }
+  else if(!cs.length){ inner='<div style="padding:10px 14px;color:var(--text4);font-size:12px">No individual contacts stored for this list'+(l.amount?' (imported before contact tracking, or added manually)':'')+'.</div>'; }
+  else {
+    var body=cs.map(function(c,i){
+      var extraKeys=Object.keys(c.extra||{});
+      var extraHtml=extraKeys.length?extraKeys.map(function(k){return esc(k)+': '+esc(String(c.extra[k]));}).join(' &middot; '):'';
+      return '<tr>'
+        + '<td style="color:var(--text4);font-size:11px;width:34px">'+(i+1)+'</td>'
+        + '<td style="font-weight:600;font-size:12.5px">'+(esc(c.name)||'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
+        + '<td style="white-space:nowrap;font-size:12.5px">'+(c.phone?'<a href="tel:'+esc(c.phone)+'" class="detail-link">'+esc(c.phone)+'</a>':'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
+        + '<td style="font-size:12.5px">'+(esc(c.email)||'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
+        + '<td style="font-size:11.5px;color:var(--text3)">'+extraHtml+'</td>'
       + '</tr>';
     }).join('');
-    var gids=JSON.stringify(gr.map(function(l){return +l.id;}));
-    var gAll=gr.length && gr.every(function(l){ return ltSel.has(+l.id); });
-    return '<div class="lt-group">'
-      + '<div class="lt-group-h">&#128197; '+esc(p||'(no month)')+' <span class="cnt">'+gr.length+' list'+(gr.length!==1?'s':'')+'</span>'
-        + '<span class="rec">'+recs.toLocaleString()+' records</span></div>'
-      + '<div class="table-container"><div class="table-wrap"><table>'
-        + '<thead><tr><th style="width:34px"><input type="checkbox" '+(gAll?'checked':'')+' onchange=\'ltToggleGroup('+gids+',this.checked)\' style="width:15px;height:15px;cursor:pointer"></th><th>List Name</th><th>Amount</th><th>Link</th><th>Outreach Log</th><th>Last Texted</th><th>Next Due</th><th></th></tr></thead>'
-        + '<tbody>'+body+'</tbody></table></div></div>'
-      + '</div>';
+    inner='<div class="lt-contacts-wrap"><div class="table-wrap"><table class="lt-contacts-tbl">'
+      + '<thead><tr><th style="width:34px">#</th><th>Name</th><th>Phone</th><th>Email</th><th>Other</th></tr></thead>'
+      + '<tbody>'+body+'</tbody></table></div>'
+      + '<div style="padding:6px 14px 10px;font-size:11px;color:var(--text4)">'+cs.length+' contact'+(cs.length!==1?'s':'')+' in this file</div></div>';
+  }
+  return '<tr class="lt-sub-row"><td colspan="'+colspan+'" style="padding:0;background:#f8fafc">'+inner+'</td></tr>';
+}
+function ltRenderListArea(){
+  var area=document.getElementById('lt-list-area'); if(!area) return;
+  var rows=ltSortedLists();
+  if(!rows.length){
+    area.innerHTML='<div class="empty"><div class="empty-icon">&#128199;</div><h3>No lists match</h3><p style="color:var(--text3);font-size:12px">Try clearing the filters, or import a file.</p></div>';
+    return;
+  }
+  var COLS=8;
+  var body=rows.map(function(l){
+    var cc=ltCatColor(l.category||'seller');
+    var open=ltExpanded.has(+l.id);
+    var caret=open?'&#9662;':'&#9656;'; // ▾ / ▸
+    var cnt=l.amount?esc(l.amount):'<span style="color:var(--text4)">&mdash;</span>';
+    var effTag=ltEffectiveTag(l);
+    var tagCell=effTag?'<span class="lt-chip" style="color:#3730a3;background:#e0e7ff">'+esc(effTag)+'</span>':'<span style="color:var(--text4)">&mdash;</span>';
+    var linkCell = l.link ? '<a href="'+(/^https?:/i.test(l.link)?esc(l.link):'#')+'" '+(/^https?:/i.test(l.link)?'target="_blank"':'onclick="event.preventDefault();openListDetail('+l.id+')"')+' class="detail-link" onclick="event.stopPropagation()">'+esc(l.link)+'&#8599;</a>' : '<span style="color:var(--text4)">&mdash;</span>';
+    var tr='<tr'+(ltSel.has(+l.id)?' class="row-sel"':'')+(open?' class="lt-row-open"':'')+'>'
+      + '<td onclick="event.stopPropagation()" style="border-left:4px solid '+cc[0]+'">'+selChk('ltToggle',l.id,ltSel.has(+l.id))+'</td>'
+      + '<td style="cursor:pointer" onclick="ltToggleExpand('+l.id+')" title="Click to see the contacts inside">'
+        + '<div style="display:flex;align-items:flex-start;gap:7px">'
+        + '<span style="color:var(--text3);font-size:11px;margin-top:2px">'+caret+'</span>'
+        + '<div><div style="font-weight:600;font-size:13px">'+esc(l.name||'(unnamed list)')+'</div>'
+        + '<div style="margin-top:3px">'+ltCatBadge(l.category)+' '+ltRegionChip(l.region)+'</div></div></div></td>'
+      + '<td style="white-space:nowrap;font-weight:700;text-align:center">'+cnt+'</td>'
+      + '<td style="white-space:nowrap;font-size:12px">'+(l.dateAdded?ltFmtDate(l.dateAdded):'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
+      + '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="event.stopPropagation()">'+tagCell+'</td>'
+      + '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="event.stopPropagation()">'+linkCell+' '+ltGhlBtn(l,true)+'</td>'
+      + '<td style="white-space:nowrap">'+ltDuePill(l.dueDate)+'</td>'
+      + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'
+        + '<button class="btn btn-secondary btn-sm" title="Open details, outreach log &amp; notes" onclick="openListDetail('+l.id+')">&#128065;</button> '
+        + '<button class="btn btn-secondary btn-sm" title="Log a text/call round now" onclick="logListText('+l.id+')">&#128172;</button> '
+        + '<button class="btn btn-secondary btn-sm" title="Edit" onclick="openListEditModal('+l.id+')">&#9998;</button> '
+        + '<button class="btn btn-secondary btn-sm" title="Delete" onclick="deleteListEntry('+l.id+')">&#128465;</button>'
+      + '</td>'
+    + '</tr>';
+    if(open) tr+=ltContactsSubRow(l,COLS);
+    return tr;
   }).join('');
-  area.innerHTML=bulkBar(ltSel.size,'ltClearSel()','ltDeleteSelected()')+html;
+  var allSel=rows.length && rows.every(function(l){ return ltSel.has(+l.id); });
+  var gids=JSON.stringify(rows.map(function(l){return +l.id;}));
+  var totalRecs=rows.reduce(function(s,l){ var n=parseInt(String(l.amount||'').replace(/[^0-9]/g,''),10); return s+(isNaN(n)?0:n); },0);
+  area.innerHTML=bulkBar(ltSel.size,'ltClearSel()','ltDeleteSelected()')
+    + '<div class="lt-group"><div class="lt-group-h">&#128199; '+rows.length+' file'+(rows.length!==1?'s':'')+' <span class="rec">'+totalRecs.toLocaleString()+' contacts total</span></div>'
+    + '<div class="table-container"><div class="table-wrap"><table>'
+    + '<thead><tr><th style="width:34px"><input type="checkbox" '+(allSel?'checked':'')+' onchange=\'ltToggleGroup('+gids+',this.checked)\' style="width:15px;height:15px;cursor:pointer"></th><th>List Name</th><th style="text-align:center">Contacts</th><th>Import Date</th><th>Tag</th><th>MLS / Link</th><th>Follow-Up</th><th></th></tr></thead>'
+    + '<tbody>'+body+'</tbody></table></div></div></div>';
+}
+// Expand/collapse a file to reveal the individual contacts inside (lazy-load once).
+function ltToggleExpand(id){
+  id=+id;
+  if(ltExpanded.has(id)){ ltExpanded.delete(id); ltRenderListArea(); return; }
+  ltExpanded.add(id); ltRenderListArea();
+  if(ltcCache[id]===undefined){ crmListContactsFetch(id).then(function(){ if(ltExpanded.has(id)) ltRenderListArea(); }); }
 }
 function ltClearSel(){ ltSel.clear(); ltRenderListArea(); }
 function ltToggleGroup(ids,c){ ids.forEach(function(id){ if(c)ltSel.add(+id); else ltSel.delete(+id); }); ltRenderListArea(); }
@@ -1829,7 +1896,7 @@ function ltDeleteSelected(){
     label:'Deleted '+ids.length+' list'+(ids.length!==1?'s':''),
     removeMem:function(){ crmLists=(crmLists||[]).filter(function(l){ return !ltSel.has(+l.id); }); ltSel.clear(); },
     restoreMem:function(){ crmLists=(crmLists||[]).concat(removed); },
-    dbDelete:function(){ return sbFetch(LT_PATH+'?id=in.('+ids.join(',')+')','DELETE'); },
+    dbDelete:function(){ return sbFetch(LT_PATH+'?id=in.('+ids.join(',')+')','DELETE').then(function(){ return sbFetch(LTC_PATH+'?list_id=in.('+ids.join(',')+')','DELETE'); }).then(function(){ ids.forEach(function(x){ delete ltcCache[x]; }); }); },
     reRender:function(){ if(activeSection==='lists') renderLists(); }
   });
 }
@@ -1907,29 +1974,24 @@ function openListEditModal(id){
   var isNew = (id===null || id===undefined);
   var l = isNew ? {id:null,name:'',region:'',period:'',amount:'',link:'',ghlLink:'',ghlTag:'',category:'seller',dateAdded:today(),lastTexted:'',dueDate:'',notes:'',touches:[]} : crmListById(id);
   if(!l){ showToast('List not found','error'); return; }
-  var periods=ltPeriodOrder().filter(Boolean);
   document.getElementById('modal-container').innerHTML =
     '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:480px">'
     + '<div class="modal-header"><div class="modal-title">'+(isNew?'&#43; New List':'&#9998; Edit List')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
     + '<div class="modal-body">'
-      + '<div class="form-field"><label class="form-label">List Name</label><input id="le-name" class="form-input" value="'+esc(l.name)+'" placeholder="e.g. PG County High Equity" oninput="leAutoRegion()"></div>'
+      + '<div class="form-field"><label class="form-label">List Name</label><input id="le-name" class="form-input" value="'+esc(l.name)+'" placeholder="e.g. VA Realtors — Aug 2026" oninput="leAutoRegion()"></div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
         + '<div class="form-field"><label class="form-label">Type</label><select id="le-cat" class="form-input">'
           + LT_CATS.map(function(c){return '<option value="'+c[0]+'"'+(l.category===c[0]?' selected':'')+'>'+c[1]+'</option>';}).join('')+'</select></div>'
         + '<div class="form-field"><label class="form-label">Region</label><input id="le-region" class="form-input" value="'+esc(l.region)+'" placeholder="DC / MD / VA..."></div>'
       + '</div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-        + '<div class="form-field"><label class="form-label">Month / Period</label><input id="le-period" class="form-input" list="le-period-list" value="'+esc(l.period)+'" placeholder="e.g. August 2026">'
-          + '<datalist id="le-period-list">'+periods.map(function(p){return '<option value="'+esc(p)+'">';}).join('')+'</datalist></div>'
-        + '<div class="form-field"><label class="form-label">Amount (records)</label><input id="le-amount" class="form-input" value="'+esc(l.amount)+'" placeholder="e.g. 1923 or 3K"></div>'
+        + '<div class="form-field"><label class="form-label">Import date</label><input id="le-added" type="date" class="form-input" value="'+esc(l.dateAdded)+'"></div>'
+        + '<div class="form-field"><label class="form-label">Contacts <span style="font-weight:400;color:var(--text3)">(count)</span></label><input id="le-amount" class="form-input" value="'+esc(l.amount)+'" placeholder="e.g. 1923"></div>'
       + '</div>'
-      + '<div class="form-field"><label class="form-label">Source Link</label><input id="le-link" class="form-input" value="'+esc(l.link)+'" placeholder="https://... or label"></div>'
+      + '<div class="form-field"><label class="form-label">MLS / Source Link</label><input id="le-link" class="form-input" value="'+esc(l.link)+'" placeholder="https://... or label"></div>'
       + '<div class="form-field"><label class="form-label">GHL Tag <span style="font-weight:400;color:var(--text3)">(the tag you apply to these contacts in GHL)</span></label><input id="le-ghltag" class="form-input" value="'+esc(l.ghlTag)+'" placeholder="Defaults to the list name"></div>'
       + '<div class="form-field"><label class="form-label">GHL Smart List Link <span style="font-weight:400;color:var(--text3)">(optional — overrides the tag)</span></label><input id="le-ghl" class="form-input" value="'+esc(l.ghlLink)+'" placeholder="Paste a saved GHL Smart List URL"></div>'
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-        + '<div class="form-field"><label class="form-label">Next Due (re-outreach)</label><input id="le-due" type="date" class="form-input" value="'+esc(l.dueDate)+'"></div>'
-        + '<div class="form-field"><label class="form-label">Date Added</label><input id="le-added" type="date" class="form-input" value="'+esc(l.dateAdded)+'"></div>'
-      + '</div>'
+      + '<div class="form-field"><label class="form-label">Follow-Up date <span style="font-weight:400;color:var(--text3)">(re-outreach)</span></label><input id="le-due" type="date" class="form-input" value="'+esc(l.dueDate)+'"></div>'
       + '<div class="form-field"><label class="form-label">Notes</label><textarea id="le-notes" class="form-input" rows="2" placeholder="Optional">'+esc(l.notes)+'</textarea></div>'
     + '</div>'
     + '<div class="modal-footer">'
@@ -1942,9 +2004,10 @@ function leAutoRegion(){
   var g=ltInferRegion(document.getElementById('le-name').value); if(g) rEl.value=g;
 }
 function leReadForm(){
+  var added=document.getElementById('le-added').value||'';
   return {
     name:(document.getElementById('le-name').value||'').trim(),
-    period:(document.getElementById('le-period').value||'').trim(),
+    period:ltMonthLabel(added),
     region:(document.getElementById('le-region').value||'').trim().toUpperCase(),
     amount:(document.getElementById('le-amount').value||'').trim(),
     category:document.getElementById('le-cat').value,
@@ -1952,7 +2015,7 @@ function leReadForm(){
     ghlLink:(document.getElementById('le-ghl').value||'').trim(),
     ghlTag:(document.getElementById('le-ghltag').value||'').trim(),
     dueDate:document.getElementById('le-due').value||'',
-    dateAdded:document.getElementById('le-added').value||'',
+    dateAdded:added,
     notes:(document.getElementById('le-notes').value||'').trim()
   };
 }
@@ -1978,9 +2041,9 @@ function deleteListEntry(id){
   closeModal();
   deleteWithUndo({
     label:'List deleted',
-    removeMem:function(){ crmLists=(crmLists||[]).filter(function(x){ return +x.id!==+id; }); ltSel.delete(+id); },
+    removeMem:function(){ crmLists=(crmLists||[]).filter(function(x){ return +x.id!==+id; }); ltSel.delete(+id); ltExpanded.delete(+id); },
     restoreMem:function(){ crmLists=(crmLists||[]).concat([l]); },
-    dbDelete:function(){ return crmListDeleteDb(id); },
+    dbDelete:function(){ return crmListDeleteDb(id).then(function(){ return crmListContactsDeleteForList(id); }); },
     reRender:function(){ if(activeSection==='lists') renderLists(); }
   });
 }
@@ -2036,69 +2099,119 @@ function ltParseCSV(text){
 }
 function openListImportModal(){
   document.getElementById('modal-container').innerHTML =
-    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px">'
-    + '<div class="modal-header"><div class="modal-title">&#8681; Import Lists from CSV</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:540px">'
+    + '<div class="modal-header"><div class="modal-title">&#8681; Import a List File</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
     + '<div class="modal-body">'
-      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:10px">Paste rows, or upload a .csv. Columns (a header row is auto-detected):<br>'
-        + '<code style="font-size:11.5px;background:#f1f5f9;padding:1px 5px;border-radius:4px">Name, Amount, Link, Region, Month, Type, Due, Notes</code><br>'
-        + 'Only <b>Name</b> is required. Region auto-fills from the name; Type defaults to Seller.</p>'
+      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">Upload <b>one file</b> = <b>one list</b>. Each row inside is a person; the columns <b>Name / First / Last, Phone, Email</b> are auto-detected (a header row is optional). The list shows a single row here &mdash; click its name to see everyone inside.</p>'
+      + '<div class="form-field"><label class="form-label">List name <span style="color:#dc2626">*</span></label><input id="lt-imp-name" class="form-input" placeholder="e.g. VA Realtors &mdash; Aug 2026" oninput="leImpAutoRegion()"></div>'
       + '<div class="form-field"><label class="form-label">Upload .csv</label><input type="file" id="lt-csv-file" accept=".csv,text/csv" class="form-input" onchange="ltCsvFile(event)"></div>'
-      + '<div class="form-field"><label class="form-label">&hellip; or paste CSV</label><textarea id="lt-csv-text" class="form-input" rows="7" placeholder="Name,Amount,Link,Region,Month,Type,Due,Notes\nPG County High Equity,2337,https://...,MD,August 2026,seller,2026-09-01,"></textarea></div>'
+      + '<div class="form-field"><label class="form-label">&hellip; or paste rows</label><textarea id="lt-csv-text" class="form-input" rows="5" placeholder="First Name,Last Name,Phone,Email\nAamir,Khan,(571) 351-3234,aamir@x.com" oninput="ltImpPreview()"></textarea></div>'
+      + '<div id="lt-imp-count" style="font-size:12px;color:var(--text3);margin:-4px 0 10px"></div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-        + '<div class="form-field"><label class="form-label">Assign to Month (optional)</label><input id="lt-csv-period" class="form-input" placeholder="e.g. August 2026"></div>'
-        + '<div class="form-field"><label class="form-label">Default Type</label><select id="lt-csv-cat" class="form-input">'+LT_CATS.map(function(c){return '<option value="'+c[0]+'">'+c[1]+'</option>';}).join('')+'</select></div>'
+        + '<div class="form-field"><label class="form-label">Import date</label><input id="lt-imp-date" type="date" class="form-input" value="'+today()+'"></div>'
+        + '<div class="form-field"><label class="form-label">Type</label><select id="lt-imp-cat" class="form-input">'+LT_CATS.map(function(c){return '<option value="'+c[0]+'"'+(c[0]==='realtor'?' selected':'')+'>'+c[1]+'</option>';}).join('')+'</select></div>'
       + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+        + '<div class="form-field"><label class="form-label">Region</label><input id="lt-imp-region" class="form-input" placeholder="DC / MD / VA..."></div>'
+        + '<div class="form-field"><label class="form-label">Follow-up date <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input id="lt-imp-due" type="date" class="form-input"></div>'
+      + '</div>'
+      + '<div class="form-field"><label class="form-label">GHL Tag <span style="font-weight:400;color:var(--text3)">(optional &mdash; defaults to the list name)</span></label><input id="lt-imp-tag" class="form-input" placeholder="Tag applied to these contacts in GHL"></div>'
+      + '<div class="form-field"><label class="form-label">MLS / Source Link <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input id="lt-imp-link" class="form-input" placeholder="https://..."></div>'
     + '</div>'
     + '<div class="modal-footer">'
       + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
-      + '<button class="btn btn-primary" onclick="doListImport()">Import</button>'
+      + '<button class="btn btn-primary" id="lt-imp-btn" onclick="doListImport()">Import List</button>'
     + '</div></div></div>';
+}
+function leImpAutoRegion(){
+  var rEl=document.getElementById('lt-imp-region'); if(!rEl || rEl.value.trim()) return;
+  var g=ltInferRegion(document.getElementById('lt-imp-name').value); if(g) rEl.value=g;
 }
 function ltCsvFile(ev){
   var f=ev.target.files&&ev.target.files[0]; if(!f) return;
-  var r=new FileReader(); r.onload=function(){ document.getElementById('lt-csv-text').value=r.result; }; r.readAsText(f);
+  var nameEl=document.getElementById('lt-imp-name');
+  if(nameEl && !nameEl.value.trim()){ nameEl.value=f.name.replace(/\.(csv|txt)$/i,''); leImpAutoRegion(); }
+  var r=new FileReader(); r.onload=function(){ document.getElementById('lt-csv-text').value=r.result; ltImpPreview(); }; r.readAsText(f);
+}
+// Detect which columns hold name/first/last/phone/email; returns {idx, hasHeader}.
+function ltDetectContactCols(rows){
+  var first=rows[0].map(function(x){return String(x).trim().toLowerCase();});
+  var map={first:['first name','first','fname','firstname','given name'],last:['last name','last','lname','lastname','surname'],
+    name:['name','full name','contact','contact name','fullname'],
+    phone:['phone','phone number','phone1','mobile','cell','cell phone','number','telephone','tel'],
+    email:['email','email address','e-mail']};
+  var idx={}; var hasHeader=false;
+  first.forEach(function(h,i){
+    Object.keys(map).forEach(function(k){ if(idx[k]==null && map[k].indexOf(h)>=0){ idx[k]=i; hasHeader=true; } });
+  });
+  return {idx:idx,hasHeader:hasHeader,header:first};
+}
+function ltBuildContacts(rows){
+  if(!rows.length) return [];
+  var d=ltDetectContactCols(rows), idx=d.idx, header=d.header;
+  var body=d.hasHeader?rows.slice(1):rows;
+  // Fallback when no header: guess col0=name/phone by content.
+  if(!d.hasHeader){
+    var c0=rows[0][0]||'', isPhone0=/\d{3}.*\d{4}/.test(String(c0).replace(/[^0-9]/g,'').length>=7?c0:'');
+    idx = isPhone0 ? {phone:0,name:1} : {name:0,phone:1,email:2};
+  }
+  var out=[];
+  body.forEach(function(r){
+    var g=function(k){ return idx[k]!=null && r[idx[k]]!=null ? String(r[idx[k]]).trim() : ''; };
+    var name=g('name');
+    if(!name){ name=[g('first'),g('last')].filter(Boolean).join(' ').trim(); }
+    var phone=g('phone'), email=g('email');
+    // stash any leftover columns as extra (keyed by header when present)
+    var used={}; ['name','first','last','phone','email'].forEach(function(k){ if(idx[k]!=null) used[idx[k]]=1; });
+    var extra={};
+    r.forEach(function(v,i){ if(used[i]) return; v=String(v==null?'':v).trim(); if(!v) return; var key=(d.hasHeader&&header[i])?header[i]:('col'+(i+1)); extra[key]=v; });
+    if(!name && !phone && !email && !Object.keys(extra).length) return;
+    out.push({name:name,phone:phone,email:email,extra:extra});
+  });
+  return out;
+}
+function ltImpPreview(){
+  var el=document.getElementById('lt-imp-count'); if(!el) return;
+  var text=(document.getElementById('lt-csv-text').value||'').trim();
+  if(!text){ el.textContent=''; return; }
+  var rows; try{ rows=ltParseCSV(text); }catch(e){ el.textContent=''; return; }
+  var n=ltBuildContacts(rows).length;
+  el.innerHTML=n?('&#9989; '+n.toLocaleString()+' contact'+(n!==1?'s':'')+' detected'):'<span style="color:#b45309">No contacts detected &mdash; check the columns.</span>';
 }
 async function doListImport(){
+  var name=(document.getElementById('lt-imp-name').value||'').trim();
+  if(!name){ showToast('Give the list a name first','error'); return; }
   var text=(document.getElementById('lt-csv-text').value||'').trim();
-  if(!text){ showToast('Paste CSV or choose a file first','error'); return; }
-  var forcePeriod=(document.getElementById('lt-csv-period').value||'').trim();
-  var defCat=document.getElementById('lt-csv-cat').value||'seller';
+  if(!text){ showToast('Upload a file or paste rows first','error'); return; }
   var rows=ltParseCSV(text);
   if(!rows.length){ showToast('No rows found','error'); return; }
-  var first=rows[0].map(function(x){return String(x).trim().toLowerCase();});
-  var hasHeader=first.some(function(h){ return ['name','amount','link','region','month','period','type','category','due','notes','list','list name'].indexOf(h)>=0; });
-  var idx={name:0,amount:1,link:2,region:3,month:4,type:5,due:6,notes:7};
-  if(hasHeader){
-    idx={};
-    first.forEach(function(h,i){
-      if(h==='name'||h==='list'||h==='list name'||h==='seller list name') idx.name=i;
-      else if(h==='amount'||h==='count'||h==='records') idx.amount=i;
-      else if(h==='link'||h==='url') idx.link=i;
-      else if(h==='region'||h==='state') idx.region=i;
-      else if(h==='month'||h==='period') idx.month=i;
-      else if(h==='type'||h==='category') idx.type=i;
-      else if(h==='due'||h==='due date'||h==='next due') idx.due=i;
-      else if(h==='notes'||h==='note') idx.notes=i;
-    });
-    rows=rows.slice(1);
-  }
-  var toAdd=[];
-  rows.forEach(function(r){
-    var get=function(k){ return idx[k]!=null && r[idx[k]]!=null ? String(r[idx[k]]).trim() : ''; };
-    var name=get('name'); if(!name) return;
-    var region=get('region').toUpperCase()||ltInferRegion(name);
-    var cat=(get('type')||defCat).toLowerCase();
-    if(!LT_CATS.some(function(c){return c[0]===cat;})) cat=defCat;
-    toAdd.push({name:name,amount:get('amount'),link:get('link'),ghlLink:'',ghlTag:'',region:region,
-      period:forcePeriod||get('month')||'Imported',category:cat,dateAdded:today(),
-      lastTexted:'',dueDate:get('due'),notes:get('notes'),touches:[]});
-  });
-  if(!toAdd.length){ showToast('Nothing to import','warning'); return; }
+  var contacts=ltBuildContacts(rows);
+  if(!contacts.length){ showToast('No contacts detected in that file','error'); return; }
+  var impDate=document.getElementById('lt-imp-date').value||today();
+  var cat=document.getElementById('lt-imp-cat').value||'realtor';
+  var region=(document.getElementById('lt-imp-region').value||'').trim().toUpperCase()||ltInferRegion(name);
+  var tag=(document.getElementById('lt-imp-tag').value||'').trim();
+  var link=(document.getElementById('lt-imp-link').value||'').trim();
+  var due=document.getElementById('lt-imp-due').value||'';
+  var btn=document.getElementById('lt-imp-btn'); if(btn){ btn.disabled=true; btn.textContent='Importing '+contacts.length+'…'; }
+  var listRow;
   try {
-    var inserted=await crmListInsertMany(toAdd);
-    inserted.forEach(function(row){ crmLists.push(row); });
-    closeModal(); showToast('Imported '+inserted.length+' list'+(inserted.length!==1?'s':''),'success'); renderLists();
-  } catch(e){ showToast('Import failed — check the CSV and try again','error'); }
+    listRow=await crmListInsert({name:name,amount:String(contacts.length),link:link,ghlLink:'',ghlTag:tag,
+      region:region,period:ltMonthLabel(impDate),category:cat,dateAdded:impDate,lastTexted:'',dueDate:due,notes:'',touches:[]});
+    if(!listRow) throw new Error('no list row');
+  } catch(e){ if(btn){ btn.disabled=false; btn.textContent='Import List'; } showToast('Could not create the list — try again','error'); return; }
+  try {
+    await crmListContactsInsertMany(listRow.id,contacts);
+    ltcCache[listRow.id]=contacts.map(function(c){ return {id:0,listId:listRow.id,name:c.name,phone:c.phone,email:c.email,extra:c.extra}; });
+  } catch(e){
+    // list saved but contacts failed — tell the user rather than leaving a phantom empty list
+    crmLists.push(listRow); closeModal(); renderLists();
+    showToast('List created, but saving its '+contacts.length+' contacts failed — open it and re-import','error'); return;
+  }
+  crmLists.push(listRow);
+  closeModal();
+  showToast('Imported "'+name+'" — '+contacts.length+' contact'+(contacts.length!==1?'s':''),'success');
+  renderLists();
 }
 function exportListsCSV(){
   var header=['Name','Type','Amount','Link','GHL Tag','GHL Link','Region','Month','Date Added','Last Texted','Next Due','Touches','Notes'];
