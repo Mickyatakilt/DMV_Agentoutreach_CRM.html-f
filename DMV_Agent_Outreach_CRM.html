@@ -2944,6 +2944,8 @@ var crmProbate = null;                 // null = not loaded yet
 var pbSearch='', pbState='', pbView='all';   // view: all | unsent | sent | due
 const PB_PATH='crm_probate';
 const PB_STATES=['MD','SC','DC','VA','GA','TX','NC'];   // states offered in the sync dialog
+const PB_STATE_NAMES={MD:'Maryland',SC:'South Carolina',DC:'Washington DC',VA:'Virginia',GA:'Georgia',TX:'Texas',NC:'North Carolina',OH:'Ohio',IN:'Indiana',FL:'Florida'};
+function pbStateName(s){ return PB_STATE_NAMES[s]||s||'Unknown'; }
 
 function pbFromDb(r){ return {
   id:r.id, sourceCaseId:r.source_case_id, state:r.state||'', county:r.county||'',
@@ -2954,6 +2956,7 @@ function pbFromDb(r){ return {
   prPhone:r.pr_phone||'', attorney:r.attorney||'', score:r.score, status:r.status||'New',
   datePulled:r.date_pulled||'', ghlTag:r.ghl_tag||'', sentOn:r.sent_on||'', sentTag:r.sent_tag||'',
   followUpDate:r.follow_up_date||'', notes:r.notes||'', touches:Array.isArray(r.touches)?r.touches:[],
+  skiptraceName:r.skiptrace_name||'', skiptracePhone:r.skiptrace_phone||'', skiptraceAddress:r.skiptrace_address||'', skiptracedAt:r.skiptraced_at||'',
   createdBy:r.created_by||'' }; }
 // Only the CRM-owned workflow fields are written back; the scanned facts are read-only.
 function pbToDb(p){ return {
@@ -2967,6 +2970,13 @@ async function crmProbateFetch(){
   catch(e){ crmProbate=[]; showToast('Could not load probate leads — check connection','error'); }
 }
 async function crmProbateUpdate(p){ await sbFetch(PB_PATH+'?id=eq.'+p.id,'PATCH',pbToDb(p)); }
+// Skip-trace writeback: fills ONLY the additive skiptrace_* columns, leaving every
+// scanned fact intact. Used by the skip-traced CSV upload (matched by lead id).
+async function crmProbateSkiptraceUpdate(id, st){
+  var body={ skiptrace_name:st.name||null, skiptrace_phone:st.phone||null,
+             skiptrace_address:st.address||null, skiptraced_at:new Date().toISOString() };
+  return await sbFetch(PB_PATH+'?id=eq.'+(+id),'PATCH',body);
+}
 async function crmProbateDeleteDb(id){ await sbFetch(PB_PATH+'?id=eq.'+id,'DELETE'); }
 function crmProbateById(id){ id=+id; return (crmProbate||[]).find(function(p){ return +p.id===id; }); }
 
@@ -3127,6 +3137,7 @@ function renderProbate(){
       + '<div class="lt-actions">'
         + '<button class="btn btn-secondary btn-sm" onclick="crmProbate=null;crmProbateBatches=null;renderProbate()">&#8635; Refresh</button>'
         + '<button class="btn btn-secondary btn-sm" onclick="exportProbateCSV()">&#8682; Export</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="pbOpenSkiptraceImport()" title="Upload a returned skip-traced file to fill Name/Phone/Address on matching leads">&#8681; Upload Skip-Traced</button>'
         + '<button class="btn btn-primary btn-sm" onclick="openProbateSyncModal()">&#128260; Sync from Scanner</button>'
       + '</div>'
     + '</div>'
@@ -3177,8 +3188,12 @@ function pbLeadRow(p){
       + '<div style="font-size:11.5px;color:var(--text3)">'+esc([p.propertyCity,p.propertyZip].filter(Boolean).join(' '))+' '+pbMatchBadge(p)
       + (p.assessedValue?' <span style="color:var(--text3)">'+pbMoney(p.assessedValue)+'</span>':'')+'</div>'
     : '<span style="color:var(--text4);font-size:12px">No property matched</span>';
+  var traced = (p.skiptracePhone||p.skiptraceName)
+    ? '<div style="font-size:11.5px;color:#059669;font-weight:600">&#128222; '+esc(p.skiptracePhone||'—')+(p.skiptraceName&&p.skiptraceName!==p.prName?' <span style="color:var(--text3);font-weight:400">('+esc(p.skiptraceName)+')</span>':'')+'</div>'
+    : '';
   var decRep = '<div style="font-weight:600;font-size:12.5px">'+esc(p.decedentName||'—')+'</div>'
     + (p.prName?'<div style="font-size:11.5px;color:var(--text3)">PR: '+esc(p.prName)+'</div>':'')
+    + traced
     + '<div style="font-size:11px;color:var(--text4)">'+esc(p.county)+(p.caseNumber?' &middot; #'+esc(p.caseNumber):'')+(p.estateType?' &middot; '+esc(p.estateType):'')+'</div>';
   var sentCell = p.sentOn
     ? pbSentBadge(p)+(p.sentTag?'<div style="font-size:11px;color:var(--text4);margin-top:2px">'+esc(p.sentTag)+'</div>':'')
@@ -3193,12 +3208,17 @@ function pbLeadRow(p){
     + '<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">&#9998;</button> <button class="btn btn-secondary btn-sm" title="Delete" onclick="deleteProbateLead('+p.id+')">&#128465;</button></td>'
   + '</tr>';
 }
-// Grouped by scrape-date + state. Each batch shows its workflow bar; click the header to reveal the leads.
+// Which state sections are collapsed (default: all OPEN so the leads are visible).
+var pbStateClosed={};
+function pbToggleState(st){ pbStateClosed[st]=!pbStateClosed[st]; pbRenderArea(); }
+// Grouped by STATE, then by scrape-date batch inside each state. Each batch shows
+// its workflow bar; click a batch header to reveal its leads.
 function pbRenderArea(){
   var area=document.getElementById('pb-list-area'); if(!area) return;
   var rows=pbFilteredLeads();
   if(!rows.length){
-    area.innerHTML='<div class="empty"><div class="empty-icon">&#128269;</div><h3>No leads match</h3><p style="color:var(--text3);font-size:12px">Try clearing the search, state, or view filter.</p></div>';
+    area.innerHTML=bulkBar(pbSel.size,'pbClearSel()','pbDeleteSelected()','<button class="btn btn-secondary btn-sm" onclick="pbDownloadSelectedCSV()">&#8681; Download CSV</button>')
+      +'<div class="empty"><div class="empty-icon">&#128269;</div><h3>No leads match</h3><p style="color:var(--text3);font-size:12px">Try clearing the search, state, or view filter.</p></div>';
     return;
   }
   var forceOpen = !!pbSearch.trim(); // a live search auto-opens the matching batches
@@ -3210,7 +3230,7 @@ function pbRenderArea(){
     return (A[0]||'').localeCompare(B[0]||'');
   });
   var esq=function(s){ return String(s||'').replace(/'/g,"\\'"); };
-  var html=keys.map(function(k){
+  function pbBatchHTML(k){
     var arr=groups[k], st=arr[0].state||'', dt=arr[0].datePulled||'';
     var b=pbbGet(dt,st), open=forceOpen||!!pbOpen[k];
     var sentN=arr.filter(function(p){return p.sentOn;}).length;
@@ -3249,8 +3269,24 @@ function pbRenderArea(){
       + wf
       + body
       + '</div>';
+  }
+  // Group the date-batches under one section per STATE (biggest state first).
+  var stateKeys={}, stateTotal={};
+  keys.forEach(function(k){ var st=k.split('|')[0]; (stateKeys[st]=stateKeys[st]||[]).push(k); stateTotal[st]=(stateTotal[st]||0)+groups[k].length; });
+  var states=Object.keys(stateKeys).sort(function(a,b){ return (stateTotal[b]-stateTotal[a]) || a.localeCompare(b); });
+  var multi = states.length>1; // only show section chrome when more than one state is in view
+  var html=states.map(function(st){
+    var bks=stateKeys[st], closed=multi && !!pbStateClosed[st] && !forceOpen;
+    var batchesHTML = closed ? '' : bks.map(pbBatchHTML).join('');
+    var hdr = '<div class="pb-state-hd" onclick="pbToggleState(\''+esq(st)+'\')" style="cursor:pointer;display:flex;align-items:center;gap:10px;margin:18px 0 10px;padding:8px 12px;background:linear-gradient(90deg,#eff6ff,#f8fafc);border:1px solid #dbeafe;border-left:4px solid #2563eb;border-radius:8px">'
+      + '<span class="pb-caret" style="color:#2563eb">'+(closed?'&#9656;':'&#9662;')+'</span>'
+      + pbStateChip(st)
+      + '<span style="font-weight:800;font-size:14px;color:#1e293b">'+esc(pbStateName(st))+'</span>'
+      + '<span style="font-size:12px;color:var(--text3);font-weight:600">'+stateTotal[st].toLocaleString()+' lead'+(stateTotal[st]!==1?'s':'')+' &middot; '+bks.length+' batch'+(bks.length!==1?'es':'')+'</span>'
+      + '</div>';
+    return (multi?hdr:'')+batchesHTML;
   }).join('');
-  area.innerHTML=bulkBar(pbSel.size,'pbClearSel()','pbDeleteSelected()')+html;
+  area.innerHTML=bulkBar(pbSel.size,'pbClearSel()','pbDeleteSelected()','<button class="btn btn-secondary btn-sm" onclick="pbDownloadSelectedCSV()">&#8681; Download CSV</button>')+html;
 }
 function pbToggleOpen(k){ pbOpen[k]=!pbOpen[k]; pbRenderArea(); }
 function pbToggleGroup(ids,c){ ids.forEach(function(id){ if(c)pbSel.add(+id); else pbSel.delete(+id); }); pbRenderArea(); }
@@ -3295,6 +3331,15 @@ function openProbateDetail(id){
         + (p.attorney?row('Attorney', esc(p.attorney)):'')
         + row('GHL Tag', '<b>'+esc(tag)+'</b>')
       + '</div>'
+      + ((p.skiptracePhone||p.skiptraceName||p.skiptraceAddress)
+          ? '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:10px 12px;margin-bottom:14px">'
+            + '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#047857;margin-bottom:6px">&#128222; Skip-Traced'+(p.skiptracedAt?' &middot; '+ltFmtDate(String(p.skiptracedAt).slice(0,10)):'')+'</div>'
+            + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+              + row('Name', esc(p.skiptraceName))
+              + row('Phone', esc(p.skiptracePhone))
+              + row('Address', esc(p.skiptraceAddress))
+            + '</div></div>'
+          : '')
       + (p.notes?'<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:14px;white-space:pre-wrap">'+esc(p.notes)+'</div>':'')
       + noteChecklistHTML('probate', p.id)
       + '<div style="font-size:12px;font-weight:800;margin:16px 0 8px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2)">&#128228; Send Log ('+touches.length+')</div>'
@@ -3367,6 +3412,120 @@ function exportProbateCSV(){
   setTimeout(function(){ URL.revokeObjectURL(url); },1000);
   showToast('Exported '+rows.length+' lead'+(rows.length!==1?'s':''),'success');
 }
+
+// ---- Skip-trace round-trip: download the SELECTED leads, get them skip-traced,
+// upload the returned file to fill Name/Phone/Address in place (matched by id). ----
+function pbCsvCell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+
+// Download ONLY the checkbox-selected leads. Includes `id` (the match key on
+// re-upload) + source_case_id + context, then three blank columns the skip
+// tracer fills: Name / Phone Number / Address.
+function pbDownloadSelectedCSV(){
+  var rows=(crmProbate||[]).filter(function(p){ return pbSel.has(+p.id); });
+  if(!rows.length){ showToast('Tick some leads first, then Download','error'); return; }
+  var ctx=[['id','id'],['source_case_id','sourceCaseId'],['state','state'],['county','county'],
+    ['decedent_name','decedentName'],['pr_name','prName'],['pr_address','prAddress'],
+    ['property_address','propertyAddress'],['property_city','propertyCity'],['property_zip','propertyZip'],
+    ['date_pulled','datePulled']];
+  var head=ctx.map(function(c){return c[0];}).concat(['Name','Phone Number','Address']);
+  var body=rows.map(function(p){
+    var line=ctx.map(function(c){ return pbCsvCell(p[c[1]]); });
+    line.push(pbCsvCell(p.skiptraceName), pbCsvCell(p.skiptracePhone), pbCsvCell(p.skiptraceAddress));
+    return line.join(',');
+  });
+  var csv=head.join(',')+'\n'+body.join('\n');
+  var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob);
+  var a=document.createElement('a'); a.href=url; a.download='probate-skiptrace-'+today()+'.csv'; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); },1000);
+  showToast('Downloaded '+rows.length+' lead'+(rows.length!==1?'s':'')+' for skip-tracing','success');
+}
+
+var __pbImpText='';
+function pbOpenSkiptraceImport(){
+  __pbImpText='';
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:560px">'
+    + '<div class="modal-header"><div class="modal-title">&#8681; Upload Skip-Traced File</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">Upload the file your skip-tracer returned. It must keep the <b>id</b> column from the download &mdash; each row is matched back to that exact lead, so nothing is duplicated. The <b>Name / Phone Number / Address</b> columns fill in place; the original scanned data stays untouched. Matched batches flip to <b>Skiptraced = Yes</b>.</p>'
+      + '<div class="form-field"><label class="form-label">Upload .csv</label><input type="file" id="pb-st-file" accept=".csv,text/csv" class="form-input" onchange="pbSkiptraceFile(event)"></div>'
+      + '<div class="form-field"><label class="form-label">&hellip; or paste rows</label><textarea id="pb-st-text" class="form-input" rows="5" placeholder="id,Name,Phone Number,Address\n123,John Smith,(240) 555-1212,101 Main St" oninput="__pbImpText=this.value;pbSkiptracePreview()"></textarea></div>'
+      + '<div id="pb-st-count" style="font-size:12px;color:var(--text3);margin:-4px 0 4px"></div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary btn-sm" onclick="pbRunSkiptraceImport()">Import &amp; Fill</button>'
+    + '</div></div></div>';
+}
+function pbSkiptraceFile(ev){
+  var f=ev.target.files&&ev.target.files[0]; if(!f) return;
+  var rd=new FileReader();
+  rd.onload=function(){ __pbImpText=String(rd.result||''); var ta=document.getElementById('pb-st-text'); if(ta) ta.value=__pbImpText; pbSkiptracePreview(); };
+  rd.readAsText(f);
+}
+// Find the column index whose header matches any of `names` (case/space-insensitive).
+function pbColIdx(header, names){
+  var norm=function(s){ return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]/g,''); };
+  var H=header.map(norm);
+  for(var n=0;n<names.length;n++){ var i=H.indexOf(norm(names[n])); if(i>=0) return i; }
+  return -1;
+}
+function pbParseSkiptrace(text){
+  var rows=ltParseCSV(text||''); if(rows.length<1) return null;
+  var header=rows[0];
+  var iId=pbColIdx(header,['id']);
+  if(iId<0) return {error:'no_id'};
+  var iName=pbColIdx(header,['Name','Owner Name','personal_rep','PR Name','Full Name','First Name']);
+  var iPhone=pbColIdx(header,['Phone Number','Phone','Cell','Mobile','Wireless 1','Wireless','Phone 1']);
+  var iAddr=pbColIdx(header,['Address','Mailing Address','personal_rep_address','Property Address']);
+  var out=[];
+  for(var r=1;r<rows.length;r++){
+    var row=rows[r]; var idRaw=(row[iId]||'').trim(); if(!/^\d+$/.test(idRaw)) continue;
+    out.push({ id:+idRaw,
+      name:(iName>=0?(row[iName]||'').trim():''),
+      phone:(iPhone>=0?(row[iPhone]||'').trim():''),
+      address:(iAddr>=0?(row[iAddr]||'').trim():'') });
+  }
+  return {rows:out};
+}
+function pbSkiptracePreview(){
+  var el=document.getElementById('pb-st-count'); if(!el) return;
+  var p=pbParseSkiptrace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
+  if(!p){ el.textContent=''; return; }
+  if(p.error==='no_id'){ el.innerHTML='<span style="color:#dc2626">&#9888; No <b>id</b> column found — re-download the file from here so the id is included.</span>'; return; }
+  var known=(crmProbate||[]); var ids=new Set(known.map(function(x){return +x.id;}));
+  var match=p.rows.filter(function(x){ return ids.has(x.id); }).length;
+  el.innerHTML=p.rows.length+' row'+(p.rows.length!==1?'s':'')+' &middot; '+match+' match existing lead'+(match!==1?'s':'')+(p.rows.length-match?' &middot; '+(p.rows.length-match)+' won’t match':'');
+}
+async function pbRunSkiptraceImport(){
+  var p=pbParseSkiptrace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
+  if(!p){ showToast('Nothing to import','error'); return; }
+  if(p.error==='no_id'){ showToast('That file has no id column — re-download from here first','error'); return; }
+  var byId={}; (crmProbate||[]).forEach(function(x){ byId[+x.id]=x; });
+  var matched=[], unmatched=0;
+  p.rows.forEach(function(x){ if(byId[x.id]) matched.push(x); else unmatched++; });
+  if(!matched.length){ showToast('No rows matched an existing lead (check the id column)','error'); return; }
+  showToast('Filling '+matched.length+' lead'+(matched.length!==1?'s':'')+'…','info');
+  var batches={}, ok=0, failed=0;
+  // Sequential PATCH keeps it gentle on the API; selections are usually modest.
+  for(var i=0;i<matched.length;i++){
+    var x=matched[i], lead=byId[x.id];
+    try{
+      await crmProbateSkiptraceUpdate(x.id,{name:x.name,phone:x.phone,address:x.address});
+      lead.skiptraceName=x.name; lead.skiptracePhone=x.phone; lead.skiptraceAddress=x.address; lead.skiptracedAt=new Date().toISOString();
+      if(lead.datePulled&&lead.state) batches[pbbKey(lead.datePulled,lead.state)]={date:lead.datePulled,state:lead.state};
+      ok++;
+    }catch(e){ failed++; }
+  }
+  // Flip each affected batch to Skiptraced = Yes.
+  var bk=Object.keys(batches);
+  for(var j=0;j<bk.length;j++){ var b=batches[bk[j]]; try{ await pbbSet(b.date,b.state,'skiptraced','Yes'); }catch(e){} }
+  closeModal();
+  if(activeSection==='probate') renderProbate();
+  showToast('Skip-trace: filled '+ok+' lead'+(ok!==1?'s':'')
+    +(failed?' &middot; '+failed+' failed':'')
+    +(unmatched?' &middot; '+unmatched+' unmatched':''),'success');
+}
 // =================== end Probate ===================
 
 // =================== Shared: delete-with-undo ===================
@@ -3383,11 +3542,11 @@ function ltToggle(id,c){ if(c)ltSel.add(+id); else ltSel.delete(+id); ltRenderLi
 function byToggle(id,c){ if(c)bySel.add(+id); else bySel.delete(+id); byRenderArea(); }
 function dpToggle(id,c){ if(c)dpSel.add(+id); else dpSel.delete(+id); var el=document.getElementById('dp-deals'); if(el) el.innerHTML=dispoDealsHTML(); }
 // Bulk action bar shown above a table when rows are selected.
-function bulkBar(count, clearFn, delFn){
+function bulkBar(count, clearFn, delFn, extraBtns){
   if(!count) return '';
   return '<div style="background:#fff3cd;border:1.5px solid #fcd34d;border-radius:8px;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
     + '<span style="font-size:13px;font-weight:600;color:#b45309">&#10003; '+count+' selected</span>'
-    + '<div style="display:flex;gap:8px"><button class="btn btn-secondary btn-sm" onclick="'+clearFn+'">Clear</button>'
+    + '<div style="display:flex;gap:8px">'+(extraBtns||'')+'<button class="btn btn-secondary btn-sm" onclick="'+clearFn+'">Clear</button>'
     + '<button class="btn btn-danger btn-sm" onclick="'+delFn+'">&#128465; Delete '+count+'</button></div></div>';
 }
 function deleteWithUndo(opts){
