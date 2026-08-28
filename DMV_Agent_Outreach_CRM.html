@@ -1079,6 +1079,23 @@ async function sbFetch(path, method, body) {
   return txt ? JSON.parse(txt) : null;
 }
 
+// Supabase/PostgREST caps a single response at ~1000 rows no matter what
+// `limit` you ask for, so a plain sbFetch silently truncates big tables.
+// sbFetchAll pages through in chunks (default 1000) until a short page comes
+// back, returning every row. `path` MUST include a stable `order=` (unique
+// tiebreaker like id) and MUST NOT include its own limit/offset.
+async function sbFetchAll(path, pageSize) {
+  pageSize = pageSize || 1000;
+  var all = [], offset = 0, page;
+  do {
+    var sep = path.indexOf('?') >= 0 ? '&' : '?';
+    page = await sbFetch(path + sep + 'limit=' + pageSize + '&offset=' + offset) || [];
+    all = all.concat(page);
+    offset += pageSize;
+  } while (page.length === pageSize);
+  return all;
+}
+
 function toRow(l) {
   return {
     id: l.id,
@@ -2945,7 +2962,7 @@ function pbToDb(p){ return {
   updated_at:new Date().toISOString() }; }
 
 async function crmProbateFetch(){
-  try { var rows=await sbFetch(PB_PATH+'?select=*&order=score.desc.nullslast&order=id.desc&limit=10000');
+  try { var rows=await sbFetchAll(PB_PATH+'?select=*&order=score.desc.nullslast&order=id.desc');
         crmProbate=(rows||[]).map(pbFromDb); }
   catch(e){ crmProbate=[]; showToast('Could not load probate leads — check connection','error'); }
 }
