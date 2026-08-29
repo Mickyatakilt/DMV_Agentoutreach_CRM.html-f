@@ -2985,7 +2985,7 @@ var crmProbateBatches=null;      // null = not loaded yet
 var pbOpen={};                   // "state|date" -> true when that batch is expanded
 const PBB_PATH='crm_probate_batches';
 function pbbFromDb(r){ return {id:r.id,datePulled:r.date_pulled||'',state:r.state||'',skiptraced:r.skiptraced||'',
-  sendOutDate:r.send_out_date||'',followUpDate:r.follow_up_date||'',ghlLink:r.ghl_link||'',ghlPlacement:r.ghl_placement||'',notes:r.notes||''}; }
+  sendOutDate:r.send_out_date||'',followUpDate:r.follow_up_date||'',ghlLink:r.ghl_link||'',ghlPlacement:r.ghl_placement||'',notes:r.notes||'',name:r.name||''}; }
 function pbbToDb(b){ return {date_pulled:b.datePulled||null,state:b.state||'',skiptraced:b.skiptraced||'',
   send_out_date:b.sendOutDate||null,follow_up_date:b.followUpDate||null,ghl_link:b.ghlLink||'',ghl_placement:b.ghlPlacement||'',
   notes:b.notes||'',updated_at:new Date().toISOString()}; }
@@ -3262,9 +3262,11 @@ function pbRenderArea(){
       + '<div class="pb-batch-h" onclick="pbToggleOpen(\''+esq(k)+'\')">'
         + '<span class="pb-caret">'+(open?'&#9662;':'&#9656;')+'</span>'
         + pbStateChip(st)
+        + (b.name?'<span class="pb-bt-name" style="font-weight:800;color:#1e293b">'+esc(b.name)+'</span>':'')
         + '<span class="pb-bt-date">'+(dt?ltFmtDate(dt):'(no pull date)')+'</span>'
         + '<span class="pb-bt-cnt">'+arr.length.toLocaleString()+' lead'+(arr.length!==1?'s':'')+'</span>'
-        + '<span class="pb-bt-sub">'+hiN+' &#9733;5 &middot; '+sentN+' sent'+(b.skiptraced?' &middot; skiptraced: '+esc(b.skiptraced):'')+(b.sendOutDate?' &middot; sent-out '+ltFmtDate(b.sendOutDate):'')+'</span>'
+        + '<span class="pb-bt-scrape" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;'+(b.skiptraced==='Yes'?'background:#dcfce7;color:#166534':'background:#f1f5f9;color:#64748b')+'">'+(b.skiptraced==='Yes'?'Scraped':'Not Scraped')+'</span>'
+        + '<span class="pb-bt-sub">'+hiN+' &#9733;5 &middot; '+sentN+' sent'+(b.sendOutDate?' &middot; sent-out '+ltFmtDate(b.sendOutDate):'')+'</span>'
       + '</div>'
       + wf
       + body
