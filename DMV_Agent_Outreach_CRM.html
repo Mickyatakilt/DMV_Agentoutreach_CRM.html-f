@@ -3327,7 +3327,7 @@ function pbRenderArea(){
   }).join('');
   area.innerHTML=bulkBar(pbSel.size,'pbClearSel()','pbDeleteSelected()','<button class="btn btn-secondary btn-sm" onclick="pbDownloadSelectedCSV()">&#8681; Download CSV</button>')+html;
 }
-function pbToggleOpen(k){ pbOpen[k]=!pbOpen[k]; pbRenderArea(); }
+function pbToggleOpen(k){ var wasOpen=!!pbOpen[k]; pbOpen={}; if(!wasOpen) pbOpen[k]=true; pbRenderArea(); } // one batch open at a time
 function pbToggleGroup(ids,c){ ids.forEach(function(id){ if(c)pbSel.add(+id); else pbSel.delete(+id); }); pbRenderArea(); }
 function pbClearSel(){ pbSel.clear(); pbRenderArea(); }
 function pbDeleteSelected(){
