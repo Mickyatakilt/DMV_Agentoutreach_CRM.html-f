@@ -372,21 +372,38 @@
     body.sb-collapsed .crm-sb-item{justify-content:flex-start;gap:12px;}
   }
   /* ============ Probate batches (grouped by pull-date + state) ============ */
-  .pb-batch{border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;background:var(--surface);}
-  .pb-batch.pb-traced{border-left:4px solid #059669;}
-  .pb-batch-h{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;background:var(--surface2);user-select:none;flex-wrap:wrap;}
-  .pb-batch-h:hover{background:var(--surface3);}
-  .pb-caret{color:var(--text3);font-size:12px;width:12px;display:inline-block;}
-  .pb-bt-date{font-weight:800;font-size:14px;color:var(--text);}
-  .pb-bt-cnt{background:var(--accent-light);color:var(--accent);border-radius:999px;padding:1px 10px;font-size:12px;font-weight:700;}
-  .pb-bt-sub{color:var(--text3);font-size:11.5px;margin-left:auto;}
-  .pb-wf{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;padding:10px 14px;border-top:1px solid var(--border);background:var(--surface);}
-  .pb-wf-f{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.3px;}
+  /* Probate batches as square BOX tiles in a grid */
+  .pb-tilegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:12px;margin:2px 0 6px;}
+  .pb-tile{border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:14px 15px 12px;cursor:pointer;display:flex;flex-direction:column;gap:7px;min-height:158px;transition:box-shadow .15s,border-color .15s,transform .1s;}
+  .pb-tile:hover{box-shadow:0 4px 16px rgba(15,23,42,.1);transform:translateY(-1px);}
+  .pb-tile.pb-open{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-light),0 4px 16px rgba(15,23,42,.08);}
+  .pb-tile.pb-traced{border-top:3px solid #059669;}
+  .pb-tile-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .pb-tile-title{font-weight:800;font-size:15px;color:var(--text);line-height:1.2;}
+  .pb-tile-sub{font-size:11.5px;color:var(--text3);font-weight:600;margin-top:-4px;}
+  .pb-tile-tags{display:flex;flex-wrap:wrap;gap:5px;}
+  .pb-tile-count{margin-top:auto;font-size:12px;color:var(--text3);}
+  .pb-tile-count .n{font-size:26px;font-weight:800;color:var(--text);line-height:1;margin-right:4px;}
+  .pb-tile-foot{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--text4);border-top:1px solid var(--border);padding-top:8px;margin-top:2px;}
+  .pb-tile-open{color:var(--accent);font-weight:800;}
+  .pb-bt-cnt{background:var(--accent-light);color:var(--accent);border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700;flex:none;}
+  .pb-bt-date{font-weight:600;font-size:12.5px;color:var(--text3);}
+  .pb-bt-scrape{flex:none;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;}
+  .pb-bt-tag{background:var(--surface3);color:var(--text2);border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;white-space:nowrap;}
+  /* Detail panel shown under the grid when a box is opened */
+  .pb-detail{border:1px solid var(--border2);border-radius:14px;background:var(--surface);margin:2px 0 16px;overflow:hidden;box-shadow:0 3px 16px rgba(15,23,42,.08);}
+  .pb-detail-h{display:flex;align-items:center;gap:10px;padding:12px 15px;background:var(--surface2);border-bottom:1px solid var(--border);flex-wrap:wrap;}
+  .pb-detail-h .nm{font-weight:800;font-size:15px;color:var(--text);}
+  .pb-detail-close{margin-left:auto;cursor:pointer;border:1px solid var(--border2);background:var(--surface);border-radius:8px;padding:5px 11px;font-size:12px;font-weight:700;color:var(--text3);}
+  .pb-detail-close:hover{background:var(--surface3);color:var(--text);}
+  .pb-wf-panel{padding:12px 15px;background:var(--surface);}
+  .pb-wf-title{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:9px;}
+  .pb-wf{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;padding:0;background:transparent;}
+  .pb-wf-f{display:flex;flex-direction:column;gap:3px;font-size:10.5px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.3px;}
   .pb-wf-f span{white-space:nowrap;}
-  .pb-wf-f select,.pb-wf-f input{border:1.5px solid var(--border2);border-radius:8px;padding:6px 8px;font-size:12.5px;background:var(--surface2);color:var(--text);text-transform:none;font-weight:500;letter-spacing:0;}
+  .pb-wf-f select,.pb-wf-f input{border:1.5px solid var(--border2);border-radius:8px;padding:6px 8px;font-size:12.5px;background:var(--surface);color:var(--text);text-transform:none;font-weight:500;letter-spacing:0;}
   .pb-wf-grow{flex:1;min-width:180px;}
   .pb-wf-grow input{width:100%;}
-  .pb-batch-body{padding:0 6px 8px;}
   /* ============ P5 Ask AI (floating natural-language query) ============ */
   .ask-fab{position:fixed;right:22px;bottom:22px;z-index:360;display:flex;align-items:center;gap:8px;border:none;cursor:pointer;
     background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-weight:800;font-size:14px;padding:12px 18px;border-radius:999px;
@@ -3230,16 +3247,38 @@ function pbRenderArea(){
     return (A[0]||'').localeCompare(B[0]||'');
   });
   var esq=function(s){ return String(s||'').replace(/'/g,"\\'"); };
-  function pbBatchHTML(k){
+  function pbScrapeChip(yes){ return '<span class="pb-bt-scrape" style="'+(yes?'background:#dcfce7;color:#166534':'background:#f1f5f9;color:#64748b')+'">'+(yes?'Scraped':'Not Scraped')+'</span>'; }
+  // The BOX/tile — one square card per batch. Click to open its detail panel.
+  function pbTileHTML(k){
     var arr=groups[k], st=arr[0].state||'', dt=arr[0].datePulled||'';
     var b=pbbGet(dt,st), open=forceOpen||!!pbOpen[k];
     var sentN=arr.filter(function(p){return p.sentOn;}).length;
     var hiN=arr.filter(function(p){return +p.score>=5;}).length;
+    var scrapeYes=b.skiptraced==='Yes';
+    var tags='';
+    if(b.sendOutDate) tags += '<span class="pb-bt-tag">&#128228; '+ltFmtDate(b.sendOutDate)+'</span>';
+    if(b.ghlPlacement) tags += '<span class="pb-bt-tag">&#127991;&#65039; '+esc(b.ghlPlacement)+'</span>';
+    var title = b.name?esc(b.name):(dt?ltFmtDate(dt):'(no pull date)');
+    var sub = b.name?('Pulled '+(dt?ltFmtDate(dt):'—')):'';
+    return '<div class="pb-tile'+(scrapeYes?' pb-traced':'')+(open?' pb-open':'')+'" onclick="pbToggleOpen(\''+esq(k)+'\')">'
+      + '<div class="pb-tile-top">'+pbStateChip(st)+pbScrapeChip(scrapeYes)+'</div>'
+      + '<div class="pb-tile-title">'+title+'</div>'
+      + (sub?'<div class="pb-tile-sub">'+sub+'</div>':'')
+      + (tags?'<div class="pb-tile-tags">'+tags+'</div>':'')
+      + '<div class="pb-tile-count"><span class="n">'+arr.length.toLocaleString()+'</span> lead'+(arr.length!==1?'s':'')+'</div>'
+      + '<div class="pb-tile-foot"><span>'+hiN+' &#9733;5 &middot; '+sentN+' sent</span><span class="pb-tile-open">'+(open?'Open &#9662;':'Open &#9656;')+'</span></div>'
+      + '</div>';
+  }
+  // The detail panel (shown below the grid when a box is opened): workflow + leads.
+  function pbDetailHTML(k){
+    var arr=groups[k], st=arr[0].state||'', dt=arr[0].datePulled||'';
+    var b=pbbGet(dt,st);
     var gids=JSON.stringify(arr.map(function(p){return +p.id;}));
     var gAll=arr.length && arr.every(function(p){ return pbSel.has(+p.id); });
     var da="'"+esq(dt)+"','"+esq(st)+"'";
+    var scrapeYes=b.skiptraced==='Yes';
     var wf =
-      '<div class="pb-wf" onclick="event.stopPropagation()">'
+      '<div class="pb-wf">'
       + '<label class="pb-wf-f"><span>Skiptraced</span><select onchange="pbbSet('+da+',\'skiptraced\',this.value)">'
           + '<option value="">—</option>'
           + '<option value="Yes"'+(b.skiptraced==='Yes'?' selected':'')+'>Yes</option>'
@@ -3251,25 +3290,20 @@ function pbRenderArea(){
       + '<label class="pb-wf-f"><span>Placed in GHL as</span><input type="text" placeholder="tag / list name" value="'+esc(b.ghlPlacement)+'" onchange="pbbSet('+da+',\'ghlPlacement\',this.value)"></label>'
       + (b.ghlLink&&/^https?:/i.test(b.ghlLink) ? '<a href="'+esc(b.ghlLink)+'" target="_blank" class="btn btn-secondary btn-sm" style="align-self:flex-end">&#128241; Open&#8599;</a>' : '')
       + '</div>';
-    var body = open
-      ? '<div class="pb-batch-body"><div class="table-container"><div class="table-wrap"><table>'
-        + '<thead><tr><th style="width:34px"><input type="checkbox" '+(gAll?'checked':'')+' onchange=\'pbToggleGroup('+gids+',this.checked)\' style="width:15px;height:15px;cursor:pointer"></th><th>Property</th><th>Decedent / PR</th><th>Score</th><th>Send to GHL</th><th>Lead follow-up</th><th></th></tr></thead>'
-        + '<tbody>'+arr.slice(0,PB_CAP).map(pbLeadRow).join('')+'</tbody></table></div></div>'
-        + (arr.length>PB_CAP?'<div style="font-size:12px;color:var(--text4);padding:8px 2px">Showing first '+PB_CAP+' of '+arr.length.toLocaleString()+' in this batch — use search to narrow.</div>':'')
-        + '</div>'
-      : '';
-    return '<div class="pb-batch'+(b.skiptraced==='Yes'?' pb-traced':'')+'">'
-      + '<div class="pb-batch-h" onclick="pbToggleOpen(\''+esq(k)+'\')">'
-        + '<span class="pb-caret">'+(open?'&#9662;':'&#9656;')+'</span>'
-        + pbStateChip(st)
-        + (b.name?'<span class="pb-bt-name" style="font-weight:800;color:#1e293b">'+esc(b.name)+'</span>':'')
-        + '<span class="pb-bt-date">'+(dt?ltFmtDate(dt):'(no pull date)')+'</span>'
+    var title=b.name?esc(b.name):(dt?ltFmtDate(dt):'batch');
+    return '<div class="pb-detail" id="pbd-'+esq(k)+'">'
+      + '<div class="pb-detail-h">'+pbStateChip(st)+'<span class="nm">'+title+'</span>'
+        + '<span class="pb-bt-date">'+(dt?ltFmtDate(dt):'')+'</span>'
         + '<span class="pb-bt-cnt">'+arr.length.toLocaleString()+' lead'+(arr.length!==1?'s':'')+'</span>'
-        + '<span class="pb-bt-scrape" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;'+(b.skiptraced==='Yes'?'background:#dcfce7;color:#166534':'background:#f1f5f9;color:#64748b')+'">'+(b.skiptraced==='Yes'?'Scraped':'Not Scraped')+'</span>'
-        + '<span class="pb-bt-sub">'+hiN+' &#9733;5 &middot; '+sentN+' sent'+(b.sendOutDate?' &middot; sent-out '+ltFmtDate(b.sendOutDate):'')+'</span>'
+        + pbScrapeChip(scrapeYes)
+        + (scrapeYes?'':'<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="pbOpenReplaceBatch(\''+esq(dt)+'\',\''+esq(st)+'\')" title="Upload a skip-traced list to replace this batch and mark it Scraped">&#8681; Replace with skip-traced list</button>')
+        + '<span class="pb-detail-close" onclick="pbToggleOpen(\''+esq(k)+'\')">&#10005; Close</span>'
       + '</div>'
-      + wf
-      + body
+      + '<div class="pb-wf-panel"><div class="pb-wf-title">&#9881;&#65039; Batch workflow &mdash; applies to all '+arr.length.toLocaleString()+' leads</div>'+wf+'</div>'
+      + '<div class="table-container"><div class="table-wrap"><table>'
+      + '<thead><tr><th style="width:34px"><input type="checkbox" '+(gAll?'checked':'')+' onchange=\'pbToggleGroup('+gids+',this.checked)\' style="width:15px;height:15px;cursor:pointer"></th><th>Property</th><th>Decedent / PR</th><th>Score</th><th>Send to GHL</th><th>Lead follow-up</th><th></th></tr></thead>'
+      + '<tbody>'+arr.slice(0,PB_CAP).map(pbLeadRow).join('')+'</tbody></table></div></div>'
+      + (arr.length>PB_CAP?'<div style="font-size:12px;color:var(--text4);padding:8px 14px">Showing first '+PB_CAP+' of '+arr.length.toLocaleString()+' in this batch — use search to narrow.</div>':'')
       + '</div>';
   }
   // Group the date-batches under one section per STATE (biggest state first).
@@ -3279,7 +3313,10 @@ function pbRenderArea(){
   var multi = states.length>1; // only show section chrome when more than one state is in view
   var html=states.map(function(st){
     var bks=stateKeys[st], closed=multi && !!pbStateClosed[st] && !forceOpen;
-    var batchesHTML = closed ? '' : bks.map(pbBatchHTML).join('');
+    var batchesHTML = closed ? '' : (
+        '<div class="pb-tilegrid">'+bks.map(pbTileHTML).join('')+'</div>'
+        + bks.filter(function(k){ return forceOpen||!!pbOpen[k]; }).map(pbDetailHTML).join('')
+      );
     var hdr = '<div class="pb-state-hd" onclick="pbToggleState(\''+esq(st)+'\')" style="cursor:pointer;display:flex;align-items:center;gap:10px;margin:18px 0 10px;padding:8px 12px;background:linear-gradient(90deg,#eff6ff,#f8fafc);border:1px solid #dbeafe;border-left:4px solid #2563eb;border-radius:8px">'
       + '<span class="pb-caret" style="color:#2563eb">'+(closed?'&#9656;':'&#9662;')+'</span>'
       + pbStateChip(st)
@@ -3527,6 +3564,84 @@ async function pbRunSkiptraceImport(){
   showToast('Skip-trace: filled '+ok+' lead'+(ok!==1?'s':'')
     +(failed?' &middot; '+failed+' failed':'')
     +(unmatched?' &middot; '+unmatched+' unmatched':''),'success');
+}
+// ---- Replace a whole batch with an uploaded skip-traced list (no id needed) ----
+// The skip-tracer returns First Name / Last Name / Phone Number / Address (no CRM id),
+// so instead of matching we DELETE the batch's current leads and insert the file's rows
+// as fresh Scraped leads. Used on Not-Scraped batches from the batch detail panel.
+function pbSplitAddr(full){
+  if(!full) return {street:'',city:'',zip:''};
+  var parts=String(full).split(',').map(function(s){return s.trim();});
+  var street=parts[0]||'', city='', zip='';
+  if(parts.length>=3){ city=parts[1]||''; var m=(parts[parts.length-1]||'').match(/\d{5}(?:-\d{4})?/); zip=m?m[0]:''; }
+  else if(parts.length===2){ city=parts[1]||''; }
+  return {street:street,city:city,zip:zip};
+}
+function pbParseReplace(text){
+  var rows=ltParseCSV(text||''); if(rows.length<2) return {rows:[]};
+  var header=rows[0];
+  var iFirst=pbColIdx(header,['First Name','First','firstname']);
+  var iLast=pbColIdx(header,['Last Name','Last','lastname']);
+  var iName=pbColIdx(header,['Name','Full Name','Owner Name','personal_rep','PR Name']);
+  var iPhone=pbColIdx(header,['Phone Number','Phone','Cell','Mobile','Wireless 1','Wireless','Phone 1']);
+  var iAddr=pbColIdx(header,['Address','Mailing Address','personal_rep_address','Property Address']);
+  var out=[];
+  for(var r=1;r<rows.length;r++){
+    var row=rows[r];
+    var nm = iName>=0 ? (row[iName]||'').trim()
+      : [iFirst>=0?(row[iFirst]||'').trim():'', iLast>=0?(row[iLast]||'').trim():''].filter(Boolean).join(' ');
+    var ph = iPhone>=0?(row[iPhone]||'').trim():'';
+    var ad = iAddr>=0?(row[iAddr]||'').trim():'';
+    if(!nm && !ph && !ad) continue;
+    out.push({name:nm,phone:ph,address:ad});
+  }
+  return {rows:out};
+}
+var __pbRepText='', __pbRepKey=null;
+function pbOpenReplaceBatch(dt,st){
+  __pbRepText=''; __pbRepKey={date:dt,state:st};
+  var arr=(crmProbate||[]).filter(function(p){return p.datePulled===dt&&p.state===st;});
+  var b=pbbGet(dt,st); var label=b.name?b.name:(dt?ltFmtDate(dt):'this batch');
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:560px">'
+    + '<div class="modal-header"><div class="modal-title">&#8681; Replace &ldquo;'+esc(label)+'&rdquo; with skip-traced list</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">Upload the file your skip-tracer returned (columns: <b>First Name, Last Name, Phone Number, Address</b>). This <b style="color:#dc2626">deletes the '+arr.length.toLocaleString()+' current lead'+(arr.length!==1?'s':'')+'</b> in this batch and replaces them with the uploaded rows, marked <b>Scraped</b>. This can&rsquo;t be undone.</p>'
+      + '<div class="form-field"><label class="form-label">Upload .csv</label><input type="file" accept=".csv,text/csv" class="form-input" onchange="pbReplaceFile(event)"></div>'
+      + '<div class="form-field"><label class="form-label">&hellip; or paste rows</label><textarea id="pb-rep-text" class="form-input" rows="5" placeholder="First Name,Last Name,Phone Number,Address&#10;John,Smith,(240) 555-1212,&quot;101 Main St, Bethesda, MD 20817&quot;" oninput="__pbRepText=this.value;pbReplacePreview()"></textarea></div>'
+      + '<div id="pb-rep-count" style="font-size:12px;color:var(--text3);margin:-4px 0 4px"></div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary btn-sm" onclick="pbRunReplaceBatch()">Replace batch</button>'
+    + '</div></div></div>';
+}
+function pbReplaceFile(ev){ var f=ev.target.files&&ev.target.files[0]; if(!f) return; var rd=new FileReader(); rd.onload=function(){ __pbRepText=String(rd.result||''); var ta=document.getElementById('pb-rep-text'); if(ta) ta.value=__pbRepText; pbReplacePreview(); }; rd.readAsText(f); }
+function pbReplacePreview(){ var el=document.getElementById('pb-rep-count'); if(!el) return; var p=pbParseReplace(__pbRepText||(document.getElementById('pb-rep-text')||{}).value||''); var withPh=p.rows.filter(function(x){return x.phone;}).length; el.innerHTML='<b>'+p.rows.length.toLocaleString()+'</b> row'+(p.rows.length!==1?'s':'')+' ready &middot; '+withPh.toLocaleString()+' with a phone'; }
+async function crmProbateInsertMany(records){ for(var i=0;i<records.length;i+=200){ await sbFetch(PB_PATH,'POST',records.slice(i,i+200)); } }
+async function pbRunReplaceBatch(){
+  if(!__pbRepKey) return;
+  var dt=__pbRepKey.date, st=__pbRepKey.state;
+  var p=pbParseReplace(__pbRepText||(document.getElementById('pb-rep-text')||{}).value||'');
+  if(!p.rows.length){ showToast('No rows found in that file','error'); return; }
+  var arr=(crmProbate||[]).filter(function(x){return x.datePulled===dt&&x.state===st;});
+  if(!confirm('Replace this batch?\n\nDELETE '+arr.length+' current lead'+(arr.length!==1?'s':'')+' and insert '+p.rows.length+' skip-traced lead'+(p.rows.length!==1?'s':'')+'.\n\nThis cannot be undone.')) return;
+  var now=new Date().toISOString();
+  var recs=p.rows.map(function(x){ var a=pbSplitAddr(x.address); return {
+    source_case_id:null, state:st, county:'', decedent_name:x.name, pr_name:x.name,
+    pr_address:x.address, pr_phone:x.phone||null, property_address:a.street, property_city:a.city, property_zip:a.zip,
+    score:5, status:'New', date_pulled:dt, notes:'SKIPTRACE REPLACE',
+    skiptrace_name:x.name, skiptrace_phone:x.phone||null, skiptrace_address:x.address, skiptraced_at:now }; });
+  showToast('Replacing batch…','info');
+  try{
+    await sbFetch(PB_PATH+'?date_pulled=eq.'+encodeURIComponent(dt)+'&state=eq.'+encodeURIComponent(st),'DELETE');
+    await crmProbateInsertMany(recs);
+    await pbbSet(dt,st,'skiptraced','Yes');
+  }catch(e){ showToast('Replace failed — '+(e&&e.message?e.message:'error'),'error'); return; }
+  closeModal();
+  crmProbate=null; crmProbateBatches=null;
+  if(activeSection==='probate') renderProbate();
+  showToast('Batch replaced with '+recs.length+' skip-traced lead'+(recs.length!==1?'s':''),'success');
 }
 // =================== end Probate ===================
 
