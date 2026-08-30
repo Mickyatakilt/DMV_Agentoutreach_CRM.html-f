@@ -3439,7 +3439,9 @@ function deleteProbateLead(id){
 
 // ---- CSV export ----
 function exportProbateCSV(){
+  // If any leads are checkbox-selected, export ONLY those; otherwise export everything in view.
   var rows=pbFilteredLeads();
+  if(pbSel.size){ rows=rows.filter(function(p){ return pbSel.has(+p.id); }); }
   if(!rows.length){ showToast('Nothing to export','error'); return; }
   var cols=['state','county','caseNumber','estateType','decedentName','dateOfDeath','filingDate',
     'propertyAddress','propertyCity','propertyZip','assessedValue','matchMethod','prName','prAddress',
@@ -3449,7 +3451,7 @@ function exportProbateCSV(){
   var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob);
   var a=document.createElement('a'); a.href=url; a.download='probate-leads-'+today()+'.csv'; a.click();
   setTimeout(function(){ URL.revokeObjectURL(url); },1000);
-  showToast('Exported '+rows.length+' lead'+(rows.length!==1?'s':''),'success');
+  showToast('Exported '+rows.length+(pbSel.size?' selected':'')+' lead'+(rows.length!==1?'s':''),'success');
 }
 
 // ---- Skip-trace round-trip: download the SELECTED leads, get them skip-traced,
