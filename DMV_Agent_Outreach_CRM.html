@@ -712,8 +712,10 @@ async function mountGhlSms(kind,id){
   var slot2=document.getElementById('ghl-sms-slot');
   if(!slot2 || slot2.dataset.id!=String(id) || slot2.dataset.kind!==kind) return; // modal changed while awaiting
   if(found){
-    l.ghlContactId=found;
+    // cacheGhlContactId sets + PERSISTS every matching row (it skips rows that already have an id),
+    // so call it BEFORE pinning l.ghlContactId — that way this just-opened lead/task gets saved too.
     try{ await cacheGhlContactId(phone,found); }catch(e){}
+    l.ghlContactId=found;
     slot2.innerHTML=ghlSmsSectionHTML(found,kind,id); loadGhlSms(found);
   } else {
     slot2.innerHTML=ghlSmsUnavailHTML('No GoHighLevel contact found for '+esc(phone)+' yet.');
@@ -1052,6 +1054,7 @@ async function cacheGhlContactId(phone, id){
   var ten = ghlNormPhone(phone);
   if(!ten || !id) return;
   var touched = [];
+  var touchedJV = [];
   try {
     if(typeof leads !== 'undefined' && leads && leads.forEach){
       leads.forEach(function(l){
@@ -1060,12 +1063,15 @@ async function cacheGhlContactId(phone, id){
     }
     if(typeof jvLeads !== 'undefined' && jvLeads && jvLeads.forEach){
       jvLeads.forEach(function(l){
-        if(l && l.phone && !l.ghlContactId && ghlNormPhone(l.phone)===ten){ l.ghlContactId = id; }
+        if(l && l.phone && !l.ghlContactId && ghlNormPhone(l.phone)===ten){ l.ghlContactId = id; touchedJV.push(l); }
       });
     }
     try { localStorage.setItem('crm_leads', JSON.stringify(leads)); } catch(e){}
     for(var i=0;i<touched.length;i++){
       try { await saveLeadToSupabase(touched[i]); } catch(e){}
+    }
+    for(var j=0;j<touchedJV.length;j++){
+      try { await saveJVToSupabase(touchedJV[j]); } catch(e){}
     }
   } catch(e){}
 }
@@ -1269,6 +1275,7 @@ function toJVRow(l) {
     notes: l.notes||'', fb_link: l.fbLink||'', source_group: l.sourceGroup||'',
     location: l.location||'', asking_price: l.askingPrice||'', arv: l.arv||'',
     profit_est: l.profitEst||'', follow_up_date: l.followUpDate||'',
+    ghl_contact_id: l.ghlContactId||'',
     jv_status: l.jvStatus||'', date_added: l.dateAdded||'',
     activity_log: l.activityLog||[], recipient_notes: l.recipientNotes||[],
     beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
@@ -1284,6 +1291,7 @@ function fromJVRow(r) {
     notes: r.notes||'', fbLink: r.fb_link||'', sourceGroup: r.source_group||'',
     location: r.location||'', askingPrice: r.asking_price||'', arv: r.arv||'',
     profitEst: r.profit_est||'', followUpDate: r.follow_up_date||'',
+    ghlContactId: r.ghl_contact_id||'',
     jvStatus: r.jv_status||'', dateAdded: r.date_added||'',
     activityLog: r.activity_log||[], recipientNotes: r.recipient_notes||[],
     beds: r.beds||'', baths: r.baths||'', sqft: r.sqft||'',
@@ -1298,6 +1306,7 @@ function fromJVRow(r) {
 async function saveJVToSupabase(lead) {
   pendingSaves++;
   try {
+    await ensureGhlContactId(lead);
     var r = await sbAuthedWrite(SUPABASE_URL + '/rest/v1/jv_leads', [toJVRow(lead)]);
     return r.ok;
   } catch(e) { console.error('JV save error:', e); return false; }
