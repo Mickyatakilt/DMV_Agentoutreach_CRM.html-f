@@ -3256,8 +3256,9 @@ function pbRenderArea(){
     var hiN=arr.filter(function(p){return +p.score>=5;}).length;
     var scrapeYes=b.skiptraced==='Yes';
     var tags='';
-    if(b.sendOutDate) tags += '<span class="pb-bt-tag">&#128228; '+ltFmtDate(b.sendOutDate)+'</span>';
-    if(b.ghlPlacement) tags += '<span class="pb-bt-tag">&#127991;&#65039; '+esc(b.ghlPlacement)+'</span>';
+    if(b.sendOutDate) tags += '<span class="pb-bt-tag" title="Send-out date">&#128228; '+ltFmtDate(b.sendOutDate)+'</span>';
+    if(b.followUpDate) tags += '<span class="pb-bt-tag" title="Follow-up date">&#128197; Follow-up '+ltFmtDate(b.followUpDate)+'</span>';
+    if(b.ghlPlacement) tags += '<span class="pb-bt-tag" title="Placed in GHL as">&#127991;&#65039; '+esc(b.ghlPlacement)+'</span>';
     var title = b.name?esc(b.name):(dt?ltFmtDate(dt):'(no pull date)');
     var sub = b.name?('Pulled '+(dt?ltFmtDate(dt):'—')):'';
     return '<div class="pb-tile'+(scrapeYes?' pb-traced':'')+(open?' pb-open':'')+'" onclick="pbToggleOpen(\''+esq(k)+'\')">'
@@ -3586,7 +3587,7 @@ function pbParseReplace(text){
   var iLast=pbColIdx(header,['Last Name','Last','lastname']);
   var iName=pbColIdx(header,['Name','Full Name','Owner Name','personal_rep','PR Name']);
   var iPhone=pbColIdx(header,['Phone Number','Phone','Cell','Mobile','Wireless 1','Wireless','Phone 1']);
-  var iAddr=pbColIdx(header,['Address','Mailing Address','personal_rep_address','Property Address']);
+  var iAddr=pbColIdx(header,['Address','Mailing Address','personal_rep_address','Property Address','Street Address','Street','Source']);
   var out=[];
   for(var r=1;r<rows.length;r++){
     var row=rows[r];
@@ -3597,7 +3598,7 @@ function pbParseReplace(text){
     if(!nm && !ph && !ad) continue;
     out.push({name:nm,phone:ph,address:ad});
   }
-  return {rows:out};
+  return {rows:out, cols:{name:(iName>=0||iFirst>=0||iLast>=0), phone:iPhone>=0, addr:iAddr>=0}};
 }
 var __pbRepText='', __pbRepKey=null;
 function pbOpenReplaceBatch(dt,st){
@@ -3619,31 +3620,59 @@ function pbOpenReplaceBatch(dt,st){
     + '</div></div></div>';
 }
 function pbReplaceFile(ev){ var f=ev.target.files&&ev.target.files[0]; if(!f) return; var rd=new FileReader(); rd.onload=function(){ __pbRepText=String(rd.result||''); var ta=document.getElementById('pb-rep-text'); if(ta) ta.value=__pbRepText; pbReplacePreview(); }; rd.readAsText(f); }
-function pbReplacePreview(){ var el=document.getElementById('pb-rep-count'); if(!el) return; var p=pbParseReplace(__pbRepText||(document.getElementById('pb-rep-text')||{}).value||''); var withPh=p.rows.filter(function(x){return x.phone;}).length; el.innerHTML='<b>'+p.rows.length.toLocaleString()+'</b> row'+(p.rows.length!==1?'s':'')+' ready &middot; '+withPh.toLocaleString()+' with a phone'; }
-async function crmProbateInsertMany(records){ for(var i=0;i<records.length;i+=200){ await sbFetch(PB_PATH,'POST',records.slice(i,i+200)); } }
+function pbReplacePreview(){
+  var el=document.getElementById('pb-rep-count'); if(!el) return;
+  var p=pbParseReplace(__pbRepText||(document.getElementById('pb-rep-text')||{}).value||'');
+  if(!p.rows.length){ el.innerHTML='<span style="color:#dc2626">No rows found — check the file has a header row.</span>'; return; }
+  var withPh=p.rows.filter(function(x){return x.phone;}).length;
+  var withAd=p.rows.filter(function(x){return x.address;}).length;
+  var s=p.rows[0];
+  var warn=(p.cols&&!p.cols.addr)?'<div style="color:#b45309;margin-top:3px">&#9888; No Address column detected — leads will import without an address. Rename your address column to <b>Address</b> and re-upload if needed.</div>':'';
+  el.innerHTML='<b>'+p.rows.length.toLocaleString()+'</b> row'+(p.rows.length!==1?'s':'')+' &middot; '+withPh.toLocaleString()+' with phone &middot; '+withAd.toLocaleString()+' with address'
+    +'<div style="margin-top:3px;color:var(--text4)">First row &rarr; <b>'+esc(s.name||'—')+'</b> &middot; '+esc(s.phone||'—')+' &middot; '+esc(s.address||'—')+'</div>'+warn;
+}
+// Insert in chunks; collects the new row ids into `collect` AS IT GOES so a mid-way
+// failure can still be rolled back by the caller.
+async function crmProbateInsertMany(records, collect){
+  for(var i=0;i<records.length;i+=200){
+    var res=await sbFetch(PB_PATH,'POST',records.slice(i,i+200));
+    if(collect && Array.isArray(res)) res.forEach(function(x){ if(x&&x.id!=null) collect.push(+x.id); });
+  }
+}
+async function crmProbateDeleteIds(ids){
+  for(var i=0;i<ids.length;i+=200){ await sbFetch(PB_PATH+'?id=in.('+ids.slice(i,i+200).join(',')+')','DELETE'); }
+}
 async function pbRunReplaceBatch(){
   if(!__pbRepKey) return;
   var dt=__pbRepKey.date, st=__pbRepKey.state;
   var p=pbParseReplace(__pbRepText||(document.getElementById('pb-rep-text')||{}).value||'');
   if(!p.rows.length){ showToast('No rows found in that file','error'); return; }
   var arr=(crmProbate||[]).filter(function(x){return x.datePulled===dt&&x.state===st;});
-  if(!confirm('Replace this batch?\n\nDELETE '+arr.length+' current lead'+(arr.length!==1?'s':'')+' and insert '+p.rows.length+' skip-traced lead'+(p.rows.length!==1?'s':'')+'.\n\nThis cannot be undone.')) return;
+  var oldIds=arr.map(function(x){return +x.id;});
+  if(!confirm('Replace this batch?\n\nReplace the '+oldIds.length+' current lead'+(oldIds.length!==1?'s':'')+' with '+p.rows.length+' skip-traced lead'+(p.rows.length!==1?'s':'')+'.\n\nThe new leads are imported first, then the old ones removed — so nothing is lost if the import is interrupted.')) return;
   var now=new Date().toISOString();
   var recs=p.rows.map(function(x){ var a=pbSplitAddr(x.address); return {
     source_case_id:null, state:st, county:'', decedent_name:x.name, pr_name:x.name,
     pr_address:x.address, pr_phone:x.phone||null, property_address:a.street, property_city:a.city, property_zip:a.zip,
     score:5, status:'New', date_pulled:dt, notes:'SKIPTRACE REPLACE',
     skiptrace_name:x.name, skiptrace_phone:x.phone||null, skiptrace_address:x.address, skiptraced_at:now }; });
-  showToast('Replacing batch…','info');
-  try{
-    await sbFetch(PB_PATH+'?date_pulled=eq.'+encodeURIComponent(dt)+'&state=eq.'+encodeURIComponent(st),'DELETE');
-    await crmProbateInsertMany(recs);
-    await pbbSet(dt,st,'skiptraced','Yes');
-  }catch(e){ showToast('Replace failed — '+(e&&e.message?e.message:'error'),'error'); return; }
+  showToast('Importing '+recs.length.toLocaleString()+' skip-traced lead'+(recs.length!==1?'s':'')+'…','info');
+  var newIds=[];
+  // 1) INSERT new leads first. If anything fails, roll back the partial insert and keep the originals.
+  try{ await crmProbateInsertMany(recs, newIds); }
+  catch(e){
+    try{ if(newIds.length) await crmProbateDeleteIds(newIds); }catch(_e){}
+    showToast('Import failed — your original leads are untouched ('+(e&&e.message?String(e.message).slice(0,60):'error')+')','error');
+    return;
+  }
+  // 2) Inserts succeeded — now remove the OLD leads by their captured ids.
+  try{ if(oldIds.length) await crmProbateDeleteIds(oldIds); }
+  catch(e){ showToast('Imported '+recs.length+', but removing the old leads failed — open the batch and delete the duplicates, or retry.','error'); }
+  try{ await pbbSet(dt,st,'skiptraced','Yes'); }catch(e){}
   closeModal();
   crmProbate=null; crmProbateBatches=null;
   if(activeSection==='probate') renderProbate();
-  showToast('Batch replaced with '+recs.length+' skip-traced lead'+(recs.length!==1?'s':''),'success');
+  showToast('Batch replaced with '+recs.length.toLocaleString()+' skip-traced lead'+(recs.length!==1?'s':''),'success');
 }
 // =================== end Probate ===================
 
