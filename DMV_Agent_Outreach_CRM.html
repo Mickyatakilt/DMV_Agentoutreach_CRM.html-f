@@ -686,6 +686,39 @@ function ghlSmsSectionHTML(contactId, kind, id){
     + '<div id="ghl-sms-status" style="font-size:11px;color:var(--text4);margin-top:4px;min-height:14px"></div>'
     + '</div>';
 }
+// A placeholder the SMS panel mounts into. Lets the panel appear even when the GHL
+// contact id wasn't stored on the row yet (Task/Nationwide leads) — we look it up live.
+function ghlSmsSlotHTML(kind,id){ return '<div id="ghl-sms-slot" data-kind="'+kind+'" data-id="'+id+'"></div>'; }
+function ghlLeadForKind(kind,id){
+  if(kind==='task') return (typeof jvLeads!=='undefined'?jvLeads:[]).find(function(x){return x.id===id;});
+  return (typeof leads!=='undefined'?leads:[]).find(function(x){return x.id===id;}); // DMV + Nationwide both live in `leads`
+}
+function ghlSmsUnavailHTML(msg){
+  return '<div class="detail-section"><div class="detail-section-title">&#128241; SMS Conversation '
+    + '<span style="font-weight:400;color:var(--text4);font-size:11px">&middot; from GoHighLevel</span></div>'
+    + '<div style="font-size:12px;color:var(--text4);padding:6px 0">'+msg+'</div></div>';
+}
+// Mount the SMS panel for any lead/task/nationwide. If the row has no ghlContactId,
+// look the phone up in GHL right now (same as clicking the phone does) and show the thread.
+async function mountGhlSms(kind,id){
+  var slot=document.getElementById('ghl-sms-slot'); if(!slot) return;
+  var l=ghlLeadForKind(kind,id); if(!l) return;
+  var cid=(l.ghlContactId||'').trim();
+  if(cid){ slot.innerHTML=ghlSmsSectionHTML(cid,kind,id); loadGhlSms(cid); return; }
+  var phone=(l.phone||'').trim();
+  if(!phone || /DM only/i.test(phone) || !ghlNormPhone(phone)){ slot.innerHTML=ghlSmsUnavailHTML('No phone on this lead to match a GoHighLevel contact.'); return; }
+  slot.innerHTML=ghlSmsUnavailHTML('Looking up this number in GoHighLevel&hellip;');
+  var found=null; try{ found=await ghlLookupPhone(phone); }catch(e){}
+  var slot2=document.getElementById('ghl-sms-slot');
+  if(!slot2 || slot2.dataset.id!=String(id) || slot2.dataset.kind!==kind) return; // modal changed while awaiting
+  if(found){
+    l.ghlContactId=found;
+    try{ await cacheGhlContactId(phone,found); }catch(e){}
+    slot2.innerHTML=ghlSmsSectionHTML(found,kind,id); loadGhlSms(found);
+  } else {
+    slot2.innerHTML=ghlSmsUnavailHTML('No GoHighLevel contact found for '+esc(phone)+' yet.');
+  }
+}
 // Open the scheduler from the SMS composer, pre-filling with any drafted reply text.
 function scheduleFromSms(kind, id){
   var inp = document.getElementById('ghl-sms-input');
@@ -1473,6 +1506,27 @@ function esc(v){return String(v||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'
 function today(){return new Date().toISOString().split('T')[0];}
 function daysDiff(ds){if(!ds) return null; return Math.round((new Date(ds)-new Date(today()))/(1000*60*60*24));}
 function getFUStatus(ds){const d=daysDiff(ds); if(d===null) return null; if(d<0) return 'overdue'; if(d===0) return 'today'; if(d<=3) return 'soon'; return 'future';}
+// ---- Google Calendar 1-click helpers (all-day reminder on the follow-up date) ----
+function gcalDateRange(ds){ // 'YYYY-MM-DD' -> 'YYYYMMDD/YYYYMMDD' (end date exclusive = next day, all-day)
+  if(!ds) return ''; var p=String(ds).split('-'); if(p.length!==3) return '';
+  var y=+p[0], m=+p[1], d=+p[2]; if(!y||!m||!d) return '';
+  var start=p[0]+String(m).padStart(2,'0')+String(d).padStart(2,'0');
+  var e=new Date(Date.UTC(y,m-1,d)+86400000);
+  var end=e.getUTCFullYear()+String(e.getUTCMonth()+1).padStart(2,'0')+String(e.getUTCDate()).padStart(2,'0');
+  return start+'/'+end;
+}
+function gcalUrl(title,ds,details,location){
+  var r=gcalDateRange(ds); if(!r) return '';
+  var u='https://calendar.google.com/calendar/render?action=TEMPLATE&text='+encodeURIComponent(title||'Follow-up')+'&dates='+r;
+  if(details) u+='&details='+encodeURIComponent(details);
+  if(location) u+='&location='+encodeURIComponent(location);
+  return u;
+}
+// A small "Add to Calendar" button. small=compact. stops row-click propagation.
+function gcalBtn(title,ds,details,location,small){
+  var u=gcalUrl(title,ds,details,location); if(!u) return '';
+  return '<a href="'+esc(u)+'" target="_blank" rel="noopener" class="btn btn-secondary'+(small?' btn-sm':'')+'" title="Add this follow-up to Google Calendar as an all-day reminder" onclick="event.stopPropagation()">&#128197; Add to Calendar</a>';
+}
 function followUpChip(ds){
   if(!ds) return '';
   const st=getFUStatus(ds); const d=daysDiff(ds);
@@ -3028,6 +3082,12 @@ async function pbbSet(date,state,field,val){
     showToast('Saved','success');
   } catch(e){ showToast('Could not save that field — check connection','error'); }
 }
+// Set batch status AND re-render immediately so the chip counts, tiles and status chips all update
+// without a manual Refresh (a <select> has already committed its value, so re-rendering is safe).
+async function pbSetStatus(date,state,val){
+  await pbbSet(date,state,'skiptraced',val);
+  if(activeSection==='probate') renderProbate();
+}
 async function crmProbateSyncCall(f){
   return await sbFetch('rpc/crm_probate_sync','POST',{
     p_states:(f.states&&f.states.length)?f.states:null,
@@ -3141,6 +3201,10 @@ function renderProbate(){
   var all=crmProbate||[];
   var sent=all.filter(function(p){return p.sentOn;}).length;
   var dueCount=all.filter(function(p){ var n=ltDaysUntil(p.followUpDate); return n!==null && n<=0; }).length;
+  var notScrapedCount=all.filter(function(p){return pbLeadBatchStatus(p)==='notscraped';}).length;
+  var scrapedCount=all.filter(function(p){return pbLeadBatchStatus(p)==='scraped';}).length;
+  var textedCount=all.filter(function(p){return pbLeadBatchStatus(p)==='texted';}).length;
+  var followupCount=all.filter(function(p){return !!p.followUpDate;}).length;
   var states=Array.from(new Set(all.map(function(p){return p.state;}).filter(Boolean))).sort();
   function viewChip(v,label){
     var on=pbView===v;
@@ -3172,10 +3236,11 @@ function renderProbate(){
           + states.map(function(s){return '<option value="'+esc(s)+'"'+(pbState===s?' selected':'')+'>'+esc(s)+'</option>';}).join('')+'</select>'
         + '</div>'
         + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
-          + viewChip('all','All ('+all.length+')')
-          + viewChip('unsent','Not sent ('+(all.length-sent)+')')
-          + viewChip('sent','Sent ('+sent+')')
-          + viewChip('due','Follow-ups due ('+dueCount+')')
+          + viewChip('all','All ('+all.length.toLocaleString()+')')
+          + viewChip('notscraped','&#9711; Not skip-traced ('+notScrapedCount.toLocaleString()+')')
+          + viewChip('scraped','&#9989; Skip-traced ('+scrapedCount.toLocaleString()+')')
+          + viewChip('texted','&#128241; Texted ('+textedCount.toLocaleString()+')')
+          + viewChip('followup','&#128197; Follow-up ('+followupCount.toLocaleString()+')')
         + '</div>'
         + '<div id="pb-list-area"></div>'
       ) : '')
@@ -3183,10 +3248,21 @@ function renderProbate(){
   if(all.length) pbRenderArea();
 }
 
+// A lead's status is inherited from its batch (Not skip-traced / Skip-traced / Texted).
+function pbLeadBatchStatus(p){
+  var v=((pbbGet(p.datePulled,p.state)||{}).skiptraced)||'';
+  if(v==='Yes') return 'scraped';
+  if(v==='Texted') return 'texted';
+  return 'notscraped';
+}
 function pbFilteredLeads(){
   var q=pbSearch.trim().toLowerCase();
   return (crmProbate||[]).filter(function(p){
     if(pbState && p.state!==pbState) return false;
+    if(pbView==='notscraped' && pbLeadBatchStatus(p)!=='notscraped') return false;
+    if(pbView==='scraped' && pbLeadBatchStatus(p)!=='scraped') return false;
+    if(pbView==='texted' && pbLeadBatchStatus(p)!=='texted') return false;
+    if(pbView==='followup' && !p.followUpDate) return false;
     if(pbView==='sent' && !p.sentOn) return false;
     if(pbView==='unsent' && p.sentOn) return false;
     if(pbView==='due'){ var n=ltDaysUntil(p.followUpDate); if(n===null || n>0) return false; }
@@ -3221,7 +3297,7 @@ function pbLeadRow(p){
     + '<td style="max-width:230px">'+decRep+'</td>'
     + '<td style="white-space:nowrap">'+pbScorePill(p.score)+'</td>'
     + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'+sentCell+'</td>'
-    + '<td style="white-space:nowrap">'+ltDuePill(p.followUpDate)+'</td>'
+    + '<td style="white-space:nowrap">'+ltDuePill(p.followUpDate)+(p.followUpDate?' '+gcalBtn('Probate follow-up: '+(p.decedentName||p.propertyAddress||('#'+p.id)),p.followUpDate,['Probate lead',(p.state||'')+' '+(p.county||''),p.prName?('PR: '+p.prName):'',p.skiptracePhone?('Phone: '+p.skiptracePhone):''].filter(Boolean).join('\\n'),[p.propertyAddress,p.propertyCity,p.propertyZip].filter(Boolean).join(', '),true):'')+'</td>'
     + '<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">&#9998;</button> <button class="btn btn-secondary btn-sm" title="Delete" onclick="deleteProbateLead('+p.id+')">&#128465;</button></td>'
   + '</tr>';
 }
@@ -3230,6 +3306,33 @@ var pbStateClosed={};
 function pbToggleState(st){ pbStateClosed[st]=!pbStateClosed[st]; pbRenderArea(); }
 // Grouped by STATE, then by scrape-date batch inside each state. Each batch shows
 // its workflow bar; click a batch header to reveal its leads.
+// Flat, cross-batch follow-up list (Follow-up chip). Soonest date first, with Add-to-Calendar per lead.
+function pbFollowupFlatHTML(rows){
+  var arr=rows.slice().sort(function(a,b){ return (a.followUpDate||'').localeCompare(b.followUpDate||''); });
+  var head='<div class="pb-state-hd" style="display:flex;align-items:center;gap:10px;margin:6px 0 10px;padding:8px 12px;background:linear-gradient(90deg,#eff6ff,#f8fafc);border:1px solid #dbeafe;border-left:4px solid #2563eb;border-radius:8px">'
+    + '<span style="font-size:16px">&#128197;</span><span style="font-weight:800;font-size:14px;color:#1e293b">Follow-ups</span>'
+    + '<span style="font-size:12px;color:var(--text3);font-weight:600">'+arr.length.toLocaleString()+' lead'+(arr.length!==1?'s':'')+' with a follow-up date &middot; soonest first</span></div>';
+  var body=arr.slice(0,PB_CAP).map(function(p){
+    var addr=p.propertyAddress?esc(p.propertyAddress):(p.decedentName?esc(p.decedentName):'&mdash;');
+    var loc=[p.propertyAddress,p.propertyCity,p.propertyZip].filter(Boolean).join(', ');
+    var title='Probate follow-up: '+(p.decedentName||p.propertyAddress||('#'+p.id));
+    var details=['Probate lead',(p.state||'')+' '+(p.county||''),p.prName?('PR: '+p.prName):'',p.skiptracePhone?('Phone: '+p.skiptracePhone):'',p.notes||''].filter(Boolean).join('\n');
+    var traced=p.skiptracePhone?'<div style="font-size:11.5px;color:#059669;font-weight:600">&#128222; '+esc(p.skiptracePhone)+'</div>':'';
+    return '<tr style="cursor:pointer"'+(pbSel.has(+p.id)?' class="row-sel"':'')+' onclick="openProbateDetail('+p.id+')">'
+      + '<td onclick="event.stopPropagation()">'+selChk('pbToggle',p.id,pbSel.has(+p.id))+'</td>'
+      + '<td style="white-space:nowrap">'+pbStateChip(p.state)+'</td>'
+      + '<td style="max-width:230px"><div style="font-weight:600;font-size:13px">'+addr+'</div><div style="font-size:11px;color:var(--text4)">'+esc(p.county||'')+'</div></td>'
+      + '<td style="max-width:220px"><div style="font-weight:600;font-size:12.5px">'+esc(p.decedentName||'—')+'</div>'+(p.prName?'<div style="font-size:11.5px;color:var(--text3)">PR: '+esc(p.prName)+'</div>':'')+traced+'</td>'
+      + '<td style="white-space:nowrap">'+ltDuePill(p.followUpDate)+'</td>'
+      + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'+gcalBtn(title,p.followUpDate,details,loc,true)+'</td>'
+      + '<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">&#9998;</button></td>'
+      + '</tr>';
+  }).join('');
+  return head+'<div class="table-container"><div class="table-wrap"><table>'
+    + '<thead><tr><th style="width:34px"></th><th>State</th><th>Property</th><th>Decedent / PR</th><th>Follow-up</th><th>Calendar</th><th></th></tr></thead>'
+    + '<tbody>'+body+'</tbody></table></div></div>'
+    + (arr.length>PB_CAP?'<div style="font-size:12px;color:var(--text4);padding:8px 14px">Showing first '+PB_CAP+' of '+arr.length.toLocaleString()+' — use search to narrow.</div>':'');
+}
 function pbRenderArea(){
   var area=document.getElementById('pb-list-area'); if(!area) return;
   var rows=pbFilteredLeads();
@@ -3238,6 +3341,9 @@ function pbRenderArea(){
       +'<div class="empty"><div class="empty-icon">&#128269;</div><h3>No leads match</h3><p style="color:var(--text3);font-size:12px">Try clearing the search, state, or view filter.</p></div>';
     return;
   }
+  // FOLLOW-UP view = flat list of individual leads that have a follow-up date (across all batches),
+  // soonest first, each with a 1-click "Add to Calendar" button.
+  if(pbView==='followup'){ area.innerHTML=bulkBar(pbSel.size,'pbClearSel()','pbDeleteSelected()','<button class="btn btn-secondary btn-sm" onclick="pbDownloadSelectedCSV()">&#8681; Download CSV</button>')+pbFollowupFlatHTML(rows); return; }
   var forceOpen = !!pbSearch.trim(); // a live search auto-opens the matching batches
   var groups={};
   rows.forEach(function(p){ var k=pbbKey(p.datePulled,p.state); (groups[k]=groups[k]||[]).push(p); });
@@ -3285,14 +3391,15 @@ function pbRenderArea(){
     var meta=pbStatusMeta(b.skiptraced);
     var wf =
       '<div class="pb-wf">'
-      + '<label class="pb-wf-f"><span>Status</span><select onchange="pbbSet('+da+',\'skiptraced\',this.value)">'
+      + '<label class="pb-wf-f"><span>Status</span><select onchange="pbSetStatus('+da+',this.value)">'
           + '<option value="">—</option>'
           + '<option value="No"'+(b.skiptraced==='No'?' selected':'')+'>Not Scraped</option>'
           + '<option value="Yes"'+(b.skiptraced==='Yes'?' selected':'')+'>Scraped</option>'
           + '<option value="Texted"'+(b.skiptraced==='Texted'?' selected':'')+'>Texted</option>'
         + '</select></label>'
       + '<label class="pb-wf-f"><span>Send-out date</span><input type="date" value="'+esc(b.sendOutDate)+'" onchange="pbbSet('+da+',\'sendOutDate\',this.value)"></label>'
-      + '<label class="pb-wf-f"><span>Follow-up date</span><input type="date" value="'+esc(b.followUpDate)+'" onchange="pbbSet('+da+',\'followUpDate\',this.value)"></label>'
+      + '<label class="pb-wf-f"><span>Follow-up date</span><input type="date" value="'+esc(b.followUpDate)+'" onchange="pbbSet('+da+',\'followUpDate\',this.value);pbRenderArea()"></label>'
+      + (b.followUpDate?'<div class="pb-wf-f" style="justify-content:flex-end">'+gcalBtn('Probate batch follow-up: '+(b.name||(dt?ltFmtDate(dt):st)),b.followUpDate,'Probate batch follow-up for '+(b.name||(dt?ltFmtDate(dt):''))+' ('+st+') — '+arr.length+' leads.',st,true)+'</div>':'')
       + '<label class="pb-wf-f pb-wf-grow"><span>GHL list link</span><input type="url" placeholder="paste GHL smart-list URL" value="'+esc(b.ghlLink)+'" onchange="pbbSet('+da+',\'ghlLink\',this.value)"></label>'
       + '<label class="pb-wf-f"><span>Placed in GHL as</span><input type="text" placeholder="tag / list name" value="'+esc(b.ghlPlacement)+'" onchange="pbbSet('+da+',\'ghlPlacement\',this.value)"></label>'
       + (b.ghlLink&&/^https?:/i.test(b.ghlLink) ? '<a href="'+esc(b.ghlLink)+'" target="_blank" class="btn btn-secondary btn-sm" style="align-self:flex-end">&#128241; Open&#8599;</a>' : '')
@@ -3393,6 +3500,7 @@ function openProbateDetail(id){
     + '</div>'
     + '<div class="modal-footer">'
       + '<button class="btn btn-danger btn-sm" style="margin-right:auto" onclick="deleteProbateLead('+p.id+')">Delete</button>'
+      + (p.followUpDate?gcalBtn('Probate follow-up: '+(p.decedentName||p.propertyAddress||('#'+p.id)),p.followUpDate,['Probate lead',(p.state||'')+' '+(p.county||''),p.prName?('PR: '+p.prName):'',p.skiptracePhone?('Phone: '+p.skiptracePhone):''].filter(Boolean).join('\n'),[p.propertyAddress,p.propertyCity,p.propertyZip].filter(Boolean).join(', '),true):'')
       + (p.sentOn?'<button class="btn btn-secondary btn-sm" onclick="pbUnsend('+p.id+')">Clear Sent</button>':'')
       + '<button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">Edit</button>'
       + '<button class="btn btn-primary btn-sm" onclick="pbSendGhl('+p.id+')">&#128241; '+(p.sentOn?'Send Again':'Send to GHL')+'</button>'
@@ -4691,6 +4799,7 @@ function buildFollowUpQueueHTML(nationwideOnly){
     if(type==='dmv')        return '<span style="font-size:9px;font-weight:900;color:#dc2626;background:#fee2e2;border:1px solid #fca5a5;border-radius:4px;padding:1px 5px;margin-right:4px">DMV</span>';
     if(type==='nationwide') return '<span style="font-size:10px;margin-right:4px">&#127758;</span>';
     if(type==='task')       return '<span style="font-size:10px;margin-right:4px">&#9989;</span>';
+    if(type==='probate')    return '<span style="font-size:9px;font-weight:900;color:#7c3aed;background:#ede9fe;border:1px solid #c4b5fd;border-radius:4px;padding:1px 5px;margin-right:4px">PROBATE</span>';
     return '';
   }
 
@@ -4714,6 +4823,14 @@ function buildFollowUpQueueHTML(nationwideOnly){
         allFU.push({lead:l, type:'task', isTask:true});
       }
     });
+    // Probate follow-ups show here too, tagged PROBATE. (crmProbate loads lazily — kick it off if needed.)
+    if(crmProbate===null){
+      if(!window.__pbFUloading){ window.__pbFUloading=true; crmProbateFetch().then(function(){ window.__pbFUloading=false; if(activeSection==='outreach'&&activeTab==='followups') renderFollowUpsTab(); }); }
+    } else {
+      crmProbate.forEach(function(p){
+        if(p.followUpDate){ allFU.push({lead:p, type:'probate', isTask:false}); }
+      });
+    }
   }
 
   // Sort by follow-up date
@@ -4729,6 +4846,19 @@ function buildFollowUpQueueHTML(nationwideOnly){
     var l = x.lead;
     var d = daysDiff(l.followUpDate);
     var lbl = d<0 ? Math.abs(d)+'d overdue' : d===0 ? 'Today' : d===1 ? 'Tomorrow' : 'In '+d+'d';
+    if(x.type==='probate'){
+      var pTitle = l.propertyAddress || l.decedentName || ('Probate #'+l.id);
+      var pName = l.prName || l.decedentName || '';
+      var pPhone = l.skiptracePhone || '';
+      var cal = gcalBtn('Probate follow-up: '+(l.decedentName||l.propertyAddress||('#'+l.id)),l.followUpDate,['Probate lead',(l.state||'')+' '+(l.county||''),pName?('PR: '+pName):'',pPhone?('Phone: '+pPhone):''].filter(Boolean).join('\n'),[l.propertyAddress,l.propertyCity,l.propertyZip].filter(Boolean).join(', '),true);
+      return '<div class="followup-item" onclick="setSection(\'probate\');setTimeout(function(){openProbateDetail('+l.id+')},40)" style="cursor:pointer">'
+        + '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">'+srcBadge('probate')
+        + '<div class="followup-item-addr" style="margin:0">'+esc(pTitle)+'</div></div>'
+        + '<div class="followup-item-meta">'+pbScorePill(l.score)+'<span>'+esc(pName)+'</span>'+(pPhone?'<span style="color:#059669;font-weight:600">&#128222; '+esc(pPhone)+'</span>':'')+'</div>'
+        + '<div class="followup-item-date">'+l.followUpDate+' &middot; '+lbl+'</div>'
+        + '<div style="margin-top:5px" onclick="event.stopPropagation()">'+cal+'</div>'
+        + '</div>';
+    }
     var fn = x.isTask ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
     var title = l.address || l.name || l.location || '&#8212;';
     var badge = x.isTask ? (l.score ? scoreBadgeHTML(l.score) : jvStatusBadge(l.jvStatus||'')) : statusBadge(l.status);
@@ -4768,6 +4898,7 @@ function buildFollowUpQueueHTML(nationwideOnly){
       + '<span style="font-size:12px;color:var(--text3);font-weight:600">Legend:</span>'
       + '<span style="display:flex;align-items:center;gap:4px;font-size:12px"><span style="font-size:9px;font-weight:900;color:#dc2626;background:#fee2e2;border:1px solid #fca5a5;border-radius:4px;padding:1px 5px">DMV</span> DMV Lead</span>'
       + '<span style="display:flex;align-items:center;gap:4px;font-size:12px">&#9989; Task</span>'
+      + '<span style="display:flex;align-items:center;gap:4px;font-size:12px"><span style="font-size:9px;font-weight:900;color:#7c3aed;background:#ede9fe;border:1px solid #c4b5fd;border-radius:4px;padding:1px 5px">PROBATE</span> Probate</span>'
       + '</div>';
 
   return '<div class="followup-container">'
@@ -4868,7 +4999,7 @@ function renderDetailModal(){
             </div>
           </div>
           ${renderAttachmentsSection('dmv', l.id)}
-          ${l.ghlContactId?ghlSmsSectionHTML(l.ghlContactId,'lead',l.id):''}
+          ${ghlSmsSlotHTML('lead',l.id)}
           ${agreementSectionHTML(l.id,'lead',l.agreementStatus,l.agreementAcceptedAt)}
           ${renderActivityLog('lead', l.id, l.activityLog)}
         </div>
@@ -4883,7 +5014,7 @@ function renderDetailModal(){
       </div>
     </div>`;
   nciMount('lead', l.id);
-  if(l.ghlContactId) loadGhlSms(l.ghlContactId);
+  mountGhlSms('lead', l.id);
 }
 function switchToEdit(){editMode=true;renderEditModal();}
 
@@ -5709,12 +5840,12 @@ function openJVDetail(id){
     +'<div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>'+(l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>')+noteChecklistHTML('task',l.id)+'</div>'
     +((l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':'')
     +agreementSectionHTML(l.id,'task',l.agreementStatus,l.agreementAcceptedAt)
-    +(l.ghlContactId?ghlSmsSectionHTML(l.ghlContactId,'task',l.id):'')
+    +ghlSmsSlotHTML('task',l.id)
     +renderAttachmentsSection('task', l.id)
     +renderActivityLog('task', l.id, l.activityLog)
     +'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
   nciMount('task', l.id);
-  if(l.ghlContactId) loadGhlSms(l.ghlContactId);
+  mountGhlSms('task', l.id);
 }
 async function saveJVDetail(id){
   var l=jvLeads.find(function(x){return x.id===id;});
