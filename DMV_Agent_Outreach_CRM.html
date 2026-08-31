@@ -3247,22 +3247,27 @@ function pbRenderArea(){
     return (A[0]||'').localeCompare(B[0]||'');
   });
   var esq=function(s){ return String(s||'').replace(/'/g,"\\'"); };
-  function pbScrapeChip(yes){ return '<span class="pb-bt-scrape" style="'+(yes?'background:#dcfce7;color:#166534':'background:#f1f5f9;color:#64748b')+'">'+(yes?'Scraped':'Not Scraped')+'</span>'; }
+  function pbStatusMeta(v){
+    if(v==='Yes') return {label:'Scraped', css:'background:#dcfce7;color:#166534', done:true};
+    if(v==='Texted') return {label:'Texted', css:'background:#dbeafe;color:#1e40af', done:true};
+    return {label:'Not Scraped', css:'background:#f1f5f9;color:#64748b', done:false};
+  }
+  function pbScrapeChip(v){ var m=pbStatusMeta(v); return '<span class="pb-bt-scrape" style="'+m.css+'">'+m.label+'</span>'; }
   // The BOX/tile — one square card per batch. Click to open its detail panel.
   function pbTileHTML(k){
     var arr=groups[k], st=arr[0].state||'', dt=arr[0].datePulled||'';
     var b=pbbGet(dt,st), open=forceOpen||!!pbOpen[k];
     var sentN=arr.filter(function(p){return p.sentOn;}).length;
     var hiN=arr.filter(function(p){return +p.score>=5;}).length;
-    var scrapeYes=b.skiptraced==='Yes';
+    var meta=pbStatusMeta(b.skiptraced);
     var tags='';
     if(b.sendOutDate) tags += '<span class="pb-bt-tag" title="Send-out date">&#128228; '+ltFmtDate(b.sendOutDate)+'</span>';
     if(b.followUpDate) tags += '<span class="pb-bt-tag" title="Follow-up date">&#128197; Follow-up '+ltFmtDate(b.followUpDate)+'</span>';
     if(b.ghlPlacement) tags += '<span class="pb-bt-tag" title="Placed in GHL as">&#127991;&#65039; '+esc(b.ghlPlacement)+'</span>';
     var title = b.name?esc(b.name):(dt?ltFmtDate(dt):'(no pull date)');
     var sub = b.name?('Pulled '+(dt?ltFmtDate(dt):'—')):'';
-    return '<div class="pb-tile'+(scrapeYes?' pb-traced':'')+(open?' pb-open':'')+'" onclick="pbToggleOpen(\''+esq(k)+'\')">'
-      + '<div class="pb-tile-top">'+pbStateChip(st)+pbScrapeChip(scrapeYes)+'</div>'
+    return '<div class="pb-tile'+(meta.done?' pb-traced':'')+(open?' pb-open':'')+'" onclick="pbToggleOpen(\''+esq(k)+'\')">'
+      + '<div class="pb-tile-top">'+pbStateChip(st)+pbScrapeChip(b.skiptraced)+'</div>'
       + '<div class="pb-tile-title">'+title+'</div>'
       + (sub?'<div class="pb-tile-sub">'+sub+'</div>':'')
       + (tags?'<div class="pb-tile-tags">'+tags+'</div>':'')
@@ -3277,13 +3282,14 @@ function pbRenderArea(){
     var gids=JSON.stringify(arr.map(function(p){return +p.id;}));
     var gAll=arr.length && arr.every(function(p){ return pbSel.has(+p.id); });
     var da="'"+esq(dt)+"','"+esq(st)+"'";
-    var scrapeYes=b.skiptraced==='Yes';
+    var meta=pbStatusMeta(b.skiptraced);
     var wf =
       '<div class="pb-wf">'
-      + '<label class="pb-wf-f"><span>Skiptraced</span><select onchange="pbbSet('+da+',\'skiptraced\',this.value)">'
+      + '<label class="pb-wf-f"><span>Status</span><select onchange="pbbSet('+da+',\'skiptraced\',this.value)">'
           + '<option value="">—</option>'
-          + '<option value="Yes"'+(b.skiptraced==='Yes'?' selected':'')+'>Yes</option>'
-          + '<option value="No"'+(b.skiptraced==='No'?' selected':'')+'>No</option>'
+          + '<option value="No"'+(b.skiptraced==='No'?' selected':'')+'>Not Scraped</option>'
+          + '<option value="Yes"'+(b.skiptraced==='Yes'?' selected':'')+'>Scraped</option>'
+          + '<option value="Texted"'+(b.skiptraced==='Texted'?' selected':'')+'>Texted</option>'
         + '</select></label>'
       + '<label class="pb-wf-f"><span>Send-out date</span><input type="date" value="'+esc(b.sendOutDate)+'" onchange="pbbSet('+da+',\'sendOutDate\',this.value)"></label>'
       + '<label class="pb-wf-f"><span>Follow-up date</span><input type="date" value="'+esc(b.followUpDate)+'" onchange="pbbSet('+da+',\'followUpDate\',this.value)"></label>'
@@ -3296,8 +3302,8 @@ function pbRenderArea(){
       + '<div class="pb-detail-h">'+pbStateChip(st)+'<span class="nm">'+title+'</span>'
         + '<span class="pb-bt-date">'+(dt?ltFmtDate(dt):'')+'</span>'
         + '<span class="pb-bt-cnt">'+arr.length.toLocaleString()+' lead'+(arr.length!==1?'s':'')+'</span>'
-        + pbScrapeChip(scrapeYes)
-        + (scrapeYes?'':'<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="pbOpenReplaceBatch(\''+esq(dt)+'\',\''+esq(st)+'\')" title="Upload a skip-traced list to replace this batch and mark it Scraped">&#8681; Replace with skip-traced list</button>')
+        + pbScrapeChip(b.skiptraced)
+        + (meta.done?'':'<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="pbOpenReplaceBatch(\''+esq(dt)+'\',\''+esq(st)+'\')" title="Upload a skip-traced list to replace this batch and mark it Scraped">&#8681; Replace with skip-traced list</button>')
         + '<span class="pb-detail-close" onclick="pbToggleOpen(\''+esq(k)+'\')">&#10005; Close</span>'
       + '</div>'
       + '<div class="pb-wf-panel"><div class="pb-wf-title">&#9881;&#65039; Batch workflow &mdash; applies to all '+arr.length.toLocaleString()+' leads</div>'+wf+'</div>'
