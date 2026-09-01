@@ -1169,6 +1169,7 @@ function toRow(l) {
     recipient_notes: l.recipientNotes||[],
     beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
     review_sent_by: l.reviewSentBy||'', review_sent_at: l.reviewSentAt||'', review_note: l.reviewNote||'',
+    d4d_hot: l.d4dHot||false, d4d_status: l.d4dStatus||'',
     shared: l.shared||false, shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
     deleted: l.deleted||false, deleted_at: l.deletedAt||''
   };
@@ -1190,6 +1191,7 @@ function fromRow(r) {
     recipientNotes: r.recipient_notes||[],
     beds: r.beds||'', baths: r.baths||'', sqft: r.sqft||'',
     reviewSentBy: r.review_sent_by||'', reviewSentAt: r.review_sent_at||'', reviewNote: r.review_note||'',
+    d4dHot: r.d4d_hot||false, d4dStatus: r.d4d_status||'',
     shared: r.shared||false, sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
     recipientFollowUpDate: r.recipient_follow_up_date||'',
@@ -4407,7 +4409,9 @@ function buildTempScoreViewHTML(score){
 function renderReviewTab(){
   var items = leads.filter(function(l){ return !l.deleted && l.needsReview; }).map(function(l){ return {kind:'lead', l:l}; })
     .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview; }).map(function(t){ return {kind:'task', l:t}; }))
-    .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
+    .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; })
+    // Hot-flagged leads float to the top so you can come back to them fast.
+    .sort(function(a,b){ return (b.l.d4dHot?1:0) - (a.l.d4dHot?1:0); });
   var rows = items.length===0
     ? '<div class="empty"><div class="empty-icon">&#128269;</div><h3>Nothing needs review</h3></div>'
     : '<div class="table-container"><div class="table-wrap"><table>'
@@ -4427,16 +4431,37 @@ function renderReviewTab(){
           var sentAt = l.reviewSentAt ? new Date(l.reviewSentAt).toLocaleString() : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           var note = l.reviewNote ? '<div style="font-size:12px;max-width:240px;white-space:pre-wrap;color:var(--text2)">'+esc(l.reviewNote)+'</div>' : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
-          return '<tr>'
-            +'<td onclick="'+openFn+'" style="cursor:pointer"><div class="address-cell">'+typeTag+titleHtml+'</div></td>'
+          var isHot = kind==='lead' && !!l.d4dHot;
+          // 🔥 Hot toggle: check it to flag a lead to come back to (it floats to the top + the row glows).
+          var hotBtn = kind==='lead'
+            ? '<button class="btn btn-sm" onclick="toggleD4dHot('+l.id+')" title="'+(isHot?'Hot — click to un-flag':'Mark Hot to come back to this lead')+'" '
+                +'style="margin-right:6px;font-weight:800;'+(isHot
+                  ?'background:#dc2626;color:#fff;border:1px solid #dc2626'
+                  :'background:none;color:#dc2626;border:1px solid #fca5a5')+'">&#128293; Hot</button>'
+            : '';
+          // "D4D Status" dropdown replaces the plain badge for D4D leads: Open / Ask Question If Needed / Review Complete.
+          var d4dStatusCell;
+          if(isD4D){
+            var cur = l.d4dStatus || 'Open';
+            var opts = ['Open','Ask Question If Needed','Review Complete']
+              .map(function(o){ return '<option value="'+o+'"'+(cur===o?' selected':'')+'>'+o+'</option>'; }).join('');
+            d4dStatusCell = '<div style="font-size:9px;font-weight:800;color:var(--text4);text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px">D4D Status</div>'
+              +'<select onchange="setD4dStatus('+l.id+',this.value)" style="font-size:12px;padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg2,#fff);'
+              +(cur==='Ask Question If Needed'?'color:#b45309;font-weight:700;border-color:#fcd34d':(cur==='Review Complete'?'color:#16a34a;font-weight:700;border-color:#86efac':''))+'">'+opts+'</select>';
+          } else {
+            d4dStatusCell = statusBadge(status);
+          }
+          return '<tr'+(isHot?' style="background:#fef2f2"':'')+'>'
+            +'<td onclick="'+openFn+'" style="cursor:pointer'+(isHot?';border-left:3px solid #dc2626':'')+'"><div class="address-cell">'+typeTag+titleHtml+'</div></td>'
             +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
             +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
             +'<td>'+note+'</td>'
             +'<td><span class="money-val">'+formatMoney(offer)+'</span></td>'
             +'<td><span class="arv-val">'+formatMoney(l.arv)+'</span></td>'
             +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
-            +'<td>'+statusBadge(status)+'</td>'
+            +'<td onclick="event.stopPropagation()">'+d4dStatusCell+'</td>'
             +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
+              +hotBtn
               +'<button class="btn btn-secondary btn-sm" onclick="'+openFn+'">Open</button> '
               +'<button class="btn btn-green btn-sm" onclick="completeReview(\''+kind+'\','+l.id+')">&#9989; Complete</button> '
               +'<button class="btn btn-danger btn-sm" onclick="removeFromReview(\''+kind+'\','+l.id+')">Remove</button>'
@@ -4460,6 +4485,25 @@ async function sendToReview(kind, id){
   if(kind==='task'){ saveJV(); render(); await saveJVToSupabase(l); }
   else { localStorage.setItem('crm_leads', JSON.stringify(leads)); render(); await saveLeadToSupabase(l); }
   showToast('Added to Review queue','success');
+}
+// 🔥 Hot toggle on a Review row — flags a lead to come back to (floats to top, row glows). Persists to cloud.
+async function toggleD4dHot(id){
+  var l = leads.find(function(x){return x.id===id;});
+  if(!l) return;
+  l.d4dHot = !l.d4dHot;
+  save(); render();
+  var ok = await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+}
+// "D4D Status" dropdown on a Review row. 'Review Complete' also finishes the review (drops it from the queue).
+async function setD4dStatus(id, val){
+  var l = leads.find(function(x){return x.id===id;});
+  if(!l) return;
+  l.d4dStatus = val;
+  if(val==='Review Complete'){ l.needsReview = false; l.status = 'Review Complete'; }
+  save(); render();
+  var ok = await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
 }
 async function clearReviewComplete(id){
   var l = leads.find(function(x){return x.id===id;});
