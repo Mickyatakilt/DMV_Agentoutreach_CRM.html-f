@@ -4417,7 +4417,7 @@ function renderReviewTab(){
           var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
           var title = kind==='task' ? (l.location||l.name||'Untitled') : (l.address||l.name||'Untitled');
           // D4D auto-scan / estate leads: make the address a Google Maps link (new tab).
-          var isD4D = kind==='lead' && l.leadSource==='D4D Auto-Scan';
+          var isD4D = kind==='lead' && (l.leadSource==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan');
           var titleHtml = isD4D
             ? '<a href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(l.address||title)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline">'+esc(title)+'</a>'
             : esc(title);
