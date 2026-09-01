@@ -461,6 +461,10 @@
   .nci-del{border:none;background:none;cursor:pointer;font-size:13px;opacity:.55;padding:0 2px;flex:0 0 auto;line-height:1.4;}
   .nci-del:hover{opacity:1;}
   .nci-del:disabled{opacity:.25;cursor:default;}
+  /* Hot-flagged Review row: full red background, text forced white so everything (incl. the "Hot" letters) stays readable. */
+  tr.hot-row > td{background:#dc2626 !important;}
+  tr.hot-row, tr.hot-row td, tr.hot-row .address-cell, tr.hot-row a,
+  tr.hot-row .money-val, tr.hot-row .arv-val, tr.hot-row span:not(.badge){color:#fff !important;}
 </style>
 </head>
 <body>
@@ -4432,34 +4436,23 @@ function renderReviewTab(){
           var note = l.reviewNote ? '<div style="font-size:12px;max-width:240px;white-space:pre-wrap;color:var(--text2)">'+esc(l.reviewNote)+'</div>' : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
           var isHot = kind==='lead' && !!l.d4dHot;
-          // 🔥 Hot toggle: check it to flag a lead to come back to (it floats to the top + the row glows).
+          // 🔥 Hot toggle: click to flag a lead to come back to. When on, the whole row goes red
+          // (and the lead floats to the top); the white "Hot" letters stay readable on the red.
           var hotBtn = kind==='lead'
             ? '<button class="btn btn-sm" onclick="toggleD4dHot('+l.id+')" title="'+(isHot?'Hot — click to un-flag':'Mark Hot to come back to this lead')+'" '
                 +'style="margin-right:6px;font-weight:800;'+(isHot
-                  ?'background:#dc2626;color:#fff;border:1px solid #dc2626'
+                  ?'background:#fff;color:#dc2626;border:1px solid #fff'
                   :'background:none;color:#dc2626;border:1px solid #fca5a5')+'">&#128293; Hot</button>'
             : '';
-          // "D4D Status" dropdown replaces the plain badge for D4D leads: Open / Ask Question If Needed / Review Complete.
-          var d4dStatusCell;
-          if(isD4D){
-            var cur = l.d4dStatus || 'Open';
-            var opts = ['Open','Ask Question If Needed','Review Complete']
-              .map(function(o){ return '<option value="'+o+'"'+(cur===o?' selected':'')+'>'+o+'</option>'; }).join('');
-            d4dStatusCell = '<div style="font-size:9px;font-weight:800;color:var(--text4);text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px">D4D Status</div>'
-              +'<select onchange="setD4dStatus('+l.id+',this.value)" style="font-size:12px;padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg2,#fff);'
-              +(cur==='Ask Question If Needed'?'color:#b45309;font-weight:700;border-color:#fcd34d':(cur==='Review Complete'?'color:#16a34a;font-weight:700;border-color:#86efac':''))+'">'+opts+'</select>';
-          } else {
-            d4dStatusCell = statusBadge(status);
-          }
-          return '<tr'+(isHot?' style="background:#fef2f2"':'')+'>'
-            +'<td onclick="'+openFn+'" style="cursor:pointer'+(isHot?';border-left:3px solid #dc2626':'')+'"><div class="address-cell">'+typeTag+titleHtml+'</div></td>'
+          return '<tr'+(isHot?' class="hot-row"':'')+'>'
+            +'<td onclick="'+openFn+'" style="cursor:pointer"><div class="address-cell">'+typeTag+titleHtml+'</div></td>'
             +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
             +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
             +'<td>'+note+'</td>'
             +'<td><span class="money-val">'+formatMoney(offer)+'</span></td>'
             +'<td><span class="arv-val">'+formatMoney(l.arv)+'</span></td>'
             +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
-            +'<td onclick="event.stopPropagation()">'+d4dStatusCell+'</td>'
+            +'<td>'+statusBadge(status)+'</td>'
             +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
               +hotBtn
               +'<button class="btn btn-secondary btn-sm" onclick="'+openFn+'">Open</button> '
@@ -4491,16 +4484,6 @@ async function toggleD4dHot(id){
   var l = leads.find(function(x){return x.id===id;});
   if(!l) return;
   l.d4dHot = !l.d4dHot;
-  save(); render();
-  var ok = await saveLeadToSupabase(l);
-  if(!ok) showToast('Cloud sync failed -- check your connection','error');
-}
-// "D4D Status" dropdown on a Review row. 'Review Complete' also finishes the review (drops it from the queue).
-async function setD4dStatus(id, val){
-  var l = leads.find(function(x){return x.id===id;});
-  if(!l) return;
-  l.d4dStatus = val;
-  if(val==='Review Complete'){ l.needsReview = false; l.status = 'Review Complete'; }
   save(); render();
   var ok = await saveLeadToSupabase(l);
   if(!ok) showToast('Cloud sync failed -- check your connection','error');
