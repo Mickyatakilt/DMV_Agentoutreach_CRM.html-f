@@ -3310,9 +3310,11 @@ function pbLeadRow(p){
     + '<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">&#9998;</button> <button class="btn btn-secondary btn-sm" title="Delete" onclick="deleteProbateLead('+p.id+')">&#128465;</button></td>'
   + '</tr>';
 }
-// Which state sections are collapsed (default: all OPEN so the leads are visible).
+// Which state sections are collapsed. DEFAULT: all CLOSED — a section only opens when its
+// header is clicked. pbStateClosed[st]===false means the user explicitly opened it.
 var pbStateClosed={};
-function pbToggleState(st){ pbStateClosed[st]=!pbStateClosed[st]; pbRenderArea(); }
+function pbStateIsClosed(st){ return pbStateClosed[st]!==false; } // undefined/true => closed
+function pbToggleState(st){ pbStateClosed[st] = (pbStateClosed[st]===false); pbRenderArea(); }
 // Grouped by STATE, then by scrape-date batch inside each state. Each batch shows
 // its workflow bar; click a batch header to reveal its leads.
 // Flat, cross-batch follow-up list (Follow-up chip). Soonest date first, with Add-to-Calendar per lead.
@@ -3435,7 +3437,7 @@ function pbRenderArea(){
   var states=Object.keys(stateKeys).sort(function(a,b){ return (stateTotal[b]-stateTotal[a]) || a.localeCompare(b); });
   var multi = states.length>1; // only show section chrome when more than one state is in view
   var html=states.map(function(st){
-    var bks=stateKeys[st], closed=multi && !!pbStateClosed[st] && !forceOpen;
+    var bks=stateKeys[st], closed=multi && pbStateIsClosed(st) && !forceOpen;
     var batchesHTML = closed ? '' : (
         '<div class="pb-tilegrid">'+bks.map(pbTileHTML).join('')+'</div>'
         + bks.filter(function(k){ return forceOpen||!!pbOpen[k]; }).map(pbDetailHTML).join('')
