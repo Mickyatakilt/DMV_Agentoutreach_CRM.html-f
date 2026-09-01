@@ -4413,9 +4413,8 @@ function buildTempScoreViewHTML(score){
 function renderReviewTab(){
   var items = leads.filter(function(l){ return !l.deleted && l.needsReview; }).map(function(l){ return {kind:'lead', l:l}; })
     .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview; }).map(function(t){ return {kind:'task', l:t}; }))
-    .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; })
-    // Hot-flagged leads float to the top so you can come back to them fast.
-    .sort(function(a,b){ return (b.l.d4dHot?1:0) - (a.l.d4dHot?1:0); });
+    .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
+    // Note: Hot rows stay in place (turn red where they are) — no reordering, so clicks never shift the list under you.
   var rows = items.length===0
     ? '<div class="empty"><div class="empty-icon">&#128269;</div><h3>Nothing needs review</h3></div>'
     : '<div class="table-container"><div class="table-wrap"><table>'
@@ -4444,7 +4443,7 @@ function renderReviewTab(){
                   ?'background:#fff;color:#dc2626;border:1px solid #fff'
                   :'background:none;color:#dc2626;border:1px solid #fca5a5')+'">&#128293; Hot</button>'
             : '';
-          return '<tr'+(isHot?' class="hot-row"':'')+'>'
+          return '<tr id="rrow-'+kind+'-'+l.id+'"'+(isHot?' class="hot-row"':'')+'>'
             +'<td onclick="'+openFn+'" style="cursor:pointer"><div class="address-cell">'+typeTag+titleHtml+'</div></td>'
             +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
             +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
@@ -4479,12 +4478,26 @@ async function sendToReview(kind, id){
   else { localStorage.setItem('crm_leads', JSON.stringify(leads)); render(); await saveLeadToSupabase(l); }
   showToast('Added to Review queue','success');
 }
-// 🔥 Hot toggle on a Review row — flags a lead to come back to (floats to top, row glows). Persists to cloud.
+// 🔥 Hot toggle on a Review row — flags a lead to come back to; the row turns red IN PLACE
+// (updated in the DOM, no full re-render) so the list never shifts under you. Persists to cloud.
 async function toggleD4dHot(id){
   var l = leads.find(function(x){return x.id===id;});
   if(!l) return;
   l.d4dHot = !l.d4dHot;
-  save(); render();
+  save();
+  var row = document.getElementById('rrow-lead-'+id);
+  if(row){
+    row.classList.toggle('hot-row', !!l.d4dHot);
+    var btn = row.querySelector('button[onclick*="toggleD4dHot"]');
+    if(btn){
+      btn.title = l.d4dHot ? 'Hot — click to un-flag' : 'Mark Hot to come back to this lead';
+      btn.style.cssText = 'margin-right:6px;font-weight:800;' + (l.d4dHot
+        ? 'background:#fff;color:#dc2626;border:1px solid #fff'
+        : 'background:none;color:#dc2626;border:1px solid #fca5a5');
+    }
+  } else {
+    render(); // fallback if the row isn't on screen
+  }
   var ok = await saveLeadToSupabase(l);
   if(!ok) showToast('Cloud sync failed -- check your connection','error');
 }
