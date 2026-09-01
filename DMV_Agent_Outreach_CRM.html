@@ -4416,6 +4416,11 @@ function renderReviewTab(){
           var l=it.l, kind=it.kind;
           var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
           var title = kind==='task' ? (l.location||l.name||'Untitled') : (l.address||l.name||'Untitled');
+          // D4D auto-scan / estate leads: make the address a Google Maps link (new tab).
+          var isD4D = kind==='lead' && l.leadSource==='D4D Auto-Scan';
+          var titleHtml = isD4D
+            ? '<a href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(l.address||title)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline">'+esc(title)+'</a>'
+            : esc(title);
           var offer = kind==='task' ? l.askingPrice : l.offer;
           var status = kind==='task' ? l.jvStatus : l.status;
           var sentBy = l.reviewSentBy ? esc(l.reviewSentBy) : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
@@ -4423,7 +4428,7 @@ function renderReviewTab(){
           var note = l.reviewNote ? '<div style="font-size:12px;max-width:240px;white-space:pre-wrap;color:var(--text2)">'+esc(l.reviewNote)+'</div>' : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
           return '<tr>'
-            +'<td onclick="'+openFn+'" style="cursor:pointer"><div class="address-cell">'+typeTag+esc(title)+'</div></td>'
+            +'<td onclick="'+openFn+'" style="cursor:pointer"><div class="address-cell">'+typeTag+titleHtml+'</div></td>'
             +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
             +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
             +'<td>'+note+'</td>'
