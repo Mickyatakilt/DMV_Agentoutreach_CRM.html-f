@@ -4577,24 +4577,29 @@ async function sendLeadToTask(id){
     reviewSentBy: l.reviewSentBy||'', reviewSentAt: l.reviewSentAt||'', reviewNote: l.reviewNote||'',
     shared:false, sharedAt:'', sharedWith:'', deleted:false, deletedAt:'', needsReview:false
   };
+  // CLOUD-FIRST: persist the Task to Supabase BEFORE removing the lead, so a failed sync can
+  // never make the lead vanish. If the cloud write fails, we abort and leave the lead in Review.
+  var okJV = await saveJVToSupabase(task);
+  if(!okJV){
+    showToast('Could not save the task to the cloud — lead kept in Review. Check your connection and try again.','error');
+    return;
+  }
   jvLeads.push(task);
   saveJV();
-  // Move the lead's checklist entries (crm_note_items) over to the new Task too.
+  // Move the lead's checklist entries (crm_note_items) over to the new Task too (best-effort).
   try {
     await sbFetch(NCI_PATH+'?entity_type=eq.lead&entity_id=eq.'+l.id, 'PATCH',
       { entity_type:'task', entity_id:newId });
     if(typeof nciCache!=='undefined'){ delete nciCache['lead:'+l.id]; delete nciCache['task:'+newId]; }
   } catch(e){ /* checklist migration is best-effort */ }
-  // Original lead leaves Review + Leads (soft-delete, recoverable from Trash).
+  // Task is safely in the cloud → now the original lead leaves Review + Leads (soft-delete).
   l.needsReview = false; l.deleted = true; l.deletedAt = new Date().toISOString();
   save();
+  var okL = await saveLeadToSupabase(l);
   if(typeof closeModal==='function' && document.querySelector('.modal-overlay')) closeModal();
   activeTab = 'jvleads';
   render();
-  showToast('Moved to Tasks','success');
-  var okJV = await saveJVToSupabase(task);
-  var okL = await saveLeadToSupabase(l);
-  if(!okJV || !okL) showToast('Cloud sync failed -- check your connection','error');
+  showToast(okL ? 'Moved to Tasks' : 'Moved to Tasks — the lead will finish syncing shortly','success');
 }
 
 function renderLeadsTab(){
@@ -5219,7 +5224,6 @@ function renderEditModal(){
         <div class="modal-footer">
           ${!isNew?'<button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>':''}
           ${!isNew?'<button class="btn btn-secondary btn-sm" onclick="sendToReview(\'lead\','+l.id+')">&#128203; Review</button>':''}
-          ${!isNew?'<button class="btn btn-sm" onclick="sendLeadToTask('+l.id+')" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button>':''}
           <button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,'lead',${isNew?'null':l.id})">&#128231; Send to Team</button>
           <button class="btn btn-secondary btn-sm" onclick="${isNew?'closeModal()':'renderDetailModal()'}">Cancel</button>
           <button class="btn btn-primary" onclick="saveLead()">&#128190; Save Lead</button>
@@ -5945,7 +5949,7 @@ function openJVDetail(id){
   var statusOpts=statuses.map(function(s){return '<option value="'+s+'" '+(l.jvStatus===s?'selected':'')+'>'+s+'</option>';}).join('');
   document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px"><div class="modal-header"><div><div class="modal-title">'+esc(l.name||'JV Lead')+'</div><div class="modal-subtitle">'+scoreBadgeHTML(l.score)+' &middot; '+esc(l.location||l.address||'')+sentIndicatorHTML(l)+'</div>'+(l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body">'
     +'<div class="form-section"><div class="detail-grid">'
-    +'<div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">'+(l.phone?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':esc(l.phone||''))+'</span></div>'
+    +'<div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">'+(l.phone?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':esc(l.phone||''))+(l.location?' <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="crmFindNumber('+l.id+')" title="Find the first wireless number for this address (needs US VPN)">&#128269; Find #</button>':'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Asking Price</span><span class="detail-val" style="color:var(--accent);font-weight:700">'+esc(l.askingPrice||'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">ARV</span><span class="detail-val" style="color:var(--green);font-weight:700">'+esc(l.arv||'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Profit Est</span><span class="detail-val">'+esc(l.profitEst||'')+'</span></div>'
@@ -5967,6 +5971,40 @@ function openJVDetail(id){
     +'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
   nciMount('task', l.id);
   mountGhlSms('task', l.id);
+}
+// ---- Find # (skip trace via the "CRM Find Number" browser extension) --------
+function crmFindNumber(id){
+  var l=jvLeads.find(function(x){return x.id===id;});
+  if(!l) return;
+  if(!l.location){ showToast('Add an address to this lead first','error'); return; }
+  // Tell the extension which lead + address we want a wireless number for.
+  window.postMessage({__fn:'CRM_TO_EXT',type:'CRM_FIND_NUMBER',leadId:id,name:l.name||'',address:l.location||''},'*');
+  // Open FastPeopleSearch (user gesture). Homepage is safest — the extension fills the form.
+  window.open('https://www.fastpeoplesearch.com/','_blank');
+  showToast('🌐 Turn ON US VPN (Proton → United States), then Search on the new tab — I\'ll grab the first cell number','success');
+}
+// Bind the result listener once.
+if(!window.__crmFindNumberBound){
+  window.__crmFindNumberBound=true;
+  window.addEventListener('message',function(e){
+    if(!e.data||e.data.__fn!=='EXT_TO_CRM') return;
+    if(e.data.type!=='FIND_NUMBER_RESULT') return;
+    var l=jvLeads.find(function(x){return x.id===e.data.leadId;});
+    if(!l) return;
+    if(e.data.found && e.data.phone){
+      l.phone=e.data.phone;
+      if(!l.activityLog) l.activityLog=[];
+      l.activityLog.push({type:'Skip Trace',by:'Find #',at:new Date().toISOString(),note:'Found wireless '+e.data.phone+(e.data.carrier?(' ('+e.data.carrier+')'):'')});
+      saveJV();
+      var mc=document.getElementById('modal-container');
+      if(mc && mc.innerHTML.indexOf('modal-overlay')!==-1) openJVDetail(l.id);
+      renderJVLeadsTab && renderJVLeadsTab();
+      showToast('📱 Found cell: '+e.data.phone,'success');
+      saveJVToSupabase(l);
+    } else {
+      showToast('No wireless number found — try another match on FastPeopleSearch','warning');
+    }
+  });
 }
 async function saveJVDetail(id){
   var l=jvLeads.find(function(x){return x.id===id;});
