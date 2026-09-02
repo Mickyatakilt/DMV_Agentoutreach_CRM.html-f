@@ -4455,6 +4455,7 @@ function renderReviewTab(){
             +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
               +hotBtn
               +'<button class="btn btn-secondary btn-sm" onclick="'+openFn+'">Open</button> '
+              +(kind==='lead' ? '<button class="btn btn-sm" onclick="sendLeadToTask('+l.id+')" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button> ' : '')
               +'<button class="btn btn-green btn-sm" onclick="completeReview(\''+kind+'\','+l.id+')">&#9989; Complete</button> '
               +'<button class="btn btn-danger btn-sm" onclick="removeFromReview(\''+kind+'\','+l.id+')">Remove</button>'
             +'</td>'
@@ -4532,6 +4533,50 @@ function removeFromReview(kind, id){
   if(kind==='task'){ saveJV(); render(); saveJVToSupabase(l).then(function(ok){ if(!ok) showToast('Cloud sync failed -- check your connection','error'); }); return; }
   save(); render();
   saveLeadToSupabase(l).then(function(ok){ if(!ok) showToast('Cloud sync failed -- check your connection','error'); });
+}
+// Move a DMV/D4D lead into the Tasks tab. Builds a Task (jvLead) from the lead, then removes the
+// original lead (soft-delete) so it leaves Review AND the Leads list -- it now lives only as a Task.
+// Manual only: fires when the user clicks "Send to Task" (Review row or the lead's edit view).
+async function sendLeadToTask(id){
+  var l = leads.find(function(x){return x.id===id;});
+  if(!l){ showToast('Lead not found','error'); return; }
+  if(!confirm('Send this lead to Tasks?\n\n'+(l.address||l.name||'Untitled')
+    +'\n\nIt moves out of Review and the Leads list, and appears in the Tasks tab.')) return;
+  var maxId = jvLeads.length ? Math.max.apply(null, jvLeads.map(function(x){return x.id;})) : 0;
+  var isHot = l.d4dHot || String(l.score||'').toLowerCase()==='hot';
+  var task = {
+    id: maxId + 1,
+    name: l.name || l.ownerName || '',
+    phone: l.phone || '',
+    score: isHot ? 'Hot' : (l.score || ''),
+    notes: l.notes || '',
+    fbLink: l.listingLink || '',
+    sourceGroup: l.source || l.leadSource || '',
+    location: l.address || l.location || '',
+    askingPrice: l.offer || '',
+    arv: l.arv || '',
+    profitEst: '',
+    followUpDate: l.followUpDate || '',
+    ghlContactId: l.ghlContactId || '',
+    jvStatus: '',
+    dateAdded: new Date().toISOString().slice(0,10),
+    activityLog: (l.activityLog||[]).concat([{ at:new Date().toISOString(),
+      by:(currentUser && currentUser.name) || 'Me', note:'Moved from Review to Tasks', type:'Moved to Task' }]),
+    beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
+    shared:false, sharedAt:'', sharedWith:'', deleted:false, deletedAt:'', needsReview:false
+  };
+  jvLeads.push(task);
+  saveJV();
+  // Original lead leaves Review + Leads (soft-delete, recoverable from Trash).
+  l.needsReview = false; l.deleted = true; l.deletedAt = new Date().toISOString();
+  save();
+  if(typeof closeModal==='function' && document.querySelector('.modal-overlay')) closeModal();
+  activeTab = 'jvleads';
+  render();
+  showToast('Moved to Tasks','success');
+  var okJV = await saveJVToSupabase(task);
+  var okL = await saveLeadToSupabase(l);
+  if(!okJV || !okL) showToast('Cloud sync failed -- check your connection','error');
 }
 
 function renderLeadsTab(){
@@ -5155,6 +5200,7 @@ function renderEditModal(){
         <div class="modal-footer">
           ${!isNew?'<button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>':''}
           ${!isNew?'<button class="btn btn-secondary btn-sm" onclick="sendToReview(\'lead\','+l.id+')">&#128203; Review</button>':''}
+          ${!isNew?'<button class="btn btn-sm" onclick="sendLeadToTask('+l.id+')" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button>':''}
           <button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,'lead',${isNew?'null':l.id})">&#128231; Send to Team</button>
           <button class="btn btn-secondary btn-sm" onclick="${isNew?'closeModal()':'renderDetailModal()'}">Cancel</button>
           <button class="btn btn-primary" onclick="saveLead()">&#128190; Save Lead</button>
