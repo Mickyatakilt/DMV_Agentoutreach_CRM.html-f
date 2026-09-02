@@ -1388,12 +1388,17 @@ function saveStatCustomizer(){
 }
 
 function getDropdowns() {
-  return JSON.parse(localStorage.getItem('crm_dropdowns') || 'null') || {
+  var d = JSON.parse(localStorage.getItem('crm_dropdowns') || 'null') || {
     statuses: ['Sold','Pending','Offer Rejected','Offer Accepted','Offer Sent','Counter Offer','Pass','Foreclosure','Off-Market'],
     marketingTypes: ['Text','Text Blast','Email','Follow Up Text','Follow Up Text Sent','Following Up','Off-Market','Foreclosure','Pass','Rejected','Sold'],
     months: ['November','December','January','February','March','April'],
     sources: ['MLS','Zillow','PropWire','Other']
   };
+  // Always offer Driving for Dollars as a selectable Lead Source (even if the user
+  // has a customized/older stored dropdown set that predates it).
+  d.sources = d.sources || [];
+  if(d.sources.indexOf('Driving for Dollars')===-1) d.sources.push('Driving for Dollars');
+  return d;
 }
 function saveDropdowns(d) { localStorage.setItem('crm_dropdowns', JSON.stringify(d)); }
 
@@ -5118,6 +5123,7 @@ function renderDetailModal(){
           <div class="detail-section"><div class="detail-section-title">Links</div>
             <div style="display:flex;flex-direction:column;gap:6px">
               ${l.address?'<div><span class="detail-label">Zillow</span>&nbsp;&nbsp;<a href="#" onclick="event.preventDefault();openZillow();" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="#" onclick="event.preventDefault();openRedfin();" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}
+              ${isD4DLead(l)&&l.address?'<div><span class="detail-label">Maps</span>&nbsp;&nbsp;<a href="'+buildMapsUrl(l.address)+'" target="_blank" class="detail-link">&#128506;&#65039; View on Google Maps &#8599;</a></div>':''}
               ${l.webLink&&l.webLink.startsWith('http')?'<div><span class="detail-label">Listing</span>&nbsp;&nbsp;<a href="'+esc(l.webLink)+'" target="_blank" class="detail-link">View Listing &#8599;</a></div>':'<div style="color:var(--text4);font-size:12px">No listing link</div>'}
               ${l.comps&&l.comps.startsWith('http')?'<div><span class="detail-label">Comps</span>&nbsp;&nbsp;<a href="'+esc(l.comps.split(' ')[0])+'" target="_blank" class="detail-link">View Comps &#8599;</a></div>':'<div style="color:var(--text4);font-size:12px">No comp link</div>'}
             </div>
@@ -5253,6 +5259,17 @@ function buildRedfinUrl(address){
   var addr = (address||'').trim();
   if(!addr) return '';
   return 'https://www.google.com/search?q=' + encodeURIComponent('site:redfin.com ' + addr);
+}
+function buildMapsUrl(address){
+  var addr=(address||'').trim();
+  if(!addr) return '';
+  return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(addr);
+}
+// A lead/task originated from the Driving-for-Dollars scanner. Works for both leads
+// (leadSource) and tasks that were sent from Review (sourceGroup / reviewSentBy).
+function isD4DLead(l){
+  if(!l) return false;
+  return l.leadSource==='D4D Auto-Scan' || l.sourceGroup==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan';
 }
 function toggleZillowLink(address){
   var wrap = document.getElementById('zillow-link-wrap');
@@ -5956,7 +5973,9 @@ function openJVDetail(id){
     +'<div class="detail-item"><span class="detail-label">Source</span><span class="detail-val">'+esc(l.sourceGroup||'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Date Added</span><span class="detail-val">'+esc(l.dateAdded||'')+'</span></div>'
     +'</div></div>'
-    +(l.fbLink?'<div class="detail-section"><a href="'+esc(l.fbLink)+'" target="_blank" class="btn btn-secondary btn-sm">View Facebook Post &#8599;</a></div>':'')
+    +(isD4DLead(l)
+        ? (l.location?'<div class="detail-section"><a href="'+buildMapsUrl(l.location)+'" target="_blank" class="btn btn-secondary btn-sm">&#128506;&#65039; View on Google Maps &#8599;</a></div>':'')
+        : (l.fbLink?'<div class="detail-section"><a href="'+esc(l.fbLink)+'" target="_blank" class="btn btn-secondary btn-sm">View Facebook Post &#8599;</a></div>':''))
     +'<div class="form-section"><div class="form-section-title">Status &amp; Follow-Up</div>'
     +'<div class="form-grid"><div class="form-field"><label class="form-label">Status</label><select id="jv-detail-status" class="form-select"><option value="">&#8212; Select &#8212;</option>'+statusOpts+'</select></div>'
     +'<div class="form-field"><label class="form-label">&#128197; Follow-Up Date</label><input type="date" id="jv-fu-date" class="form-input" value="'+(l.followUpDate||'')+'"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared(\'jv-fu-date\',\''+esc(l.name||'Task')+'\');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div></div>'
@@ -7319,7 +7338,9 @@ function renderSharedTaskView(l) {
               <div class="detail-item"><span class="detail-label">ARV</span><span class="detail-val" style="color:var(--green);font-weight:700">${esc(l.arv)||''}</span></div>
             </div>
           </div>
-          ${l.fbLink?'<div class="detail-section"><a href="'+esc(l.fbLink)+'" target="_blank" class="detail-link">View Facebook Post &#8599;</a></div>':''}
+          ${isD4DLead(l)
+              ? (l.location?'<div class="detail-section"><a href="'+buildMapsUrl(l.location)+'" target="_blank" class="detail-link">&#128506;&#65039; View on Google Maps &#8599;</a></div>':'')
+              : (l.fbLink?'<div class="detail-section"><a href="'+esc(l.fbLink)+'" target="_blank" class="detail-link">View Facebook Post &#8599;</a></div>':'')}
           <div class="form-section"><div class="form-section-title">Update This Lead</div>
             <div class="form-grid">
               <div class="form-field"><label class="form-label">Status</label><select id="shared-jv-status" class="form-select"><option value="">&#8212; Select &#8212;</option>${statusOpts}</select></div>
