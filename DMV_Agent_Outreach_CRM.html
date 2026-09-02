@@ -4443,8 +4443,13 @@ function renderReviewTab(){
                   ?'background:#fff;color:#dc2626;border:1px solid #fff'
                   :'background:none;color:#dc2626;border:1px solid #fca5a5')+'">&#128293; Hot</button>'
             : '';
+          // Owner name (from D4D enrichment or a person lead) shown ABOVE the address, if we have one
+          // that isn't just the "D4D Lead — <addr>" placeholder or a duplicate of the address.
+          var ownerNm = (kind==='lead' && l.name) ? String(l.name).trim() : '';
+          var ownerLine = (ownerNm && !/^D4D Lead —/i.test(ownerNm) && ownerNm.toUpperCase() !== String(title).toUpperCase())
+            ? '<div style="font-weight:700;font-size:13px;color:var(--text1)">'+esc(ownerNm)+'</div>' : '';
           return '<tr id="rrow-'+kind+'-'+l.id+'"'+(isHot?' class="hot-row"':'')+'>'
-            +'<td onclick="'+openFn+'" style="cursor:pointer"><div class="address-cell">'+typeTag+titleHtml+'</div></td>'
+            +'<td onclick="'+openFn+'" style="cursor:pointer">'+ownerLine+'<div class="address-cell">'+typeTag+titleHtml+'</div></td>'
             +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
             +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
             +'<td>'+note+'</td>'
