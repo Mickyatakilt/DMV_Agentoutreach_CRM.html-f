@@ -4426,7 +4426,7 @@ function renderReviewTab(){
   var rows = items.length===0
     ? '<div class="empty"><div class="empty-icon">&#128269;</div><h3>Nothing needs review</h3></div>'
     : '<div class="table-container"><div class="table-wrap"><table>'
-      +'<thead><tr><th>Lead</th><th>Sent By</th><th>Sent</th><th>Review Note</th><th>Offer</th><th>ARV</th><th>Follow-Up</th><th>Status</th><th></th></tr></thead><tbody>'
+      +'<thead><tr><th style="width:30px;text-align:center"><input type="checkbox" title="Select all" onclick="rvToggleAll(this.checked)"></th><th>Lead</th><th>Sent By</th><th>Sent</th><th>Review Note</th><th>Offer</th><th>ARV</th><th>Follow-Up</th><th>Status</th><th></th></tr></thead><tbody>'
       + items.map(function(it){
           var l=it.l, kind=it.kind;
           var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
@@ -4457,6 +4457,7 @@ function renderReviewTab(){
           var ownerLine = (ownerNm && !/^D4D Lead —/i.test(ownerNm) && ownerNm.toUpperCase() !== String(title).toUpperCase())
             ? '<div style="font-weight:700;font-size:13px;color:var(--text1)">'+esc(ownerNm)+'</div>' : '';
           return '<tr id="rrow-'+kind+'-'+l.id+'"'+(isHot?' class="hot-row"':'')+'>'
+            +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>'
             +'<td onclick="'+openFn+'" style="cursor:pointer">'+ownerLine+'<div class="address-cell">'+typeTag+titleHtml+'</div></td>'
             +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
             +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
@@ -4475,11 +4476,130 @@ function renderReviewTab(){
             +'</tr>';
         }).join('')
       +'</tbody></table></div></div>';
+  var bulkBarHtml = items.length===0 ? '' :
+    '<div id="rv-bulkbar" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:10px 14px;margin-bottom:12px">'
+      +'<span id="rv-bulk-count" style="font-size:13px;font-weight:600;color:var(--text2)">0 selected</span>'
+      +'<button id="rv-skiptrace-btn" class="btn btn-primary btn-sm" onclick="rvSkipTraceSelected()" disabled style="font-weight:700">&#128269; Find Numbers (Skip Trace)</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="rvClearSel()">Clear</button>'
+      +'<span id="rv-skip-progress" style="font-size:12px;color:var(--text3)"></span>'
+    +'</div>';
   document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
     +'<div style="margin-bottom:16px"><h2 style="font-size:16px;font-weight:700">&#128269; Review Queue</h2>'
     +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Leads flagged Needs Review (by the team or by a recipient) or added here when sent out. Sent By / Sent shows who flagged it and when; Review Note is their reason. This is a work queue -- leads stay in their database either way.</p></div>'
-    +rows+'</div>';
+    +bulkBarHtml+rows+'</div>';
+  rvUpdateBar();
 }
+// ============================================================================
+// REVIEW-QUEUE SKIP TRACE — select leads (single/multiple) and send them off to
+// the free Radaris skip-trace add-on, which fills in the best WIRELESS number.
+// Selection is keyed "kind:id" because Review mixes DMV/D4D leads and Tasks.
+// ============================================================================
+var reviewSel = new Set();
+function rvKey(kind,id){ return kind+':'+id; }
+function rvToggle(kind,id,checked){
+  var k=rvKey(kind,id);
+  if(checked) reviewSel.add(k); else reviewSel.delete(k);
+  rvUpdateBar();
+}
+// Select/clear every checkbox currently shown (works off the live DOM so it
+// respects any filtering, and never triggers a full re-render / scroll jump).
+function rvToggleAll(checked){
+  document.querySelectorAll('.rv-cb').forEach(function(cb){
+    cb.checked=checked;
+    var k=rvKey(cb.getAttribute('data-kind'), +cb.getAttribute('data-id'));
+    if(checked) reviewSel.add(k); else reviewSel.delete(k);
+  });
+  rvUpdateBar();
+}
+function rvClearSel(){
+  reviewSel.clear();
+  document.querySelectorAll('.rv-cb').forEach(function(cb){ cb.checked=false; });
+  rvUpdateBar();
+}
+// Update the count + enable/disable the button, without re-rendering the list.
+function rvUpdateBar(){
+  var n=reviewSel.size;
+  var c=document.getElementById('rv-bulk-count'); if(c) c.textContent=n+' selected';
+  var b=document.getElementById('rv-skiptrace-btn'); if(b) b.disabled=(n===0);
+}
+// Fire the skip trace: gather the selected leads' name+address and hand them to
+// the browser add-on via postMessage. If no add-on answers, tell the user how to
+// install it (nothing is sent anywhere without it — this is all local/free).
+var __rvSkip = null;
+function rvSkipTraceSelected(){
+  var picks=[];
+  reviewSel.forEach(function(k){
+    var p=k.split(':'), kind=p[0], id=+p[1];
+    var arr=kind==='task'?jvLeads:leads;
+    var l=arr.find(function(x){return x.id===id;});
+    if(!l) return;
+    var address = kind==='task' ? (l.location||'') : (l.address||'');
+    var nm = (l.name||'').trim();
+    if(/^D4D Lead —/i.test(nm)) nm='';               // strip placeholder owner names
+    picks.push({ id:id, kind:kind, name:nm, address:address });
+  });
+  if(!picks.length){ showToast('Select at least one lead first','error'); return; }
+  var missing = picks.filter(function(p){ return !p.address; }).length;
+  if(missing===picks.length){ showToast('These leads have no address to trace','error'); return; }
+
+  __rvSkip = { total:picks.length, done:0, found:0, ack:false, jobId:Date.now() };
+  __rvSetProgress('Sending '+picks.length+' lead'+(picks.length!==1?'s':'')+' to skip trace…');
+  var btn=document.getElementById('rv-skiptrace-btn'); if(btn) btn.disabled=true;
+
+  window.postMessage({ source:'CRM_SKIPTRACE_REQUEST', jobId:__rvSkip.jobId, leads:picks }, '*');
+
+  // If the add-on never acknowledges, it isn't installed — guide the user.
+  setTimeout(function(){
+    if(__rvSkip && !__rvSkip.ack){
+      __rvSetProgress('');
+      var btn2=document.getElementById('rv-skiptrace-btn'); if(btn2) btn2.disabled=(reviewSel.size===0);
+      showToast('Skip-trace add-on not detected. Install the "Find Number" browser extension, then (if abroad) set Proton VPN to a US server and try again.','error');
+      __rvSkip=null;
+    }
+  }, 2000);
+}
+function __rvSetProgress(txt){
+  var p=document.getElementById('rv-skip-progress'); if(p) p.textContent=txt;
+}
+// Results stream back one lead at a time from the add-on.
+function __rvHandleResult(d){
+  if(!__rvSkip) return;
+  var arr = d.kind==='task' ? jvLeads : leads;
+  var l = arr.find(function(x){return x.id===d.leadId;});
+  if(l && d.found && d.phone){
+    l.phone = d.phone;
+    if(d.carrier || d.lineType){
+      var tag = 'Skip trace: '+d.phone+(d.lineType?(' ('+d.lineType+(d.carrier?', '+d.carrier:'')+')'):'')+' — '+new Date().toLocaleDateString();
+      l.notes = l.notes ? (l.notes+'\n'+tag) : tag;
+    }
+    if(d.kind==='task'){ saveJV(); saveJVToSupabase(l); }
+    else { save(); saveLeadToSupabase(l); }
+    __rvSkip.found++;
+  }
+  __rvSkip.done++;
+  __rvSetProgress('Tracing '+__rvSkip.done+' of '+__rvSkip.total+'…  ('+__rvSkip.found+' found)');
+}
+function __rvFinish(){
+  if(!__rvSkip) return;
+  var f=__rvSkip.found, t=__rvSkip.total;
+  showToast('Skip trace done: '+f+' of '+t+' number'+(t!==1?'s':'')+' found'+(f<t?', '+(t-f)+' not found':''),'success');
+  __rvSkip=null;
+  reviewSel.clear();
+  renderReviewTab();
+}
+// One-time listener for messages from the add-on's content script.
+if(!window.__rvSkipListenerBound){
+  window.__rvSkipListenerBound=true;
+  window.addEventListener('message', function(ev){
+    if(ev.source!==window) return;              // only same-page (content script) messages
+    var d=ev.data||{};
+    if(!__rvSkip || d.jobId!==__rvSkip.jobId) return;
+    if(d.source==='CRM_SKIPTRACE_ACK'){ __rvSkip.ack=true; __rvSetProgress('Tracing 0 of '+__rvSkip.total+'…'); }
+    else if(d.source==='CRM_SKIPTRACE_RESULT'){ __rvHandleResult(d); }
+    else if(d.source==='CRM_SKIPTRACE_DONE'){ __rvFinish(); }
+  });
+}
+
 // Add a lead/task to the Review queue and stamp who sent it + when (used by the Review button on Send and the footer Review button).
 async function sendToReview(kind, id){
   var arr = kind==='task' ? jvLeads : leads;
