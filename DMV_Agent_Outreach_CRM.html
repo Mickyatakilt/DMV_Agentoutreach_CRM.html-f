@@ -5125,6 +5125,7 @@ function renderDetailModal(){
         <div class="modal-footer">
           <button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>
           <button class="btn btn-secondary btn-sm" onclick="sendToReview('lead',${l.id})">&#128203; Review</button>
+          <button class="btn btn-sm" onclick="sendLeadToTask(${l.id})" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button>
           <button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal('lead',${l.id})">&#128197; Schedule SMS</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,'lead',${l.id})">&#128231; Send to Team</button>
           <button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button>
