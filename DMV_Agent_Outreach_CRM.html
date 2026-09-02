@@ -1598,7 +1598,7 @@ function normalizeAddr(a){return(a||'').toLowerCase().trim().replace(/  /g,' ').
 function findDup(addr,excludeId){const n=normalizeAddr(addr); if(!n) return null; return leads.find(l=>!l.deleted&&l.id!==excludeId&&normalizeAddr(l.address)===n)||null;}
 function getNextId(){return leads.length?Math.max(...leads.map(l=>l.id))+1:1;}
 function getFUCounts(){
-  const w=leads.filter(l=>!l.deleted&&l.followUpDate&&l.nationwide!=='Yes').concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
+  const w=leads.filter(l=>!l.deleted&&l.followUpDate&&l.nationwide!=='Yes'&&l.leadSource!=='D4D Auto-Scan').concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
   return {overdue:w.filter(l=>getFUStatus(l.followUpDate)==='overdue').length,today:w.filter(l=>getFUStatus(l.followUpDate)==='today').length,soon:w.filter(l=>getFUStatus(l.followUpDate)==='soon').length,total:w.length};
 }
 function getNWFUCounts(){
@@ -1608,6 +1608,9 @@ function getNWFUCounts(){
 function getFiltered(){
   let data=leads.filter(l=>{
     if(l.deleted) return false;
+    // D4D auto-scan leads live ONLY in the Review queue — never in the DMV Leads list.
+    // They enter the working pipeline only when the user clicks "Send to Task" (→ Tasks tab).
+    if(l.leadSource==='D4D Auto-Scan') return false;
     // When searching, include nationwide leads too
     if(l.nationwide==='Yes' && !filters.search) return false;
     const q=filters.search.toLowerCase();
@@ -1638,7 +1641,7 @@ function getFiltered(){
   });
   return data;
 }
-function getStats(){const activeLeads=leads.filter(l=>!l.deleted);return {total:activeLeads.length,...Object.fromEntries(getDropdowns().statuses.map(s=>[s,activeLeads.filter(l=>l.status===s).length]))};}
+function getStats(){const activeLeads=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan');return {total:activeLeads.length,...Object.fromEntries(getDropdowns().statuses.map(s=>[s,activeLeads.filter(l=>l.status===s).length]))};}
 
 async function syncLeadToSheet(lead){
   if(!APPS_SCRIPT_URL) return;
@@ -4379,7 +4382,7 @@ function buildTempScoreViewHTML(score){
   var typeBg = {DMV:'#eff6ff',Nationwide:'#e0f2fe',Task:'#ede9fe'};
   var items = [];
   leads.forEach(function(l){
-    if(!l.deleted && l.score===score){
+    if(!l.deleted && l.leadSource!=='D4D Auto-Scan' && l.score===score){
       items.push({id:l.id,type:l.nationwide==='Yes'?'Nationwide':'DMV',isTask:false,label:l.address||l.name||'Untitled',offer:l.offer,arv:l.arv,followUpDate:l.followUpDate,status:l.status});
     }
   });
@@ -4548,30 +4551,40 @@ async function sendLeadToTask(id){
   if(!confirm('Send this lead to Tasks?\n\n'+(l.address||l.name||'Untitled')
     +'\n\nIt moves out of Review and the Leads list, and appears in the Tasks tab.')) return;
   var maxId = jvLeads.length ? Math.max.apply(null, jvLeads.map(function(x){return x.id;})) : 0;
-  var isHot = l.d4dHot || String(l.score||'').toLowerCase()==='hot';
+  var newId = maxId + 1;
+  // Carry EVERYTHING the user entered on the lead onto the Task (follow-up, offer, ARV, notes,
+  // phone, temperature, beds/baths/sqft, recipient notes, activity history, GHL link).
   var task = {
-    id: maxId + 1,
+    id: newId,
     name: l.name || l.ownerName || '',
     phone: l.phone || '',
-    score: isHot ? 'Hot' : (l.score || ''),
+    score: l.score || '',                              // carry the user-set temperature as-is (blank stays blank)
     notes: l.notes || '',
-    fbLink: l.listingLink || '',
-    sourceGroup: l.source || l.leadSource || '',
-    location: l.address || l.location || '',
+    fbLink: l.webLink || l.listingLink || '',          // listing / street-view / web link
+    sourceGroup: l.leadSource || l.source || '',
+    location: l.address || l.location || '',           // full "street, City, ST ZIP"
     askingPrice: l.offer || '',
     arv: l.arv || '',
     profitEst: '',
-    followUpDate: l.followUpDate || '',
+    followUpDate: l.followUpDate || '',                // ← follow-up date goes with it
     ghlContactId: l.ghlContactId || '',
     jvStatus: '',
     dateAdded: new Date().toISOString().slice(0,10),
     activityLog: (l.activityLog||[]).concat([{ at:new Date().toISOString(),
       by:(currentUser && currentUser.name) || 'Me', note:'Moved from Review to Tasks', type:'Moved to Task' }]),
+    recipientNotes: l.recipientNotes || [],
     beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
+    reviewSentBy: l.reviewSentBy||'', reviewSentAt: l.reviewSentAt||'', reviewNote: l.reviewNote||'',
     shared:false, sharedAt:'', sharedWith:'', deleted:false, deletedAt:'', needsReview:false
   };
   jvLeads.push(task);
   saveJV();
+  // Move the lead's checklist entries (crm_note_items) over to the new Task too.
+  try {
+    await sbFetch(NCI_PATH+'?entity_type=eq.lead&entity_id=eq.'+l.id, 'PATCH',
+      { entity_type:'task', entity_id:newId });
+    if(typeof nciCache!=='undefined'){ delete nciCache['lead:'+l.id]; delete nciCache['task:'+newId]; }
+  } catch(e){ /* checklist migration is best-effort */ }
   // Original lead leaves Review + Leads (soft-delete, recoverable from Trash).
   l.needsReview = false; l.deleted = true; l.deletedAt = new Date().toISOString();
   save();
@@ -4622,9 +4635,9 @@ function renderLeadsTab(){
   const overdueChip=`<div class="stat-card" onclick="setTab('followups')" style="${allOverdue>0?'border-color:#fca5a5;background:#fee2e2;':''}"><div class="stat-dot" style="background:#dc2626"></div><div><div class="stat-num" style="${allOverdue>0?'color:#dc2626':''}">${allOverdue}</div><div class="stat-label" style="${allOverdue>0?'color:#dc2626':''}">Overdue</div></div></div>`;
   const fuChip=`<div class="stat-card" onclick="setTab('followups')" style="${allToday>0?'border-color:#fcd34d;background:#fef3c7;':'border-color:#5eead4;background:#f0fdfa;'}"><div class="stat-dot" style="background:${allToday>0?'#b45309':'#0d9488'}"></div><div><div class="stat-num" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?allToday:allFUCount}</div><div class="stat-label" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?'Due Today':'Follow-Ups'}</div></div></div>`;
 
-  const hot=leads.filter(l=>!l.deleted&&l.score==='Hot').length + jvLeads.filter(l=>!l.deleted&&l.score==='Hot').length;
-  const warm=leads.filter(l=>!l.deleted&&l.score==='Warm').length + jvLeads.filter(l=>!l.deleted&&l.score==='Warm').length;
-  const cold=leads.filter(l=>!l.deleted&&l.score==='Cold').length + jvLeads.filter(l=>!l.deleted&&l.score==='Cold').length;
+  const hot=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan'&&l.score==='Hot').length + jvLeads.filter(l=>!l.deleted&&l.score==='Hot').length;
+  const warm=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan'&&l.score==='Warm').length + jvLeads.filter(l=>!l.deleted&&l.score==='Warm').length;
+  const cold=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan'&&l.score==='Cold').length + jvLeads.filter(l=>!l.deleted&&l.score==='Cold').length;
   const scoreChip=`<div class="stat-card" style="cursor:default"><div style="display:flex;gap:10px;align-items:center;font-size:12px;font-weight:700">
       <span onclick="event.stopPropagation();tempScoreView='Hot';renderLeadsTab()" style="cursor:pointer;color:#dc2626">&#128308; ${hot} Hot</span>
       <span onclick="event.stopPropagation();tempScoreView='Warm';renderLeadsTab()" style="cursor:pointer;color:#b45309">&#128993; ${warm} Warm</span>
