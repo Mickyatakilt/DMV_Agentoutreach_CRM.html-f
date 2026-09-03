@@ -4568,11 +4568,12 @@ function rvFmtPhone(raw){
   if(d.length!==10) return String(raw||'').trim();
   return '('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);
 }
-// Best WIRELESS number from a Tracerfy result row.
+// Best WIRELESS number from a Tracerfy result row. primary_phone is Tracerfy's
+// rank-1 number, so prefer it when it's a mobile; otherwise take the first Mobile.
 function rvBestWireless(row){
-  if(row.mobiles && row.mobiles.length) return row.mobiles[0];
   var t=(row.primary_phone_type||'').toLowerCase();
   if(row.primary_phone && /mobile|wireless|cell/.test(t)) return row.primary_phone;
+  if(row.mobiles && row.mobiles.length) return row.mobiles[0];
   return '';
 }
 async function __rvFetchFn(payload){
@@ -4584,6 +4585,18 @@ async function __rvFetchFn(payload){
   return r.json().catch(function(){ return {}; });
 }
 function rvSleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+
+// Address match key: "<house#> <first street word> <state>" (lowercased). Used to
+// match Tracerfy result rows back to leads for BOTH trace types (advanced traces
+// have no input name, so we can't match on name).
+function rvAddrKey(street,state){
+  var s=String(street||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+  var num=(s.match(/\d+/)||[''])[0];
+  var word='';
+  var toks=s.split(' ');
+  for(var i=0;i<toks.length;i++){ if(/[a-z]/.test(toks[i])){ word=toks[i]; break; } }
+  return num+' '+word+' '+String(state||'').toLowerCase().trim();
+}
 
 async function rvSkipTraceSelected(){
   if(__rvSkip){ showToast('A skip trace is already running','error'); return; }
@@ -4601,47 +4614,66 @@ async function rvSkipTraceSelected(){
       address:pa.street, city:pa.city, state:pa.state, zip:pa.zip });
   });
   if(!picks.length){ showToast('Select at least one lead first','error'); return; }
-  var traceable=picks.filter(function(p){ return p.address && p.first_name && p.last_name; });
-  if(!traceable.length){ showToast('Selected leads need an owner name + street address to trace','error'); return; }
+  // Need at least a street address. Named leads -> normal (1 credit); address-only
+  // leads -> advanced (2 credits, Tracerfy finds the owner).
+  var withAddr=picks.filter(function(p){ return p.address && p.state; });
+  if(!withAddr.length){ showToast('Selected leads need a street address (with city/state) to trace','error'); return; }
+  var named=withAddr.filter(function(p){ return p.first_name && p.last_name; });
+  var addrOnly=withAddr.filter(function(p){ return !(p.first_name && p.last_name); });
 
-  __rvSkip = { total:traceable.length, found:0 };
+  __rvSkip = { total:withAddr.length };
   var btn=document.getElementById('rv-skiptrace-btn'); if(btn) btn.disabled=true;
-  __rvSetProgress('Submitting '+traceable.length+' lead'+(traceable.length!==1?'s':'')+'…');
+  __rvSetProgress('Submitting '+withAddr.length+' lead'+(withAddr.length!==1?'s':'')+'…');
+
+  function resetBtn(){ __rvSkip=null; if(btn) btn.disabled=(reviewSel.size===0); __rvSetProgress(''); }
 
   try {
-    var sub=await __rvFetchFn({ action:'submit', leads:traceable });
-    if(!sub || !sub.queue_id){
-      var em=(sub && sub.detail && sub.detail.detail) || (sub && sub.error) || 'submit failed';
-      showToast('Skip trace failed: '+em,'error');
-      __rvSkip=null; if(btn) btn.disabled=(reviewSel.size===0); __rvSetProgress(''); return;
+    // Submit one queue per trace type present.
+    var jobs=[];
+    if(named.length) jobs.push({ trace_type:'normal', leads:named });
+    if(addrOnly.length) jobs.push({ trace_type:'advanced', leads:addrOnly });
+    var queueIds=[];
+    for(var j=0;j<jobs.length;j++){
+      var sub=await __rvFetchFn({ action:'submit', trace_type:jobs[j].trace_type, leads:jobs[j].leads });
+      if(!sub || !sub.queue_id){
+        var em=(sub && sub.detail && (sub.detail.detail||JSON.stringify(sub.detail))) || (sub && sub.error) || 'submit failed';
+        showToast('Skip trace failed: '+em,'error'); resetBtn(); return;
+      }
+      queueIds.push(sub.queue_id);
     }
-    // Poll until the bulk job finishes (~40s typical), up to ~4 min.
-    var rows=null;
-    for(var i=0;i<48;i++){
-      await rvSleep(5000);
-      __rvSetProgress('Finding numbers… ('+Math.min((i+1)*5,240)+'s)');
-      var res=await __rvFetchFn({ action:'result', queue_id:sub.queue_id });
-      if(res && res.pending===false && res.rows){ rows=res.rows; break; }
-    }
-    if(!rows){ showToast('Skip trace timed out — try again in a minute','error');
-      __rvSkip=null; if(btn) btn.disabled=(reviewSel.size===0); __rvSetProgress(''); return; }
 
-    // Match each returned row back to its lead (last name + street number) and
-    // fill the best wireless number. Leads with no cell on file are stamped so the
-    // Phone column can show "Number not found" (persisted via the notes column).
+    // Poll each queue until done (~40s typical), up to ~4 min, and merge rows.
+    var rows=[];
+    for(var qi=0; qi<queueIds.length; qi++){
+      var got=null;
+      for(var i=0;i<48;i++){
+        await rvSleep(5000);
+        __rvSetProgress('Finding numbers… ('+Math.min((i+1)*5,240)+'s)');
+        var res=await __rvFetchFn({ action:'result', queue_id:queueIds[qi] });
+        if(res && res.pending===false && res.rows){ got=res.rows; break; }
+      }
+      if(!got){ showToast('Skip trace timed out — try again in a minute','error'); resetBtn(); return; }
+      rows=rows.concat(got);
+    }
+
+    // Match each returned row back to its lead by address key, fill the best
+    // wireless number, and stamp leads with no cell so the Phone column shows
+    // "Number not found" (persisted via the notes column).
     var filled=0, savedLeads=false, savedTasks=false;
     var stamp=new Date().toLocaleDateString();
-    traceable.forEach(function(pk){
+    withAddr.forEach(function(pk){
       var arr=pk.kind==='task'?jvLeads:leads;
       var l=arr.find(function(x){return x.id===pk.id;});
       if(!l) return;
-      var row=rows.find(function(r){
-        return String(r.last_name||'').toLowerCase()===String(pk.last_name||'').toLowerCase()
-          && rvStreetNum(r.address)===rvStreetNum(pk.address);
-      });
+      var key=rvAddrKey(pk.address, pk.state);
+      var row=rows.find(function(r){ return rvAddrKey(r.address, r.state)===key; });
       var w=row?rvBestWireless(row):'';
       if(w){
         l.phone=rvFmtPhone(w);
+        // Advanced traces surface an owner name we didn't have — capture it.
+        if(row && row.first_name && (!l.name || /^D4D Lead —/i.test(l.name))){
+          l.name=(row.first_name+' '+row.last_name).trim();
+        }
         var tag='Skip trace: '+l.phone+' (wireless) — '+stamp;
         l.notes=l.notes?(l.notes+'\n'+tag):tag;
         filled++;
