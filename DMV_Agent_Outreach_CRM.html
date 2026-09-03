@@ -4542,7 +4542,7 @@ function rvSkipTraceSelected(){
   var missing = picks.filter(function(p){ return !p.address; }).length;
   if(missing===picks.length){ showToast('These leads have no address to trace','error'); return; }
 
-  __rvSkip = { total:picks.length, done:0, found:0, ack:false, jobId:Date.now() };
+  __rvSkip = { total:picks.length, done:0, found:0, ack:false, jobId:Date.now(), debugs:[] };
   __rvSetProgress('Sending '+picks.length+' lead'+(picks.length!==1?'s':'')+' to skip trace…');
   var btn=document.getElementById('rv-skiptrace-btn'); if(btn) btn.disabled=true;
 
@@ -4564,6 +4564,7 @@ function __rvSetProgress(txt){
 // Results stream back one lead at a time from the add-on.
 function __rvHandleResult(d){
   if(!__rvSkip) return;
+  if(d.debug){ __rvSkip.debugs.push({ leadId:d.leadId, found:d.found, debug:d.debug }); }
   var arr = d.kind==='task' ? jvLeads : leads;
   var l = arr.find(function(x){return x.id===d.leadId;});
   if(l && d.found && d.phone){
@@ -4583,6 +4584,14 @@ function __rvFinish(){
   if(!__rvSkip) return;
   var f=__rvSkip.found, t=__rvSkip.total;
   showToast('Skip trace done: '+f+' of '+t+' number'+(t!==1?'s':'')+' found'+(f<t?', '+(t-f)+' not found':''),'success');
+  // DEBUG: when nothing was found, surface the raw page diagnostics so they can
+  // be pasted back to fix the TruePeopleSearch selectors. Remove once working.
+  if(f===0 && __rvSkip.debugs && __rvSkip.debugs.length){
+    var blob=JSON.stringify(__rvSkip.debugs,null,2);
+    try{ window.prompt('Skip-trace debug (copy ALL of this and paste it back):', blob); }
+    catch(e){ alert(blob); }
+    try{ console.log('SKIPTRACE_DEBUG', blob); }catch(e){}
+  }
   __rvSkip=null;
   reviewSel.clear();
   renderReviewTab();
