@@ -4445,7 +4445,7 @@ function renderReviewTab(){
           var phoneHtml = l.phone
             ? '<a href="tel:'+esc(String(l.phone).replace(/[^\\d+]/g,''))+'" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;white-space:nowrap;font-weight:600">'+esc(l.phone)+'</a>'
             : (/Skip trace: no cell on file/.test(l.notes||'')
-                ? '<span style="color:#dc2626;font-size:11px;font-weight:600;white-space:nowrap">Number not found</span>'
+                ? '<span style="color:#dc2626;font-size:11px;font-weight:600;white-space:nowrap">Number Not Available</span>'
                 : '<span style="color:var(--text4);font-size:11px">&#8212;</span>');
           var isHot = kind==='lead' && !!l.d4dHot;
           // 🔥 Hot toggle: click to flag a lead to come back to. When on, the whole row goes red
