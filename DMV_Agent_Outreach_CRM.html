@@ -461,6 +461,10 @@
   .nci-del{border:none;background:none;cursor:pointer;font-size:13px;opacity:.55;padding:0 2px;flex:0 0 auto;line-height:1.4;}
   .nci-del:hover{opacity:1;}
   .nci-del:disabled{opacity:.25;cursor:default;}
+  /* Hot-flagged Review row: full red background, text forced white so everything (incl. the "Hot" letters) stays readable. */
+  tr.hot-row > td{background:#dc2626 !important;}
+  tr.hot-row, tr.hot-row td, tr.hot-row .address-cell, tr.hot-row a,
+  tr.hot-row .money-val, tr.hot-row .arv-val, tr.hot-row span:not(.badge){color:#fff !important;}
 </style>
 </head>
 <body>
@@ -1169,6 +1173,7 @@ function toRow(l) {
     recipient_notes: l.recipientNotes||[],
     beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
     review_sent_by: l.reviewSentBy||'', review_sent_at: l.reviewSentAt||'', review_note: l.reviewNote||'',
+    d4d_hot: l.d4dHot||false, d4d_status: l.d4dStatus||'',
     shared: l.shared||false, shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
     deleted: l.deleted||false, deleted_at: l.deletedAt||''
   };
@@ -1190,6 +1195,7 @@ function fromRow(r) {
     recipientNotes: r.recipient_notes||[],
     beds: r.beds||'', baths: r.baths||'', sqft: r.sqft||'',
     reviewSentBy: r.review_sent_by||'', reviewSentAt: r.review_sent_at||'', reviewNote: r.review_note||'',
+    d4dHot: r.d4d_hot||false, d4dStatus: r.d4d_status||'',
     shared: r.shared||false, sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
     recipientFollowUpDate: r.recipient_follow_up_date||'',
@@ -1382,12 +1388,17 @@ function saveStatCustomizer(){
 }
 
 function getDropdowns() {
-  return JSON.parse(localStorage.getItem('crm_dropdowns') || 'null') || {
+  var d = JSON.parse(localStorage.getItem('crm_dropdowns') || 'null') || {
     statuses: ['Sold','Pending','Offer Rejected','Offer Accepted','Offer Sent','Counter Offer','Pass','Foreclosure','Off-Market'],
     marketingTypes: ['Text','Text Blast','Email','Follow Up Text','Follow Up Text Sent','Following Up','Off-Market','Foreclosure','Pass','Rejected','Sold'],
     months: ['November','December','January','February','March','April'],
     sources: ['MLS','Zillow','PropWire','Other']
   };
+  // Always offer Driving for Dollars as a selectable Lead Source (even if the user
+  // has a customized/older stored dropdown set that predates it).
+  d.sources = d.sources || [];
+  if(d.sources.indexOf('Driving for Dollars')===-1) d.sources.push('Driving for Dollars');
+  return d;
 }
 function saveDropdowns(d) { localStorage.setItem('crm_dropdowns', JSON.stringify(d)); }
 
@@ -1592,7 +1603,7 @@ function normalizeAddr(a){return(a||'').toLowerCase().trim().replace(/  /g,' ').
 function findDup(addr,excludeId){const n=normalizeAddr(addr); if(!n) return null; return leads.find(l=>!l.deleted&&l.id!==excludeId&&normalizeAddr(l.address)===n)||null;}
 function getNextId(){return leads.length?Math.max(...leads.map(l=>l.id))+1:1;}
 function getFUCounts(){
-  const w=leads.filter(l=>!l.deleted&&l.followUpDate&&l.nationwide!=='Yes').concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
+  const w=leads.filter(l=>!l.deleted&&l.followUpDate&&l.nationwide!=='Yes'&&l.leadSource!=='D4D Auto-Scan').concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
   return {overdue:w.filter(l=>getFUStatus(l.followUpDate)==='overdue').length,today:w.filter(l=>getFUStatus(l.followUpDate)==='today').length,soon:w.filter(l=>getFUStatus(l.followUpDate)==='soon').length,total:w.length};
 }
 function getNWFUCounts(){
@@ -1602,6 +1613,9 @@ function getNWFUCounts(){
 function getFiltered(){
   let data=leads.filter(l=>{
     if(l.deleted) return false;
+    // D4D auto-scan leads live ONLY in the Review queue — never in the DMV Leads list.
+    // They enter the working pipeline only when the user clicks "Send to Task" (→ Tasks tab).
+    if(l.leadSource==='D4D Auto-Scan') return false;
     // When searching, include nationwide leads too
     if(l.nationwide==='Yes' && !filters.search) return false;
     const q=filters.search.toLowerCase();
@@ -1632,7 +1646,7 @@ function getFiltered(){
   });
   return data;
 }
-function getStats(){const activeLeads=leads.filter(l=>!l.deleted);return {total:activeLeads.length,...Object.fromEntries(getDropdowns().statuses.map(s=>[s,activeLeads.filter(l=>l.status===s).length]))};}
+function getStats(){const activeLeads=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan');return {total:activeLeads.length,...Object.fromEntries(getDropdowns().statuses.map(s=>[s,activeLeads.filter(l=>l.status===s).length]))};}
 
 async function syncLeadToSheet(lead){
   if(!APPS_SCRIPT_URL) return;
@@ -2339,7 +2353,7 @@ var crmBuyers = null;                 // null = not loaded yet
 var crmProps  = null;                 // saved deals, null = not loaded yet
 var bySearch = '', byArea = '', byHot = false;
 // property builder draft (kept so re-renders don't lose typing); photos = array of image URLs
-var dispoDraft = {id:null,address:'',headerPhoto:'',price:'',arv:'',beds:'',baths:'',sqft:'',basement:'',description:'',comps:'',compsPhotos:[],notes:'',photos:[],photosLink:''};
+var dispoDraft = {id:null,address:'',headerPhoto:'',price:'',arv:'',beds:'',baths:'',sqft:'',basement:'',description:'',comps:'',compsPhotos:[],notes:'',photos:[],photosLink:'',sourceType:'',contactName:'',contactEmail:'',contactPhone:''};
 
 function byFromDb(r){ return {id:r.id,name:r.name||'',email:r.email||'',phone:r.phone||'',area:r.area||'',
   hot:!!r.hot,buyBox:r.buy_box||'',tags:r.tags||'',notes:r.notes||''}; }
@@ -2361,10 +2375,12 @@ function propFromDb(r){ return {id:r.id,address:r.address||'',headerPhoto:r.head
   sqft:r.sqft||'',basement:r.basement||'',description:r.description||'',comps:r.comps||'',
   compsPhotos:Array.isArray(r.comps_photos)?r.comps_photos:[],notes:r.notes||'',
   photos:Array.isArray(r.photos)?r.photos:[],photosLink:r.photos_link||'',
-  status:r.status||'active',shareToken:r.share_token||'',createdBy:r.created_by||'',createdAt:r.created_at||''}; }
+  status:r.status||'active',shareToken:r.share_token||'',createdBy:r.created_by||'',createdAt:r.created_at||'',
+  sourceType:r.source_type||'',contactName:r.contact_name||'',contactEmail:r.contact_email||'',contactPhone:r.contact_phone||''}; }
 function propToDb(p){ return {address:p.address||'',header_photo:p.headerPhoto||'',price:p.price||'',arv:p.arv||'',beds:p.beds||'',baths:p.baths||'',
   sqft:p.sqft||'',basement:p.basement||'',description:p.description||'',comps:p.comps||'',
   comps_photos:p.compsPhotos||[],notes:p.notes||'',photos:p.photos||[],photos_link:p.photosLink||'',status:p.status||'active',
+  source_type:p.sourceType||'',contact_name:p.contactName||'',contact_email:p.contactEmail||'',contact_phone:p.contactPhone||'',
   updated_at:new Date().toISOString()}; }
 async function crmPropsFetch(){
   try { var rows=await sbFetch(PROP_PATH+'?select=*&order=id.desc&limit=2000'); crmProps=(rows||[]).map(propFromDb); }
@@ -2402,6 +2418,11 @@ function dispoReadForm(){
     var el=document.getElementById('dp-'+k); if(el) dispoDraft[k]=mfSanitize(el.innerHTML);
   });
   var pl=document.getElementById('dp-photoslink'); if(pl) dispoDraft.photosLink=pl.value;
+  // Internal-only fields (never rendered on the flyer / never in the get-property feed).
+  var src=document.getElementById('dp-source'); if(src) dispoDraft.sourceType=src.value;
+  var cn=document.getElementById('dp-contact-name'); if(cn) dispoDraft.contactName=cn.value.trim();
+  var ce=document.getElementById('dp-contact-email'); if(ce) dispoDraft.contactEmail=ce.value.trim();
+  var cp=document.getElementById('dp-contact-phone'); if(cp) dispoDraft.contactPhone=cp.value.trim();
   return dispoDraft;
 }
 // Rich-text toolbar action (mousedown so the editor keeps its selection/focus).
@@ -2647,6 +2668,17 @@ function renderDispo(){
             + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-pastelinks" class="form-input"><button class="btn btn-secondary btn-sm" onclick="dispoAddPastedLinks()">Add</button></div>'
           + '</div>'
           + '<div class="form-field full"><label class="form-label">Photo folder link <span style="font-weight:400;color:var(--text3)">(optional — Dropbox/Drive)</span></label><input id="dp-photoslink" class="form-input" value="'+esc(d.photosLink)+'"></div>'
+          + '<div class="form-field full" style="border-top:2px solid var(--border);margin-top:8px;padding-top:14px">'
+            + '<label class="form-label">&#128274; Internal &mdash; Our Records <span style="font-weight:400;color:var(--text3)">(private &mdash; NOT shown on the flyer)</span></label>'
+            + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+              + '<div><label class="form-label" style="font-size:11px">Deal Source</label><select id="dp-source" class="form-input"><option value="">&#8212; Select &#8212;</option>'
+                + ['JV','Direct to Seller','Realtor'].map(function(o){ return '<option value="'+o+'"'+(d.sourceType===o?' selected':'')+'>'+o+'</option>'; }).join('')
+                + '</select></div>'
+              + '<div><label class="form-label" style="font-size:11px">Contact Name</label><input id="dp-contact-name" class="form-input" value="'+esc(d.contactName)+'"></div>'
+              + '<div><label class="form-label" style="font-size:11px">Contact Email</label><input id="dp-contact-email" class="form-input" value="'+esc(d.contactEmail)+'"></div>'
+              + '<div><label class="form-label" style="font-size:11px">Contact Phone</label><input id="dp-contact-phone" class="form-input" value="'+esc(d.contactPhone)+'"></div>'
+            + '</div>'
+          + '</div>'
         + '</div>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
           + '<button class="btn btn-secondary btn-sm" onclick="dispoPreviewDraft()">&#128065; Preview</button>'
@@ -2699,6 +2731,7 @@ function dispoDealsHTML(){
       +'<div class="dp-deal-body">'
         +'<div class="dp-deal-addr">'+esc(p.address||'(no address)')+'</div>'
         +'<div class="dp-deal-meta">'+(p.price?'<b>'+esc(p.price)+'</b>':'')+(spec.length?' &middot; '+esc(spec.join('/')):'')+(p.photos&&p.photos.length?' &middot; '+p.photos.length+' 📷':'')+'</div>'
+        +((p.sourceType||p.contactName)?'<div class="dp-deal-meta" style="margin-top:3px">'+(p.sourceType?'<span class="lt-chip" style="color:#3730a3;background:#e0e7ff">'+esc(p.sourceType)+'</span> ':'')+(p.contactName?'<span style="color:var(--text3)">'+esc(p.contactName)+'</span>':'')+'</div>':'')
         +'<div class="dp-deal-acts">'
           +'<button class="btn btn-primary btn-sm" onclick="dispoCopyLink('+p.id+')">📋 Link</button>'
           +'<button class="btn btn-secondary btn-sm" onclick="dispoCopyMessage('+p.id+')">💬 Msg</button>'
@@ -4373,7 +4406,7 @@ function buildTempScoreViewHTML(score){
   var typeBg = {DMV:'#eff6ff',Nationwide:'#e0f2fe',Task:'#ede9fe'};
   var items = [];
   leads.forEach(function(l){
-    if(!l.deleted && l.score===score){
+    if(!l.deleted && l.leadSource!=='D4D Auto-Scan' && l.score===score){
       items.push({id:l.id,type:l.nationwide==='Yes'?'Nationwide':'DMV',isTask:false,label:l.address||l.name||'Untitled',offer:l.offer,arv:l.arv,followUpDate:l.followUpDate,status:l.status});
     }
   });
@@ -4408,22 +4441,49 @@ function renderReviewTab(){
   var items = leads.filter(function(l){ return !l.deleted && l.needsReview; }).map(function(l){ return {kind:'lead', l:l}; })
     .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview; }).map(function(t){ return {kind:'task', l:t}; }))
     .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
+    // Note: Hot rows stay in place (turn red where they are) — no reordering, so clicks never shift the list under you.
   var rows = items.length===0
     ? '<div class="empty"><div class="empty-icon">&#128269;</div><h3>Nothing needs review</h3></div>'
     : '<div class="table-container"><div class="table-wrap"><table>'
-      +'<thead><tr><th>Lead</th><th>Sent By</th><th>Sent</th><th>Review Note</th><th>Offer</th><th>ARV</th><th>Follow-Up</th><th>Status</th><th></th></tr></thead><tbody>'
+      +'<thead><tr><th style="width:30px;text-align:center"><input type="checkbox" title="Select all" onclick="rvToggleAll(this.checked)"></th><th>Lead</th><th>Phone</th><th>Sent By</th><th>Sent</th><th>Review Note</th><th>Offer</th><th>ARV</th><th>Follow-Up</th><th>Status</th><th></th></tr></thead><tbody>'
       + items.map(function(it){
           var l=it.l, kind=it.kind;
           var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
           var title = kind==='task' ? (l.location||l.name||'Untitled') : (l.address||l.name||'Untitled');
+          // D4D auto-scan / estate leads: make the address a Google Maps link (new tab).
+          var isD4D = kind==='lead' && (l.leadSource==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan');
+          var titleHtml = isD4D
+            ? '<a href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(l.address||title)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline">'+esc(title)+'</a>'
+            : esc(title);
           var offer = kind==='task' ? l.askingPrice : l.offer;
           var status = kind==='task' ? l.jvStatus : l.status;
           var sentBy = l.reviewSentBy ? esc(l.reviewSentBy) : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           var sentAt = l.reviewSentAt ? new Date(l.reviewSentAt).toLocaleString() : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           var note = l.reviewNote ? '<div style="font-size:12px;max-width:240px;white-space:pre-wrap;color:var(--text2)">'+esc(l.reviewNote)+'</div>' : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
-          return '<tr>'
-            +'<td onclick="'+openFn+'" style="cursor:pointer"><div class="address-cell">'+typeTag+esc(title)+'</div></td>'
+          var phoneHtml = l.phone
+            ? '<a href="tel:'+esc(String(l.phone).replace(/[^\\d+]/g,''))+'" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;white-space:nowrap;font-weight:600">'+esc(l.phone)+'</a>'
+            : (/Skip trace: no cell on file/.test(l.notes||'')
+                ? '<span style="color:#dc2626;font-size:11px;font-weight:600;white-space:nowrap">Number Not Available</span>'
+                : '<span style="color:var(--text4);font-size:11px">&#8212;</span>');
+          var isHot = kind==='lead' && !!l.d4dHot;
+          // 🔥 Hot toggle: click to flag a lead to come back to. When on, the whole row goes red
+          // (and the lead floats to the top); the white "Hot" letters stay readable on the red.
+          var hotBtn = kind==='lead'
+            ? '<button class="btn btn-sm" onclick="toggleD4dHot('+l.id+')" title="'+(isHot?'Hot — click to un-flag':'Mark Hot to come back to this lead')+'" '
+                +'style="margin-right:6px;font-weight:800;'+(isHot
+                  ?'background:#fff;color:#dc2626;border:1px solid #fff'
+                  :'background:none;color:#dc2626;border:1px solid #fca5a5')+'">&#128293; Hot</button>'
+            : '';
+          // Owner name (from D4D enrichment or a person lead) shown ABOVE the address, if we have one
+          // that isn't just the "D4D Lead — <addr>" placeholder or a duplicate of the address.
+          var ownerNm = (kind==='lead' && l.name) ? String(l.name).trim() : '';
+          var ownerLine = (ownerNm && !/^D4D Lead —/i.test(ownerNm) && ownerNm.toUpperCase() !== String(title).toUpperCase())
+            ? '<div style="font-weight:700;font-size:13px;color:var(--text1)">'+esc(ownerNm)+'</div>' : '';
+          return '<tr id="rrow-'+kind+'-'+l.id+'"'+(isHot?' class="hot-row"':'')+'>'
+            +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>'
+            +'<td onclick="'+openFn+'" style="cursor:pointer">'+ownerLine+'<div class="address-cell">'+typeTag+titleHtml+'</div></td>'
+            +'<td style="font-size:13px">'+phoneHtml+'</td>'
             +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
             +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
             +'<td>'+note+'</td>'
@@ -4432,18 +4492,259 @@ function renderReviewTab(){
             +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
             +'<td>'+statusBadge(status)+'</td>'
             +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
+              +hotBtn
               +'<button class="btn btn-secondary btn-sm" onclick="'+openFn+'">Open</button> '
+              +(kind==='lead' ? '<button class="btn btn-sm" onclick="sendLeadToTask('+l.id+')" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button> ' : '')
               +'<button class="btn btn-green btn-sm" onclick="completeReview(\''+kind+'\','+l.id+')">&#9989; Complete</button> '
               +'<button class="btn btn-danger btn-sm" onclick="removeFromReview(\''+kind+'\','+l.id+')">Remove</button>'
             +'</td>'
             +'</tr>';
         }).join('')
       +'</tbody></table></div></div>';
+  var bulkBarHtml = items.length===0 ? '' :
+    '<div id="rv-bulkbar" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:10px 14px;margin-bottom:12px">'
+      +'<span id="rv-bulk-count" style="font-size:13px;font-weight:600;color:var(--text2)">0 selected</span>'
+      +'<button id="rv-skiptrace-btn" class="btn btn-primary btn-sm" onclick="rvSkipTraceSelected()" disabled style="font-weight:700">&#128269; Find Numbers (Skip Trace)</button>'
+      +'<button id="rv-export-btn" class="btn btn-white btn-sm" onclick="rvExportSelected()" disabled style="font-weight:700">&#11015; Download (Name + Phone)</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="rvClearSel()">Clear</button>'
+      +'<span id="rv-skip-progress" style="font-size:12px;color:var(--text3)"></span>'
+    +'</div>';
   document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
     +'<div style="margin-bottom:16px"><h2 style="font-size:16px;font-weight:700">&#128269; Review Queue</h2>'
     +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Leads flagged Needs Review (by the team or by a recipient) or added here when sent out. Sent By / Sent shows who flagged it and when; Review Note is their reason. This is a work queue -- leads stay in their database either way.</p></div>'
-    +rows+'</div>';
+    +bulkBarHtml+rows+'</div>';
+  rvUpdateBar();
 }
+// ============================================================================
+// REVIEW-QUEUE SKIP TRACE — select leads (single/multiple) and skip-trace them via
+// Tracerfy (server-side proxy edge function), filling the best WIRELESS number.
+// Selection is keyed "kind:id" because Review mixes DMV/D4D leads and Tasks.
+// ============================================================================
+var reviewSel = new Set();
+function rvKey(kind,id){ return kind+':'+id; }
+function rvToggle(kind,id,checked){
+  var k=rvKey(kind,id);
+  if(checked) reviewSel.add(k); else reviewSel.delete(k);
+  rvUpdateBar();
+}
+// Select/clear every checkbox currently shown (works off the live DOM so it
+// respects any filtering, and never triggers a full re-render / scroll jump).
+function rvToggleAll(checked){
+  document.querySelectorAll('.rv-cb').forEach(function(cb){
+    cb.checked=checked;
+    var k=rvKey(cb.getAttribute('data-kind'), +cb.getAttribute('data-id'));
+    if(checked) reviewSel.add(k); else reviewSel.delete(k);
+  });
+  rvUpdateBar();
+}
+function rvClearSel(){
+  reviewSel.clear();
+  document.querySelectorAll('.rv-cb').forEach(function(cb){ cb.checked=false; });
+  rvUpdateBar();
+}
+// Update the count + enable/disable the button, without re-rendering the list.
+function rvUpdateBar(){
+  var n=reviewSel.size;
+  var c=document.getElementById('rv-bulk-count'); if(c) c.textContent=n+' selected';
+  var b=document.getElementById('rv-skiptrace-btn'); if(b) b.disabled=(n===0);
+  var e=document.getElementById('rv-export-btn'); if(e) e.disabled=(n===0);
+}
+// Download ONLY the selected Review leads as a simple Name,Phone CSV.
+function rvExportSelected(){
+  var rowsOut=[];
+  reviewSel.forEach(function(k){
+    var p=k.split(':'), kind=p[0], id=+p[1];
+    var arr=kind==='task'?jvLeads:leads;
+    var l=arr.find(function(x){return x.id===id;});
+    if(!l) return;
+    var nm=(l.name||'').trim();
+    if(/^D4D Lead —/i.test(nm)) nm='';
+    rowsOut.push({ name:nm, phone:(l.phone||'').trim() });
+  });
+  if(!rowsOut.length){ showToast('Select at least one lead first','error'); return; }
+  function cell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+  var lines=['Name,Phone'];
+  rowsOut.forEach(function(r){ lines.push(cell(r.name)+','+cell(r.phone)); });
+  var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url; a.download='review-leads-'+today()+'.csv'; a.style.display='none';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); document.body.removeChild(a); },100);
+  showToast('Downloaded '+rowsOut.length+' lead'+(rowsOut.length!==1?'s':'')+' (Name + Phone)','success');
+}
+// Fire the skip trace: gather selected leads (name+address), send them to the
+// Tracerfy proxy edge function (which holds the API key server-side), wait for the
+// bulk job to finish, then fill each lead's best WIRELESS number. 1 credit/hit,
+// misses are free. No browser extension / VPN needed — it all runs server-side.
+var __rvSkip = null;
+var SKIPTRACE_FN_URL = SUPABASE_URL + '/functions/v1/tracerfy-skiptrace';
+
+function __rvSetProgress(txt){
+  var p=document.getElementById('rv-skip-progress'); if(p) p.textContent=txt;
+}
+// "Doe, John" or "John Q Doe" -> {first,last}
+function rvParseName(raw){
+  raw=String(raw||'').trim();
+  if(!raw) return {first:'',last:''};
+  var first='',last='';
+  if(raw.indexOf(',')>=0){ var p=raw.split(','); last=p[0].trim(); first=((p[1]||'').trim().split(/\s+/)[0])||''; }
+  else { var q=raw.split(/\s+/); first=q[0]||''; last=q.length>1?q[q.length-1]:''; }
+  return {first:first,last:last};
+}
+// "4248 Foote St NE, Washington, DC 20019" -> {street,city,state,zip}
+function rvParseAddr(raw){
+  raw=String(raw||'').replace(/\s+/g,' ').trim();
+  var zip='',state='';
+  var zm=raw.match(/\b(\d{5})(?:-\d{4})?\s*$/);
+  if(zm){ zip=zm[1]; raw=raw.slice(0,zm.index).trim().replace(/,\s*$/,''); }
+  var sm=raw.match(/[,\s]([A-Za-z]{2})\s*$/);
+  if(sm){ state=sm[1].toUpperCase(); raw=raw.slice(0,sm.index).trim().replace(/,\s*$/,''); }
+  var parts=raw.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  var street='',city='';
+  if(parts.length>=2){ city=parts[parts.length-1]; street=parts.slice(0,parts.length-1).join(', '); }
+  else { street=parts[0]||''; }
+  return {street:street,city:city,state:state,zip:zip};
+}
+function rvStreetNum(a){ var m=String(a||'').match(/\d+/); return m?m[0]:''; }
+function rvFmtPhone(raw){
+  var d=String(raw||'').replace(/\D/g,'');
+  if(d.length===11 && d[0]==='1') d=d.slice(1);
+  if(d.length!==10) return String(raw||'').trim();
+  return '('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);
+}
+// Best WIRELESS number from a Tracerfy result row. primary_phone is Tracerfy's
+// rank-1 number, so prefer it when it's a mobile; otherwise take the first Mobile.
+function rvBestWireless(row){
+  var t=(row.primary_phone_type||'').toLowerCase();
+  if(row.primary_phone && /mobile|wireless|cell/.test(t)) return row.primary_phone;
+  if(row.mobiles && row.mobiles.length) return row.mobiles[0];
+  return '';
+}
+async function __rvFetchFn(payload){
+  var r=await fetch(SKIPTRACE_FN_URL,{
+    method:'POST',
+    headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+    body:JSON.stringify(payload)
+  });
+  return r.json().catch(function(){ return {}; });
+}
+function rvSleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+
+// Address match key: "<house#> <first street word> <state>" (lowercased). Used to
+// match Tracerfy result rows back to leads for BOTH trace types (advanced traces
+// have no input name, so we can't match on name).
+function rvAddrKey(street,state){
+  var s=String(street||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+  var num=(s.match(/\d+/)||[''])[0];
+  var word='';
+  var toks=s.split(' ');
+  for(var i=0;i<toks.length;i++){ if(/[a-z]/.test(toks[i])){ word=toks[i]; break; } }
+  return num+' '+word+' '+String(state||'').toLowerCase().trim();
+}
+
+async function rvSkipTraceSelected(){
+  if(__rvSkip){ showToast('A skip trace is already running','error'); return; }
+  var picks=[];
+  reviewSel.forEach(function(k){
+    var p=k.split(':'), kind=p[0], id=+p[1];
+    var arr=kind==='task'?jvLeads:leads;
+    var l=arr.find(function(x){return x.id===id;});
+    if(!l) return;
+    var address = kind==='task' ? (l.location||'') : (l.address||'');
+    var nm = (l.name||'').trim();
+    if(/^D4D Lead —/i.test(nm)) nm='';               // strip placeholder owner names
+    var pa=rvParseAddr(address), pn=rvParseName(nm);
+    picks.push({ id:id, kind:kind, name:nm, first_name:pn.first, last_name:pn.last,
+      address:pa.street, city:pa.city, state:pa.state, zip:pa.zip });
+  });
+  if(!picks.length){ showToast('Select at least one lead first','error'); return; }
+  // Need at least a street address. Named leads -> normal (1 credit); address-only
+  // leads -> advanced (2 credits, Tracerfy finds the owner).
+  var withAddr=picks.filter(function(p){ return p.address && p.state; });
+  if(!withAddr.length){ showToast('Selected leads need a street address (with city/state) to trace','error'); return; }
+  var named=withAddr.filter(function(p){ return p.first_name && p.last_name; });
+  var addrOnly=withAddr.filter(function(p){ return !(p.first_name && p.last_name); });
+
+  __rvSkip = { total:withAddr.length };
+  var btn=document.getElementById('rv-skiptrace-btn'); if(btn) btn.disabled=true;
+  __rvSetProgress('Submitting '+withAddr.length+' lead'+(withAddr.length!==1?'s':'')+'…');
+
+  function resetBtn(){ __rvSkip=null; if(btn) btn.disabled=(reviewSel.size===0); __rvSetProgress(''); }
+
+  try {
+    // Submit one queue per trace type present.
+    var jobs=[];
+    if(named.length) jobs.push({ trace_type:'normal', leads:named });
+    if(addrOnly.length) jobs.push({ trace_type:'advanced', leads:addrOnly });
+    var queueIds=[];
+    for(var j=0;j<jobs.length;j++){
+      var sub=await __rvFetchFn({ action:'submit', trace_type:jobs[j].trace_type, leads:jobs[j].leads });
+      if(!sub || !sub.queue_id){
+        var em=(sub && sub.detail && (sub.detail.detail||JSON.stringify(sub.detail))) || (sub && sub.error) || 'submit failed';
+        showToast('Skip trace failed: '+em,'error'); resetBtn(); return;
+      }
+      queueIds.push(sub.queue_id);
+    }
+
+    // Poll each queue until done (~40s typical), up to ~4 min, and merge rows.
+    var rows=[];
+    for(var qi=0; qi<queueIds.length; qi++){
+      var got=null;
+      for(var i=0;i<48;i++){
+        await rvSleep(5000);
+        __rvSetProgress('Finding numbers… ('+Math.min((i+1)*5,240)+'s)');
+        var res=await __rvFetchFn({ action:'result', queue_id:queueIds[qi] });
+        if(res && res.pending===false && res.rows){ got=res.rows; break; }
+      }
+      if(!got){ showToast('Skip trace timed out — try again in a minute','error'); resetBtn(); return; }
+      rows=rows.concat(got);
+    }
+
+    // Match each returned row back to its lead by address key, fill the best
+    // wireless number, and stamp leads with no cell so the Phone column shows
+    // "Number not found" (persisted via the notes column).
+    var filled=0, savedLeads=false, savedTasks=false;
+    var stamp=new Date().toLocaleDateString();
+    withAddr.forEach(function(pk){
+      var arr=pk.kind==='task'?jvLeads:leads;
+      var l=arr.find(function(x){return x.id===pk.id;});
+      if(!l) return;
+      var key=rvAddrKey(pk.address, pk.state);
+      var row=rows.find(function(r){ return rvAddrKey(r.address, r.state)===key; });
+      var w=row?rvBestWireless(row):'';
+      if(w){
+        l.phone=rvFmtPhone(w);
+        // Advanced traces surface an owner name we didn't have — capture it.
+        if(row && row.first_name && (!l.name || /^D4D Lead —/i.test(l.name))){
+          l.name=(row.first_name+' '+row.last_name).trim();
+        }
+        var tag='Skip trace: '+l.phone+' (wireless) — '+stamp;
+        l.notes=l.notes?(l.notes+'\n'+tag):tag;
+        filled++;
+      } else {
+        if(!/Skip trace: no cell on file/.test(l.notes||'')){
+          var tag2='Skip trace: no cell on file — '+stamp;
+          l.notes=l.notes?(l.notes+'\n'+tag2):tag2;
+        }
+      }
+      if(pk.kind==='task'){ saveJVToSupabase(l); savedTasks=true; }
+      else { saveLeadToSupabase(l); savedLeads=true; }
+    });
+    if(savedLeads) save();
+    if(savedTasks) saveJV();
+
+    var t=__rvSkip.total;
+    showToast('Skip trace done: '+filled+' of '+t+' wireless number'+(t!==1?'s':'')+' found'+(filled<t?', '+(t-filled)+' with no cell on file':''),'success');
+  } catch(e){
+    showToast('Skip trace error: '+(e&&e.message?e.message:'network'),'error');
+  } finally {
+    __rvSkip=null;
+    reviewSel.clear();
+    renderReviewTab();
+  }
+}
+
 // Add a lead/task to the Review queue and stamp who sent it + when (used by the Review button on Send and the footer Review button).
 async function sendToReview(kind, id){
   var arr = kind==='task' ? jvLeads : leads;
@@ -4455,6 +4756,29 @@ async function sendToReview(kind, id){
   if(kind==='task'){ saveJV(); render(); await saveJVToSupabase(l); }
   else { localStorage.setItem('crm_leads', JSON.stringify(leads)); render(); await saveLeadToSupabase(l); }
   showToast('Added to Review queue','success');
+}
+// 🔥 Hot toggle on a Review row — flags a lead to come back to; the row turns red IN PLACE
+// (updated in the DOM, no full re-render) so the list never shifts under you. Persists to cloud.
+async function toggleD4dHot(id){
+  var l = leads.find(function(x){return x.id===id;});
+  if(!l) return;
+  l.d4dHot = !l.d4dHot;
+  save();
+  var row = document.getElementById('rrow-lead-'+id);
+  if(row){
+    row.classList.toggle('hot-row', !!l.d4dHot);
+    var btn = row.querySelector('button[onclick*="toggleD4dHot"]');
+    if(btn){
+      btn.title = l.d4dHot ? 'Hot — click to un-flag' : 'Mark Hot to come back to this lead';
+      btn.style.cssText = 'margin-right:6px;font-weight:800;' + (l.d4dHot
+        ? 'background:#fff;color:#dc2626;border:1px solid #fff'
+        : 'background:none;color:#dc2626;border:1px solid #fca5a5');
+    }
+  } else {
+    render(); // fallback if the row isn't on screen
+  }
+  var ok = await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
 }
 async function clearReviewComplete(id){
   var l = leads.find(function(x){return x.id===id;});
@@ -4487,6 +4811,65 @@ function removeFromReview(kind, id){
   if(kind==='task'){ saveJV(); render(); saveJVToSupabase(l).then(function(ok){ if(!ok) showToast('Cloud sync failed -- check your connection','error'); }); return; }
   save(); render();
   saveLeadToSupabase(l).then(function(ok){ if(!ok) showToast('Cloud sync failed -- check your connection','error'); });
+}
+// Move a DMV/D4D lead into the Tasks tab. Builds a Task (jvLead) from the lead, then removes the
+// original lead (soft-delete) so it leaves Review AND the Leads list -- it now lives only as a Task.
+// Manual only: fires when the user clicks "Send to Task" (Review row or the lead's edit view).
+async function sendLeadToTask(id){
+  var l = leads.find(function(x){return x.id===id;});
+  if(!l){ showToast('Lead not found','error'); return; }
+  if(!confirm('Send this lead to Tasks?\n\n'+(l.address||l.name||'Untitled')
+    +'\n\nIt moves out of Review and the Leads list, and appears in the Tasks tab.')) return;
+  var maxId = jvLeads.length ? Math.max.apply(null, jvLeads.map(function(x){return x.id;})) : 0;
+  var newId = maxId + 1;
+  // Carry EVERYTHING the user entered on the lead onto the Task (follow-up, offer, ARV, notes,
+  // phone, temperature, beds/baths/sqft, recipient notes, activity history, GHL link).
+  var task = {
+    id: newId,
+    name: l.name || l.ownerName || '',
+    phone: l.phone || '',
+    score: l.score || '',                              // carry the user-set temperature as-is (blank stays blank)
+    notes: l.notes || '',
+    fbLink: l.webLink || l.listingLink || '',          // listing / street-view / web link
+    sourceGroup: l.leadSource || l.source || '',
+    location: l.address || l.location || '',           // full "street, City, ST ZIP"
+    askingPrice: l.offer || '',
+    arv: l.arv || '',
+    profitEst: '',
+    followUpDate: l.followUpDate || '',                // ← follow-up date goes with it
+    ghlContactId: l.ghlContactId || '',
+    jvStatus: '',
+    dateAdded: new Date().toISOString().slice(0,10),
+    activityLog: (l.activityLog||[]).concat([{ at:new Date().toISOString(),
+      by:(currentUser && currentUser.name) || 'Me', note:'Moved from Review to Tasks', type:'Moved to Task' }]),
+    recipientNotes: l.recipientNotes || [],
+    beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
+    reviewSentBy: l.reviewSentBy||'', reviewSentAt: l.reviewSentAt||'', reviewNote: l.reviewNote||'',
+    shared:false, sharedAt:'', sharedWith:'', deleted:false, deletedAt:'', needsReview:false
+  };
+  // CLOUD-FIRST: persist the Task to Supabase BEFORE removing the lead, so a failed sync can
+  // never make the lead vanish. If the cloud write fails, we abort and leave the lead in Review.
+  var okJV = await saveJVToSupabase(task);
+  if(!okJV){
+    showToast('Could not save the task to the cloud — lead kept in Review. Check your connection and try again.','error');
+    return;
+  }
+  jvLeads.push(task);
+  saveJV();
+  // Move the lead's checklist entries (crm_note_items) over to the new Task too (best-effort).
+  try {
+    await sbFetch(NCI_PATH+'?entity_type=eq.lead&entity_id=eq.'+l.id, 'PATCH',
+      { entity_type:'task', entity_id:newId });
+    if(typeof nciCache!=='undefined'){ delete nciCache['lead:'+l.id]; delete nciCache['task:'+newId]; }
+  } catch(e){ /* checklist migration is best-effort */ }
+  // Task is safely in the cloud → now the original lead leaves Review + Leads (soft-delete).
+  l.needsReview = false; l.deleted = true; l.deletedAt = new Date().toISOString();
+  save();
+  var okL = await saveLeadToSupabase(l);
+  if(typeof closeModal==='function' && document.querySelector('.modal-overlay')) closeModal();
+  activeTab = 'jvleads';
+  render();
+  showToast(okL ? 'Moved to Tasks' : 'Moved to Tasks — the lead will finish syncing shortly','success');
 }
 
 function renderLeadsTab(){
@@ -4527,9 +4910,9 @@ function renderLeadsTab(){
   const overdueChip=`<div class="stat-card" onclick="setTab('followups')" style="${allOverdue>0?'border-color:#fca5a5;background:#fee2e2;':''}"><div class="stat-dot" style="background:#dc2626"></div><div><div class="stat-num" style="${allOverdue>0?'color:#dc2626':''}">${allOverdue}</div><div class="stat-label" style="${allOverdue>0?'color:#dc2626':''}">Overdue</div></div></div>`;
   const fuChip=`<div class="stat-card" onclick="setTab('followups')" style="${allToday>0?'border-color:#fcd34d;background:#fef3c7;':'border-color:#5eead4;background:#f0fdfa;'}"><div class="stat-dot" style="background:${allToday>0?'#b45309':'#0d9488'}"></div><div><div class="stat-num" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?allToday:allFUCount}</div><div class="stat-label" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?'Due Today':'Follow-Ups'}</div></div></div>`;
 
-  const hot=leads.filter(l=>!l.deleted&&l.score==='Hot').length + jvLeads.filter(l=>!l.deleted&&l.score==='Hot').length;
-  const warm=leads.filter(l=>!l.deleted&&l.score==='Warm').length + jvLeads.filter(l=>!l.deleted&&l.score==='Warm').length;
-  const cold=leads.filter(l=>!l.deleted&&l.score==='Cold').length + jvLeads.filter(l=>!l.deleted&&l.score==='Cold').length;
+  const hot=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan'&&l.score==='Hot').length + jvLeads.filter(l=>!l.deleted&&l.score==='Hot').length;
+  const warm=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan'&&l.score==='Warm').length + jvLeads.filter(l=>!l.deleted&&l.score==='Warm').length;
+  const cold=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan'&&l.score==='Cold').length + jvLeads.filter(l=>!l.deleted&&l.score==='Cold').length;
   const scoreChip=`<div class="stat-card" style="cursor:default"><div style="display:flex;gap:10px;align-items:center;font-size:12px;font-weight:700">
       <span onclick="event.stopPropagation();tempScoreView='Hot';renderLeadsTab()" style="cursor:pointer;color:#dc2626">&#128308; ${hot} Hot</span>
       <span onclick="event.stopPropagation();tempScoreView='Warm';renderLeadsTab()" style="cursor:pointer;color:#b45309">&#128993; ${warm} Warm</span>
@@ -5005,6 +5388,7 @@ function renderDetailModal(){
           <div class="detail-section"><div class="detail-section-title">Links</div>
             <div style="display:flex;flex-direction:column;gap:6px">
               ${l.address?'<div><span class="detail-label">Zillow</span>&nbsp;&nbsp;<a href="#" onclick="event.preventDefault();openZillow();" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="#" onclick="event.preventDefault();openRedfin();" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}
+              ${isD4DLead(l)&&l.address?'<div><span class="detail-label">Maps</span>&nbsp;&nbsp;<a href="'+buildMapsUrl(l.address)+'" target="_blank" class="detail-link">&#128506;&#65039; View on Google Maps &#8599;</a></div>':''}
               ${l.webLink&&l.webLink.startsWith('http')?'<div><span class="detail-label">Listing</span>&nbsp;&nbsp;<a href="'+esc(l.webLink)+'" target="_blank" class="detail-link">View Listing &#8599;</a></div>':'<div style="color:var(--text4);font-size:12px">No listing link</div>'}
               ${l.comps&&l.comps.startsWith('http')?'<div><span class="detail-label">Comps</span>&nbsp;&nbsp;<a href="'+esc(l.comps.split(' ')[0])+'" target="_blank" class="detail-link">View Comps &#8599;</a></div>':'<div style="color:var(--text4);font-size:12px">No comp link</div>'}
             </div>
@@ -5017,6 +5401,7 @@ function renderDetailModal(){
         <div class="modal-footer">
           <button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>
           <button class="btn btn-secondary btn-sm" onclick="sendToReview('lead',${l.id})">&#128203; Review</button>
+          <button class="btn btn-sm" onclick="sendLeadToTask(${l.id})" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button>
           <button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal('lead',${l.id})">&#128197; Schedule SMS</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,'lead',${l.id})">&#128231; Send to Team</button>
           <button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button>
@@ -5139,6 +5524,17 @@ function buildRedfinUrl(address){
   var addr = (address||'').trim();
   if(!addr) return '';
   return 'https://www.google.com/search?q=' + encodeURIComponent('site:redfin.com ' + addr);
+}
+function buildMapsUrl(address){
+  var addr=(address||'').trim();
+  if(!addr) return '';
+  return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(addr);
+}
+// A lead/task originated from the Driving-for-Dollars scanner. Works for both leads
+// (leadSource) and tasks that were sent from Review (sourceGroup / reviewSentBy).
+function isD4DLead(l){
+  if(!l) return false;
+  return l.leadSource==='D4D Auto-Scan' || l.sourceGroup==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan';
 }
 function toggleZillowLink(address){
   var wrap = document.getElementById('zillow-link-wrap');
@@ -5835,14 +6231,16 @@ function openJVDetail(id){
   var statusOpts=statuses.map(function(s){return '<option value="'+s+'" '+(l.jvStatus===s?'selected':'')+'>'+s+'</option>';}).join('');
   document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px"><div class="modal-header"><div><div class="modal-title">'+esc(l.name||'JV Lead')+'</div><div class="modal-subtitle">'+scoreBadgeHTML(l.score)+' &middot; '+esc(l.location||l.address||'')+sentIndicatorHTML(l)+'</div>'+(l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body">'
     +'<div class="form-section"><div class="detail-grid">'
-    +'<div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">'+(l.phone?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':esc(l.phone||''))+'</span></div>'
+    +'<div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">'+(l.phone?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':esc(l.phone||''))+(l.location?' <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="crmFindNumber('+l.id+')" title="Find the first wireless number for this address (needs US VPN)">&#128269; Find #</button>':'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Asking Price</span><span class="detail-val" style="color:var(--accent);font-weight:700">'+esc(l.askingPrice||'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">ARV</span><span class="detail-val" style="color:var(--green);font-weight:700">'+esc(l.arv||'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Profit Est</span><span class="detail-val">'+esc(l.profitEst||'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Source</span><span class="detail-val">'+esc(l.sourceGroup||'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Date Added</span><span class="detail-val">'+esc(l.dateAdded||'')+'</span></div>'
     +'</div></div>'
-    +(l.fbLink?'<div class="detail-section"><a href="'+esc(l.fbLink)+'" target="_blank" class="btn btn-secondary btn-sm">View Facebook Post &#8599;</a></div>':'')
+    +(isD4DLead(l)
+        ? (l.location?'<div class="detail-section"><a href="'+buildMapsUrl(l.location)+'" target="_blank" class="btn btn-secondary btn-sm">&#128506;&#65039; View on Google Maps &#8599;</a></div>':'')
+        : (l.fbLink?'<div class="detail-section"><a href="'+esc(l.fbLink)+'" target="_blank" class="btn btn-secondary btn-sm">View Facebook Post &#8599;</a></div>':''))
     +'<div class="form-section"><div class="form-section-title">Status &amp; Follow-Up</div>'
     +'<div class="form-grid"><div class="form-field"><label class="form-label">Status</label><select id="jv-detail-status" class="form-select"><option value="">&#8212; Select &#8212;</option>'+statusOpts+'</select></div>'
     +'<div class="form-field"><label class="form-label">&#128197; Follow-Up Date</label><input type="date" id="jv-fu-date" class="form-input" value="'+(l.followUpDate||'')+'"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared(\'jv-fu-date\',\''+esc(l.name||'Task')+'\');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div></div>'
@@ -5857,6 +6255,40 @@ function openJVDetail(id){
     +'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
   nciMount('task', l.id);
   mountGhlSms('task', l.id);
+}
+// ---- Find # (skip trace via the "CRM Find Number" browser extension) --------
+function crmFindNumber(id){
+  var l=jvLeads.find(function(x){return x.id===id;});
+  if(!l) return;
+  if(!l.location){ showToast('Add an address to this lead first','error'); return; }
+  // Tell the extension which lead + address we want a wireless number for.
+  window.postMessage({__fn:'CRM_TO_EXT',type:'CRM_FIND_NUMBER',leadId:id,name:l.name||'',address:l.location||''},'*');
+  // Open FastPeopleSearch (user gesture). Homepage is safest — the extension fills the form.
+  window.open('https://www.fastpeoplesearch.com/','_blank');
+  showToast('🌐 Turn ON US VPN (Proton → United States), then Search on the new tab — I\'ll grab the first cell number','success');
+}
+// Bind the result listener once.
+if(!window.__crmFindNumberBound){
+  window.__crmFindNumberBound=true;
+  window.addEventListener('message',function(e){
+    if(!e.data||e.data.__fn!=='EXT_TO_CRM') return;
+    if(e.data.type!=='FIND_NUMBER_RESULT') return;
+    var l=jvLeads.find(function(x){return x.id===e.data.leadId;});
+    if(!l) return;
+    if(e.data.found && e.data.phone){
+      l.phone=e.data.phone;
+      if(!l.activityLog) l.activityLog=[];
+      l.activityLog.push({type:'Skip Trace',by:'Find #',at:new Date().toISOString(),note:'Found wireless '+e.data.phone+(e.data.carrier?(' ('+e.data.carrier+')'):'')});
+      saveJV();
+      var mc=document.getElementById('modal-container');
+      if(mc && mc.innerHTML.indexOf('modal-overlay')!==-1) openJVDetail(l.id);
+      renderJVLeadsTab && renderJVLeadsTab();
+      showToast('📱 Found cell: '+e.data.phone,'success');
+      saveJVToSupabase(l);
+    } else {
+      showToast('No wireless number found — try another match on FastPeopleSearch','warning');
+    }
+  });
 }
 async function saveJVDetail(id){
   var l=jvLeads.find(function(x){return x.id===id;});
@@ -7171,7 +7603,9 @@ function renderSharedTaskView(l) {
               <div class="detail-item"><span class="detail-label">ARV</span><span class="detail-val" style="color:var(--green);font-weight:700">${esc(l.arv)||''}</span></div>
             </div>
           </div>
-          ${l.fbLink?'<div class="detail-section"><a href="'+esc(l.fbLink)+'" target="_blank" class="detail-link">View Facebook Post &#8599;</a></div>':''}
+          ${isD4DLead(l)
+              ? (l.location?'<div class="detail-section"><a href="'+buildMapsUrl(l.location)+'" target="_blank" class="detail-link">&#128506;&#65039; View on Google Maps &#8599;</a></div>':'')
+              : (l.fbLink?'<div class="detail-section"><a href="'+esc(l.fbLink)+'" target="_blank" class="detail-link">View Facebook Post &#8599;</a></div>':'')}
           <div class="form-section"><div class="form-section-title">Update This Lead</div>
             <div class="form-grid">
               <div class="form-field"><label class="form-label">Status</label><select id="shared-jv-status" class="form-select"><option value="">&#8212; Select &#8212;</option>${statusOpts}</select></div>
@@ -7829,7 +8263,7 @@ function dispoFlyerHTML(p){
     +'<a class="mf-jv" href="'+esc(jv)+'" target="_blank"><div class="t">Are you an Agent or Wholesaler?</div><div class="s">Click here to learn about our Joint Venture Program &rarr;</div></a>'
   +'</div></div>'
   +'<footer class="mf-foot"><div class="wrap">'+social('mf-fsoc')
-    +'<div class="mf-fbrand">MESTATE</div><div class="mf-faddr">2300 Wilson Blvd &middot; Arlington, VA 22201</div>'
+    +'<div class="mf-fbrand" style="margin-bottom:14px">MESTATE</div>'
     +'<div class="mf-legal">&copy; 2025 Mestate. All rights reserved.<br>All properties are sold as-is via assignment of contract. Buyers are responsible for conducting their own due diligence prior to purchase.<br><span class="warn">Unauthorized direct contact with any realtor, seller, or partner affiliated with Mestate during an active contract period is strictly prohibited and will result in legal action.</span></div>'
   +'</div></footer></div>';
 }
