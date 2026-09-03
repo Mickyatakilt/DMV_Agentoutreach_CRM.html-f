@@ -4426,7 +4426,7 @@ function renderReviewTab(){
   var rows = items.length===0
     ? '<div class="empty"><div class="empty-icon">&#128269;</div><h3>Nothing needs review</h3></div>'
     : '<div class="table-container"><div class="table-wrap"><table>'
-      +'<thead><tr><th style="width:30px;text-align:center"><input type="checkbox" title="Select all" onclick="rvToggleAll(this.checked)"></th><th>Lead</th><th>Sent By</th><th>Sent</th><th>Review Note</th><th>Offer</th><th>ARV</th><th>Follow-Up</th><th>Status</th><th></th></tr></thead><tbody>'
+      +'<thead><tr><th style="width:30px;text-align:center"><input type="checkbox" title="Select all" onclick="rvToggleAll(this.checked)"></th><th>Lead</th><th>Phone</th><th>Sent By</th><th>Sent</th><th>Review Note</th><th>Offer</th><th>ARV</th><th>Follow-Up</th><th>Status</th><th></th></tr></thead><tbody>'
       + items.map(function(it){
           var l=it.l, kind=it.kind;
           var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
@@ -4442,6 +4442,9 @@ function renderReviewTab(){
           var sentAt = l.reviewSentAt ? new Date(l.reviewSentAt).toLocaleString() : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           var note = l.reviewNote ? '<div style="font-size:12px;max-width:240px;white-space:pre-wrap;color:var(--text2)">'+esc(l.reviewNote)+'</div>' : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
+          var phoneHtml = l.phone
+            ? '<a href="tel:'+esc(String(l.phone).replace(/[^\\d+]/g,''))+'" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;white-space:nowrap;font-weight:600">'+esc(l.phone)+'</a>'
+            : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
           var isHot = kind==='lead' && !!l.d4dHot;
           // 🔥 Hot toggle: click to flag a lead to come back to. When on, the whole row goes red
           // (and the lead floats to the top); the white "Hot" letters stay readable on the red.
@@ -4459,6 +4462,7 @@ function renderReviewTab(){
           return '<tr id="rrow-'+kind+'-'+l.id+'"'+(isHot?' class="hot-row"':'')+'>'
             +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>'
             +'<td onclick="'+openFn+'" style="cursor:pointer">'+ownerLine+'<div class="address-cell">'+typeTag+titleHtml+'</div></td>'
+            +'<td style="font-size:13px">'+phoneHtml+'</td>'
             +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
             +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
             +'<td>'+note+'</td>'
@@ -4490,8 +4494,8 @@ function renderReviewTab(){
   rvUpdateBar();
 }
 // ============================================================================
-// REVIEW-QUEUE SKIP TRACE — select leads (single/multiple) and send them off to
-// the free Radaris skip-trace add-on, which fills in the best WIRELESS number.
+// REVIEW-QUEUE SKIP TRACE — select leads (single/multiple) and skip-trace them via
+// Tracerfy (server-side proxy edge function), filling the best WIRELESS number.
 // Selection is keyed "kind:id" because Review mixes DMV/D4D leads and Tasks.
 // ============================================================================
 var reviewSel = new Set();
@@ -4522,11 +4526,65 @@ function rvUpdateBar(){
   var c=document.getElementById('rv-bulk-count'); if(c) c.textContent=n+' selected';
   var b=document.getElementById('rv-skiptrace-btn'); if(b) b.disabled=(n===0);
 }
-// Fire the skip trace: gather the selected leads' name+address and hand them to
-// the browser add-on via postMessage. If no add-on answers, tell the user how to
-// install it (nothing is sent anywhere without it — this is all local/free).
+// Fire the skip trace: gather selected leads (name+address), send them to the
+// Tracerfy proxy edge function (which holds the API key server-side), wait for the
+// bulk job to finish, then fill each lead's best WIRELESS number. 1 credit/hit,
+// misses are free. No browser extension / VPN needed — it all runs server-side.
 var __rvSkip = null;
-function rvSkipTraceSelected(){
+var SKIPTRACE_FN_URL = SUPABASE_URL + '/functions/v1/tracerfy-skiptrace';
+
+function __rvSetProgress(txt){
+  var p=document.getElementById('rv-skip-progress'); if(p) p.textContent=txt;
+}
+// "Doe, John" or "John Q Doe" -> {first,last}
+function rvParseName(raw){
+  raw=String(raw||'').trim();
+  if(!raw) return {first:'',last:''};
+  var first='',last='';
+  if(raw.indexOf(',')>=0){ var p=raw.split(','); last=p[0].trim(); first=((p[1]||'').trim().split(/\s+/)[0])||''; }
+  else { var q=raw.split(/\s+/); first=q[0]||''; last=q.length>1?q[q.length-1]:''; }
+  return {first:first,last:last};
+}
+// "4248 Foote St NE, Washington, DC 20019" -> {street,city,state,zip}
+function rvParseAddr(raw){
+  raw=String(raw||'').replace(/\s+/g,' ').trim();
+  var zip='',state='';
+  var zm=raw.match(/\b(\d{5})(?:-\d{4})?\s*$/);
+  if(zm){ zip=zm[1]; raw=raw.slice(0,zm.index).trim().replace(/,\s*$/,''); }
+  var sm=raw.match(/[,\s]([A-Za-z]{2})\s*$/);
+  if(sm){ state=sm[1].toUpperCase(); raw=raw.slice(0,sm.index).trim().replace(/,\s*$/,''); }
+  var parts=raw.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  var street='',city='';
+  if(parts.length>=2){ city=parts[parts.length-1]; street=parts.slice(0,parts.length-1).join(', '); }
+  else { street=parts[0]||''; }
+  return {street:street,city:city,state:state,zip:zip};
+}
+function rvStreetNum(a){ var m=String(a||'').match(/\d+/); return m?m[0]:''; }
+function rvFmtPhone(raw){
+  var d=String(raw||'').replace(/\D/g,'');
+  if(d.length===11 && d[0]==='1') d=d.slice(1);
+  if(d.length!==10) return String(raw||'').trim();
+  return '('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);
+}
+// Best WIRELESS number from a Tracerfy result row.
+function rvBestWireless(row){
+  if(row.mobiles && row.mobiles.length) return row.mobiles[0];
+  var t=(row.primary_phone_type||'').toLowerCase();
+  if(row.primary_phone && /mobile|wireless|cell/.test(t)) return row.primary_phone;
+  return '';
+}
+async function __rvFetchFn(payload){
+  var r=await fetch(SKIPTRACE_FN_URL,{
+    method:'POST',
+    headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+    body:JSON.stringify(payload)
+  });
+  return r.json().catch(function(){ return {}; });
+}
+function rvSleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+
+async function rvSkipTraceSelected(){
+  if(__rvSkip){ showToast('A skip trace is already running','error'); return; }
   var picks=[];
   reviewSel.forEach(function(k){
     var p=k.split(':'), kind=p[0], id=+p[1];
@@ -4536,77 +4594,69 @@ function rvSkipTraceSelected(){
     var address = kind==='task' ? (l.location||'') : (l.address||'');
     var nm = (l.name||'').trim();
     if(/^D4D Lead —/i.test(nm)) nm='';               // strip placeholder owner names
-    picks.push({ id:id, kind:kind, name:nm, address:address });
+    var pa=rvParseAddr(address), pn=rvParseName(nm);
+    picks.push({ id:id, kind:kind, name:nm, first_name:pn.first, last_name:pn.last,
+      address:pa.street, city:pa.city, state:pa.state, zip:pa.zip });
   });
   if(!picks.length){ showToast('Select at least one lead first','error'); return; }
-  var missing = picks.filter(function(p){ return !p.address; }).length;
-  if(missing===picks.length){ showToast('These leads have no address to trace','error'); return; }
+  var traceable=picks.filter(function(p){ return p.address && p.first_name && p.last_name; });
+  if(!traceable.length){ showToast('Selected leads need an owner name + street address to trace','error'); return; }
 
-  __rvSkip = { total:picks.length, done:0, found:0, ack:false, jobId:Date.now(), debugs:[] };
-  __rvSetProgress('Sending '+picks.length+' lead'+(picks.length!==1?'s':'')+' to skip trace…');
+  __rvSkip = { total:traceable.length, found:0 };
   var btn=document.getElementById('rv-skiptrace-btn'); if(btn) btn.disabled=true;
+  __rvSetProgress('Submitting '+traceable.length+' lead'+(traceable.length!==1?'s':'')+'…');
 
-  window.postMessage({ source:'CRM_SKIPTRACE_REQUEST', jobId:__rvSkip.jobId, leads:picks }, '*');
+  try {
+    var sub=await __rvFetchFn({ action:'submit', leads:traceable });
+    if(!sub || !sub.queue_id){
+      var em=(sub && sub.detail && sub.detail.detail) || (sub && sub.error) || 'submit failed';
+      showToast('Skip trace failed: '+em,'error');
+      __rvSkip=null; if(btn) btn.disabled=(reviewSel.size===0); __rvSetProgress(''); return;
+    }
+    // Poll until the bulk job finishes (~40s typical), up to ~4 min.
+    var rows=null;
+    for(var i=0;i<48;i++){
+      await rvSleep(5000);
+      __rvSetProgress('Finding numbers… ('+Math.min((i+1)*5,240)+'s)');
+      var res=await __rvFetchFn({ action:'result', queue_id:sub.queue_id });
+      if(res && res.pending===false && res.rows){ rows=res.rows; break; }
+    }
+    if(!rows){ showToast('Skip trace timed out — try again in a minute','error');
+      __rvSkip=null; if(btn) btn.disabled=(reviewSel.size===0); __rvSetProgress(''); return; }
 
-  // If the add-on never acknowledges, it isn't installed — guide the user.
-  setTimeout(function(){
-    if(__rvSkip && !__rvSkip.ack){
-      __rvSetProgress('');
-      var btn2=document.getElementById('rv-skiptrace-btn'); if(btn2) btn2.disabled=(reviewSel.size===0);
-      showToast('Skip-trace add-on not detected. Install the "Find Number" browser extension, then (if abroad) set Proton VPN to a US server and try again.','error');
-      __rvSkip=null;
-    }
-  }, 2000);
-}
-function __rvSetProgress(txt){
-  var p=document.getElementById('rv-skip-progress'); if(p) p.textContent=txt;
-}
-// Results stream back one lead at a time from the add-on.
-function __rvHandleResult(d){
-  if(!__rvSkip) return;
-  if(d.debug){ __rvSkip.debugs.push({ leadId:d.leadId, found:d.found, debug:d.debug }); }
-  var arr = d.kind==='task' ? jvLeads : leads;
-  var l = arr.find(function(x){return x.id===d.leadId;});
-  if(l && d.found && d.phone){
-    l.phone = d.phone;
-    if(d.carrier || d.lineType){
-      var tag = 'Skip trace: '+d.phone+(d.lineType?(' ('+d.lineType+(d.carrier?', '+d.carrier:'')+')'):'')+' — '+new Date().toLocaleDateString();
-      l.notes = l.notes ? (l.notes+'\n'+tag) : tag;
-    }
-    if(d.kind==='task'){ saveJV(); saveJVToSupabase(l); }
-    else { save(); saveLeadToSupabase(l); }
-    __rvSkip.found++;
+    // Match each returned row back to its lead (last name + street number) and
+    // fill the best wireless number.
+    var filled=0, savedLeads=false, savedTasks=false;
+    traceable.forEach(function(pk){
+      var row=rows.find(function(r){
+        return String(r.last_name||'').toLowerCase()===String(pk.last_name||'').toLowerCase()
+          && rvStreetNum(r.address)===rvStreetNum(pk.address);
+      });
+      if(!row) return;
+      var w=rvBestWireless(row);
+      if(!w) return;
+      var arr=pk.kind==='task'?jvLeads:leads;
+      var l=arr.find(function(x){return x.id===pk.id;});
+      if(!l) return;
+      l.phone=rvFmtPhone(w);
+      var tag='Skip trace: '+l.phone+' (wireless) — '+new Date().toLocaleDateString();
+      l.notes=l.notes?(l.notes+'\n'+tag):tag;
+      if(pk.kind==='task'){ saveJVToSupabase(l); savedTasks=true; }
+      else { saveLeadToSupabase(l); savedLeads=true; }
+      filled++;
+    });
+    if(savedLeads) save();
+    if(savedTasks) saveJV();
+
+    var t=__rvSkip.total;
+    showToast('Skip trace done: '+filled+' of '+t+' wireless number'+(t!==1?'s':'')+' found'+(filled<t?', '+(t-filled)+' with no cell on file':''),'success');
+  } catch(e){
+    showToast('Skip trace error: '+(e&&e.message?e.message:'network'),'error');
+  } finally {
+    __rvSkip=null;
+    reviewSel.clear();
+    renderReviewTab();
   }
-  __rvSkip.done++;
-  __rvSetProgress('Tracing '+__rvSkip.done+' of '+__rvSkip.total+'…  ('+__rvSkip.found+' found)');
-}
-function __rvFinish(){
-  if(!__rvSkip) return;
-  var f=__rvSkip.found, t=__rvSkip.total;
-  showToast('Skip trace done: '+f+' of '+t+' number'+(t!==1?'s':'')+' found'+(f<t?', '+(t-f)+' not found':''),'success');
-  // DEBUG: when nothing was found, surface the raw page diagnostics so they can
-  // be pasted back to fix the TruePeopleSearch selectors. Remove once working.
-  if(f===0 && __rvSkip.debugs && __rvSkip.debugs.length){
-    var blob=JSON.stringify(__rvSkip.debugs,null,2);
-    try{ window.prompt('Skip-trace debug (copy ALL of this and paste it back):', blob); }
-    catch(e){ alert(blob); }
-    try{ console.log('SKIPTRACE_DEBUG', blob); }catch(e){}
-  }
-  __rvSkip=null;
-  reviewSel.clear();
-  renderReviewTab();
-}
-// One-time listener for messages from the add-on's content script.
-if(!window.__rvSkipListenerBound){
-  window.__rvSkipListenerBound=true;
-  window.addEventListener('message', function(ev){
-    if(ev.source!==window) return;              // only same-page (content script) messages
-    var d=ev.data||{};
-    if(!__rvSkip || d.jobId!==__rvSkip.jobId) return;
-    if(d.source==='CRM_SKIPTRACE_ACK'){ __rvSkip.ack=true; __rvSetProgress('Tracing 0 of '+__rvSkip.total+'…'); }
-    else if(d.source==='CRM_SKIPTRACE_RESULT'){ __rvHandleResult(d); }
-    else if(d.source==='CRM_SKIPTRACE_DONE'){ __rvFinish(); }
-  });
 }
 
 // Add a lead/task to the Review queue and stamp who sent it + when (used by the Review button on Send and the footer Review button).
