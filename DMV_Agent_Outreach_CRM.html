@@ -2353,7 +2353,7 @@ var crmBuyers = null;                 // null = not loaded yet
 var crmProps  = null;                 // saved deals, null = not loaded yet
 var bySearch = '', byArea = '', byHot = false;
 // property builder draft (kept so re-renders don't lose typing); photos = array of image URLs
-var dispoDraft = {id:null,address:'',headerPhoto:'',price:'',arv:'',beds:'',baths:'',sqft:'',basement:'',description:'',comps:'',compsPhotos:[],notes:'',photos:[],photosLink:''};
+var dispoDraft = {id:null,address:'',headerPhoto:'',price:'',arv:'',beds:'',baths:'',sqft:'',basement:'',description:'',comps:'',compsPhotos:[],notes:'',photos:[],photosLink:'',sourceType:'',contactName:'',contactEmail:'',contactPhone:''};
 
 function byFromDb(r){ return {id:r.id,name:r.name||'',email:r.email||'',phone:r.phone||'',area:r.area||'',
   hot:!!r.hot,buyBox:r.buy_box||'',tags:r.tags||'',notes:r.notes||''}; }
@@ -2375,10 +2375,12 @@ function propFromDb(r){ return {id:r.id,address:r.address||'',headerPhoto:r.head
   sqft:r.sqft||'',basement:r.basement||'',description:r.description||'',comps:r.comps||'',
   compsPhotos:Array.isArray(r.comps_photos)?r.comps_photos:[],notes:r.notes||'',
   photos:Array.isArray(r.photos)?r.photos:[],photosLink:r.photos_link||'',
-  status:r.status||'active',shareToken:r.share_token||'',createdBy:r.created_by||'',createdAt:r.created_at||''}; }
+  status:r.status||'active',shareToken:r.share_token||'',createdBy:r.created_by||'',createdAt:r.created_at||'',
+  sourceType:r.source_type||'',contactName:r.contact_name||'',contactEmail:r.contact_email||'',contactPhone:r.contact_phone||''}; }
 function propToDb(p){ return {address:p.address||'',header_photo:p.headerPhoto||'',price:p.price||'',arv:p.arv||'',beds:p.beds||'',baths:p.baths||'',
   sqft:p.sqft||'',basement:p.basement||'',description:p.description||'',comps:p.comps||'',
   comps_photos:p.compsPhotos||[],notes:p.notes||'',photos:p.photos||[],photos_link:p.photosLink||'',status:p.status||'active',
+  source_type:p.sourceType||'',contact_name:p.contactName||'',contact_email:p.contactEmail||'',contact_phone:p.contactPhone||'',
   updated_at:new Date().toISOString()}; }
 async function crmPropsFetch(){
   try { var rows=await sbFetch(PROP_PATH+'?select=*&order=id.desc&limit=2000'); crmProps=(rows||[]).map(propFromDb); }
@@ -2416,6 +2418,11 @@ function dispoReadForm(){
     var el=document.getElementById('dp-'+k); if(el) dispoDraft[k]=mfSanitize(el.innerHTML);
   });
   var pl=document.getElementById('dp-photoslink'); if(pl) dispoDraft.photosLink=pl.value;
+  // Internal-only fields (never rendered on the flyer / never in the get-property feed).
+  var src=document.getElementById('dp-source'); if(src) dispoDraft.sourceType=src.value;
+  var cn=document.getElementById('dp-contact-name'); if(cn) dispoDraft.contactName=cn.value.trim();
+  var ce=document.getElementById('dp-contact-email'); if(ce) dispoDraft.contactEmail=ce.value.trim();
+  var cp=document.getElementById('dp-contact-phone'); if(cp) dispoDraft.contactPhone=cp.value.trim();
   return dispoDraft;
 }
 // Rich-text toolbar action (mousedown so the editor keeps its selection/focus).
@@ -2661,6 +2668,17 @@ function renderDispo(){
             + '<div style="display:flex;gap:6px;margin-top:8px"><input id="dp-pastelinks" class="form-input"><button class="btn btn-secondary btn-sm" onclick="dispoAddPastedLinks()">Add</button></div>'
           + '</div>'
           + '<div class="form-field full"><label class="form-label">Photo folder link <span style="font-weight:400;color:var(--text3)">(optional — Dropbox/Drive)</span></label><input id="dp-photoslink" class="form-input" value="'+esc(d.photosLink)+'"></div>'
+          + '<div class="form-field full" style="border-top:2px solid var(--border);margin-top:8px;padding-top:14px">'
+            + '<label class="form-label">&#128274; Internal &mdash; Our Records <span style="font-weight:400;color:var(--text3)">(private &mdash; NOT shown on the flyer)</span></label>'
+            + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+              + '<div><label class="form-label" style="font-size:11px">Deal Source</label><select id="dp-source" class="form-input"><option value="">&#8212; Select &#8212;</option>'
+                + ['JV','Direct to Seller','Realtor'].map(function(o){ return '<option value="'+o+'"'+(d.sourceType===o?' selected':'')+'>'+o+'</option>'; }).join('')
+                + '</select></div>'
+              + '<div><label class="form-label" style="font-size:11px">Contact Name</label><input id="dp-contact-name" class="form-input" value="'+esc(d.contactName)+'"></div>'
+              + '<div><label class="form-label" style="font-size:11px">Contact Email</label><input id="dp-contact-email" class="form-input" value="'+esc(d.contactEmail)+'"></div>'
+              + '<div><label class="form-label" style="font-size:11px">Contact Phone</label><input id="dp-contact-phone" class="form-input" value="'+esc(d.contactPhone)+'"></div>'
+            + '</div>'
+          + '</div>'
         + '</div>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
           + '<button class="btn btn-secondary btn-sm" onclick="dispoPreviewDraft()">&#128065; Preview</button>'
@@ -2713,6 +2731,7 @@ function dispoDealsHTML(){
       +'<div class="dp-deal-body">'
         +'<div class="dp-deal-addr">'+esc(p.address||'(no address)')+'</div>'
         +'<div class="dp-deal-meta">'+(p.price?'<b>'+esc(p.price)+'</b>':'')+(spec.length?' &middot; '+esc(spec.join('/')):'')+(p.photos&&p.photos.length?' &middot; '+p.photos.length+' 📷':'')+'</div>'
+        +((p.sourceType||p.contactName)?'<div class="dp-deal-meta" style="margin-top:3px">'+(p.sourceType?'<span class="lt-chip" style="color:#3730a3;background:#e0e7ff">'+esc(p.sourceType)+'</span> ':'')+(p.contactName?'<span style="color:var(--text3)">'+esc(p.contactName)+'</span>':'')+'</div>':'')
         +'<div class="dp-deal-acts">'
           +'<button class="btn btn-primary btn-sm" onclick="dispoCopyLink('+p.id+')">📋 Link</button>'
           +'<button class="btn btn-secondary btn-sm" onclick="dispoCopyMessage('+p.id+')">💬 Msg</button>'
@@ -8244,7 +8263,7 @@ function dispoFlyerHTML(p){
     +'<a class="mf-jv" href="'+esc(jv)+'" target="_blank"><div class="t">Are you an Agent or Wholesaler?</div><div class="s">Click here to learn about our Joint Venture Program &rarr;</div></a>'
   +'</div></div>'
   +'<footer class="mf-foot"><div class="wrap">'+social('mf-fsoc')
-    +'<div class="mf-fbrand">MESTATE</div><div class="mf-faddr">2300 Wilson Blvd &middot; Arlington, VA 22201</div>'
+    +'<div class="mf-fbrand" style="margin-bottom:14px">MESTATE</div>'
     +'<div class="mf-legal">&copy; 2025 Mestate. All rights reserved.<br>All properties are sold as-is via assignment of contract. Buyers are responsible for conducting their own due diligence prior to purchase.<br><span class="warn">Unauthorized direct contact with any realtor, seller, or partner affiliated with Mestate during an active contract period is strictly prohibited and will result in legal action.</span></div>'
   +'</div></footer></div>';
 }
