@@ -4444,7 +4444,9 @@ function renderReviewTab(){
           var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
           var phoneHtml = l.phone
             ? '<a href="tel:'+esc(String(l.phone).replace(/[^\\d+]/g,''))+'" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;white-space:nowrap;font-weight:600">'+esc(l.phone)+'</a>'
-            : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
+            : (/Skip trace: no cell on file/.test(l.notes||'')
+                ? '<span style="color:#dc2626;font-size:11px;font-weight:600;white-space:nowrap">Number not found</span>'
+                : '<span style="color:var(--text4);font-size:11px">&#8212;</span>');
           var isHot = kind==='lead' && !!l.d4dHot;
           // 🔥 Hot toggle: click to flag a lead to come back to. When on, the whole row goes red
           // (and the lead floats to the top); the white "Hot" letters stay readable on the red.
@@ -4625,25 +4627,32 @@ async function rvSkipTraceSelected(){
       __rvSkip=null; if(btn) btn.disabled=(reviewSel.size===0); __rvSetProgress(''); return; }
 
     // Match each returned row back to its lead (last name + street number) and
-    // fill the best wireless number.
+    // fill the best wireless number. Leads with no cell on file are stamped so the
+    // Phone column can show "Number not found" (persisted via the notes column).
     var filled=0, savedLeads=false, savedTasks=false;
+    var stamp=new Date().toLocaleDateString();
     traceable.forEach(function(pk){
+      var arr=pk.kind==='task'?jvLeads:leads;
+      var l=arr.find(function(x){return x.id===pk.id;});
+      if(!l) return;
       var row=rows.find(function(r){
         return String(r.last_name||'').toLowerCase()===String(pk.last_name||'').toLowerCase()
           && rvStreetNum(r.address)===rvStreetNum(pk.address);
       });
-      if(!row) return;
-      var w=rvBestWireless(row);
-      if(!w) return;
-      var arr=pk.kind==='task'?jvLeads:leads;
-      var l=arr.find(function(x){return x.id===pk.id;});
-      if(!l) return;
-      l.phone=rvFmtPhone(w);
-      var tag='Skip trace: '+l.phone+' (wireless) — '+new Date().toLocaleDateString();
-      l.notes=l.notes?(l.notes+'\n'+tag):tag;
+      var w=row?rvBestWireless(row):'';
+      if(w){
+        l.phone=rvFmtPhone(w);
+        var tag='Skip trace: '+l.phone+' (wireless) — '+stamp;
+        l.notes=l.notes?(l.notes+'\n'+tag):tag;
+        filled++;
+      } else {
+        if(!/Skip trace: no cell on file/.test(l.notes||'')){
+          var tag2='Skip trace: no cell on file — '+stamp;
+          l.notes=l.notes?(l.notes+'\n'+tag2):tag2;
+        }
+      }
       if(pk.kind==='task'){ saveJVToSupabase(l); savedTasks=true; }
       else { saveLeadToSupabase(l); savedLeads=true; }
-      filled++;
     });
     if(savedLeads) save();
     if(savedTasks) saveJV();
