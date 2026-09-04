@@ -5474,20 +5474,17 @@ function renderEditModal(){
               <div class="form-field"><label class="form-label">Comp Link</label><input id="f-comps" class="form-input" value="${esc(compLink)}" placeholder="https://..."></div>
             </div>
           </div>
-          ${l.nationwide==='Yes'?`
-          <div class="form-section"><div class="form-section-title">&#127758; Nationwide</div>
+          <div class="form-section"><div class="form-section-title">&#128269; Review</div>
             <div class="form-grid cols-1">
-              <div class="form-field">
-                <div class="field-hint">This lead was added under Nationwide and stays there.</div>
-              </div>
+              ${l.nationwide==='Yes'?`<div class="form-field"><div class="field-hint">This lead was added under Nationwide and stays there.</div></div>`:''}
               <div class="form-field" id="needs-review-wrap">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600">
                   <input type="checkbox" id="f-needs-review" ${l.needsReview?'checked':''} style="width:16px;height:16px;cursor:pointer"> Needs Review
                 </label>
-                <div class="field-hint">Adds this lead to the Review queue</div>
+                <div class="field-hint">Check this to send the lead to the Review queue.</div>
               </div>
             </div>
-          </div>`:''}
+          </div>
           <div class="form-section"><div class="form-section-title">Notes</div>
             <div class="form-field"><textarea id="f-notes" class="form-textarea" placeholder="Notes, conversations, next steps...">${esc(l.notes)}</textarea></div>
           </div>
@@ -5652,7 +5649,9 @@ async function saveLead(){
   var bathsEl=document.getElementById('f-baths'); if(bathsEl) l.baths=bathsEl.value.trim();
   var sqftEl=document.getElementById('f-sqft'); if(sqftEl) l.sqft=sqftEl.value.trim();
   var nrEl=document.getElementById('f-needs-review');
-  l.needsReview = (l.nationwide==='Yes' && nrEl) ? nrEl.checked : false;
+  // "Needs Review" now applies to ALL leads (DMV + Nationwide). If the checkbox is present,
+  // honor it; if not, keep whatever flag the lead already had (don't silently clear it).
+  l.needsReview = nrEl ? nrEl.checked : (l.needsReview||false);
   l.updatedBy=currentUser.name;l.updatedAt=today();
   if(l.followUpDate && l.followUpDate!==oldFollowUp){
     if(!l.activityLog) l.activityLog=[];
