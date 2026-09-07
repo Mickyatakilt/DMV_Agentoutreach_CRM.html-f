@@ -4451,6 +4451,78 @@ function buildTempScoreViewHTML(score){
     + rows;
 }
 
+// ============================================================================
+// D4D SCAN HEALTH — the nightly Driving-for-Dollars robot (GitHub Actions) can
+// fail silently (e.g. a dead API key or an SDK break => grading throws). This
+// checks the scanner table (d4d_leads) and surfaces a red "D4D Scan Failed"
+// banner at the top of the Review tab. Two failure signals, neither of which
+// fires on a legitimately quiet day (0 new hot leads but everything processed):
+//   • status='error' rows  => grading threw an exception on the last run
+//   • no scan in >40h       => the nightly robot didn't run at all
+// Read-only; uses the anon key (d4d_leads is anon-SELECTable).
+// ============================================================================
+var d4dHealth = null;          // {failed, errCount, errCapped, scanStale, latestScan, latestErrAt}
+var d4dBannerDismissed = false; // per-session hide (reappears on reload while still failing)
+var d4dHealthChecking = false;
+var D4D_STALE_MS = 40*60*60*1000; // 40h covers a full missed nightly cycle + margin
+async function refreshD4dHealth(){
+  if(d4dHealthChecking) return;
+  d4dHealthChecking = true;
+  try {
+    // Most recent scan of any row (did the scan step run at all?)
+    var latest = await sbFetch('d4d_leads?select=scanned_at&order=scanned_at.desc&limit=1');
+    var latestScan = (latest && latest[0] && latest[0].scanned_at) || null;
+    // Rows that failed to grade (durable failure marker; not auto-retried by the robot)
+    var errs = await sbFetch('d4d_leads?status=eq.error&select=scanned_at&order=scanned_at.desc&limit=1000') || [];
+    var errCount = errs.length;
+    var scanStale = !latestScan || (Date.now() - new Date(latestScan).getTime() > D4D_STALE_MS);
+    d4dHealth = {
+      failed: (errCount > 0) || scanStale,
+      errCount: errCount,
+      errCapped: errCount === 1000,
+      scanStale: scanStale,
+      latestScan: latestScan,
+      latestErrAt: (errs[0] && errs[0].scanned_at) || null
+    };
+  } catch(e){
+    // On a read error, don't invent a false alarm — treat health as unknown/OK.
+    d4dHealth = { failed:false, errCount:0, scanStale:false, latestScan:null, latestErrAt:null };
+  } finally {
+    d4dHealthChecking = false;
+    if(activeTab === 'review') renderReviewTab();
+  }
+}
+function d4dTimeAgo(iso){
+  if(!iso) return '';
+  var ms = Date.now() - new Date(iso).getTime();
+  var h = Math.floor(ms/3600000);
+  if(h < 1) return 'under an hour ago';
+  if(h < 48) return h + ' hour' + (h===1?'':'s') + ' ago';
+  return Math.floor(h/24) + ' day' + (Math.floor(h/24)===1?'':'s') + ' ago';
+}
+function d4dScanBannerHTML(){
+  if(!d4dHealth){ refreshD4dHealth(); return ''; } // lazy first load
+  if(!d4dHealth.failed || d4dBannerDismissed) return '';
+  var msg;
+  if(d4dHealth.errCount > 0){
+    var n = (d4dHealth.errCapped ? '1000+' : d4dHealth.errCount);
+    msg = n + ' propert' + (d4dHealth.errCount===1?'y':'ies') + ' failed to grade on the last run'
+        + (d4dHealth.latestErrAt ? ' (' + d4dTimeAgo(d4dHealth.latestErrAt) + ')' : '')
+        + ' — likely an API key or connection issue. New leads may be missing.';
+  } else {
+    msg = 'No scan has run since ' + (d4dHealth.latestScan ? new Date(d4dHealth.latestScan).toLocaleString() : 'a while ago')
+        + ' — the nightly robot may be down.';
+  }
+  return '<div style="display:flex;align-items:center;gap:11px;background:#fef2f2;border:1px solid #fca5a5;border-left:4px solid #dc2626;border-radius:10px;padding:11px 14px;margin-bottom:12px">'
+    + '<span style="font-size:18px;line-height:1">&#9888;&#65039;</span>'
+    + '<div style="flex:1;min-width:0">'
+      + '<div style="font-weight:800;font-size:13.5px;color:#991b1b">D4D Scan Failed</div>'
+      + '<div style="font-size:12px;color:#b91c1c;margin-top:2px">' + esc(msg) + '</div>'
+    + '</div>'
+    + '<button onclick="refreshD4dHealth()" class="btn btn-white btn-sm" title="Re-check scan status" style="font-weight:700;color:#991b1b;border-color:#fca5a5">&#8635; Recheck</button>'
+    + '<button onclick="d4dBannerDismissed=true;renderReviewTab()" title="Hide until reload" style="background:none;border:none;color:#b91c1c;font-size:18px;line-height:1;cursor:pointer;padding:0 2px">&times;</button>'
+  + '</div>';
+}
 function renderReviewTab(){
   var items = leads.filter(function(l){ return !l.deleted && l.needsReview; }).map(function(l){ return {kind:'lead', l:l}; })
     .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview; }).map(function(t){ return {kind:'task', l:t}; }))
@@ -4526,7 +4598,7 @@ function renderReviewTab(){
   document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
     +'<div style="margin-bottom:16px"><h2 style="font-size:16px;font-weight:700">&#128269; Review Queue</h2>'
     +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Leads flagged Needs Review (by the team or by a recipient) or added here when sent out. Sent By / Sent shows who flagged it and when; Review Note is their reason. This is a work queue -- leads stay in their database either way.</p></div>'
-    +bulkBarHtml+rows+'</div>';
+    +d4dScanBannerHTML()+bulkBarHtml+rows+'</div>';
   rvUpdateBar();
 }
 // ============================================================================
@@ -7289,6 +7361,7 @@ async function initFullApp() {
   await loadJVFromSupabase();
   if(synced) { computePendingActivity(); render(); }
   computePendingActivity(); render();
+  refreshD4dHealth(); // D4D nightly-scan health (surfaces the Review-tab failure banner)
 
   // Step 3: Auto-refresh every 30 seconds to catch other users' changes
   setInterval(async function() {
@@ -7308,6 +7381,9 @@ async function initFullApp() {
       }
     } catch(e) { showSyncStatus('offline'); }
   }, 30000);
+
+  // Re-check D4D scan health every 10 min (it only changes when the nightly robot runs)
+  setInterval(function(){ refreshD4dHealth(); }, 600000);
 
   // Step 4: Same 30-second auto-refresh for Tasks
   setInterval(async function() {
