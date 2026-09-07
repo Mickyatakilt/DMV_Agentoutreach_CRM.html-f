@@ -1039,6 +1039,20 @@ function ghlNormPhone(p){
   return '';
 }
 
+// When a lead's phone number changes, any cached GHL contact id belongs to the OLD
+// number and must be dropped. Clearing ghlContactId makes the phone link and the SMS
+// panel (openGHL / mountGhlSms) re-resolve against the NEW number, and persisting ''
+// wipes the stale ghl_contact_id in Supabase so it doesn't come back on reload.
+// Call this BEFORE overwriting l.phone. Returns true if the id was cleared.
+function ghlClearIfPhoneChanged(l, newPhone){
+  if(!l) return false;
+  if(ghlNormPhone(l.phone||'') !== ghlNormPhone(newPhone||'')){
+    l.ghlContactId = '';
+    return true;
+  }
+  return false;
+}
+
 async function ghlLookupPhone(phone){
   try {
     var r = await fetch(GHL_LOOKUP_URL, {
@@ -4714,7 +4728,8 @@ async function rvSkipTraceSelected(){
       var row=rows.find(function(r){ return rvAddrKey(r.address, r.state)===key; });
       var w=row?rvBestWireless(row):'';
       if(w){
-        l.phone=rvFmtPhone(w);
+        var newSkipPhone=rvFmtPhone(w);
+        ghlClearIfPhoneChanged(l,newSkipPhone); l.phone=newSkipPhone;
         // Advanced traces surface an owner name we didn't have — capture it.
         if(row && row.first_name && (!l.name || /^D4D Lead —/i.test(l.name))){
           l.name=(row.first_name+' '+row.last_name).trim();
@@ -5637,7 +5652,9 @@ async function saveLead(){
   if(dup&&!confirm('Duplicate address found:\n"'+dup.address+'"\n\nSave anyway?')) return;
   const l=modalLead;
   const oldFollowUp=l.followUpDate;
-  l.address=addr;l.name=document.getElementById('f-name').value.trim();l.phone=document.getElementById('f-phone').value.trim();
+  l.address=addr;l.name=document.getElementById('f-name').value.trim();
+  var newPhone=document.getElementById('f-phone').value.trim();
+  ghlClearIfPhoneChanged(l,newPhone); l.phone=newPhone;
   l.offer=document.getElementById('f-offer').value.trim();l.arv=document.getElementById('f-arv').value.trim();
   l.marketingType=document.getElementById('f-mkt').value;l.status=document.getElementById('f-status').value;
   l.leadSource=document.getElementById('f-src').value;l.month=document.getElementById('f-month').value;
@@ -6275,7 +6292,7 @@ if(!window.__crmFindNumberBound){
     var l=jvLeads.find(function(x){return x.id===e.data.leadId;});
     if(!l) return;
     if(e.data.found && e.data.phone){
-      l.phone=e.data.phone;
+      ghlClearIfPhoneChanged(l,e.data.phone); l.phone=e.data.phone;
       if(!l.activityLog) l.activityLog=[];
       l.activityLog.push({type:'Skip Trace',by:'Find #',at:new Date().toISOString(),note:'Found wireless '+e.data.phone+(e.data.carrier?(' ('+e.data.carrier+')'):'')});
       saveJV();
@@ -6430,7 +6447,8 @@ async function saveEditTask(id){
   if(dup && !confirm('Duplicate address found:\n"'+dup.location+'"\n\nSave anyway?')) return;
   var oldFollowUp = l.followUpDate;
   l.name = document.getElementById('t-name').value.trim();
-  l.phone = document.getElementById('t-phone').value.trim();
+  var newTPhone = document.getElementById('t-phone').value.trim();
+  ghlClearIfPhoneChanged(l,newTPhone); l.phone = newTPhone;
   l.location = addr;
   l.askingPrice = document.getElementById('t-askingprice').value.trim();
   l.arv = document.getElementById('t-arv').value.trim();
@@ -8195,6 +8213,21 @@ function mfSanitize(html){
 }
 // True if the sanitized HTML has any visible text (so empty editors don't render a blank card).
 function mfHas(html){ return mfSanitize(html).replace(/<[^>]*>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').trim().length>0; }
+// Buyer "Submit an offer" — opens their email app to contact@mestate.info, subject = address,
+// body pre-filled with the typed name/offer/contact. Self-contained; works on the CRM token
+// page AND the pasted GHL page (mfSubmitOffer MUST be added to the GHL extractor list).
+function mfSubmitOffer(btn){
+  var box=btn.closest('.mf-offer'); if(!box) return;
+  var n=(box.querySelector('.mf-oname').value||'').trim();
+  var o=(box.querySelector('.mf-ooffer').value||'').trim();
+  var c=(box.querySelector('.mf-ocontact').value||'').trim();
+  if(!n||!c){ alert('Please add your name and a contact (phone or email).'); return; }
+  var a=btn.getAttribute('data-addr')||'this property', em=btn.getAttribute('data-email')||'', e=encodeURIComponent;
+  window.location.href='mailto:'+em+'?subject='+e('Offer on '+a)
+    +'&body='+e('I would like to submit an offer on '+a+'.\n\nName: '+n+'\nOffer Price: '+o+'\nContact: '+c);
+  var t=box.querySelector('.mf-othanks');
+  if(t){ t.style.display='block'; t.textContent='✅ Thanks! Your email is opening — press send to submit your offer for '+a+'.'; }
+}
 // Full branded buyer flyer (navy + gold). Self-contained styles; used by the CRM's own shared
 // page AND mirrored in the GHL page snippet. Reads the crm_properties fields + brand constants.
 function dispoFlyerHTML(p){
@@ -8219,7 +8252,7 @@ function dispoFlyerHTML(p){
   var priceHTML=(p.price||p.arv)?('<div class="mf-card"><h2>&#128176; The Numbers</h2><div class="mf-price-grid">'
     +(p.price?'<div class="mf-pb mf-ask"><div class="lbl">Asking Price</div><div class="amt">'+esc(mfMoney(p.price))+'</div></div>':'')
     +(p.arv?'<div class="mf-pb mf-arv"><div class="lbl">ARV</div><div class="amt">'+esc(mfMoney(p.arv))+'</div></div>':'')+'</div></div>'):'';
-  var compImgs=(p.compsPhotos&&p.compsPhotos.length)?('<div class="mf-gal" style="margin-top:12px">'
+  var compImgs=(p.compsPhotos&&p.compsPhotos.length)?('<div class="mf-compimgs">'
     +p.compsPhotos.map(function(u){return '<a href="'+esc(u)+'" target="_blank"><img src="'+esc(u)+'" loading="lazy" alt=""></a>';}).join('')+'</div>'):'';
   var compsHTML=(mfHas(p.comps)||compImgs)?('<div class="mf-card"><h2>&#128202; Comparable Sales</h2>'
     +(mfHas(p.comps)?'<div class="mf-comps mf-rt">'+mfSanitize(p.comps)+'</div>':'')+compImgs+'</div>'):'';
@@ -8240,11 +8273,13 @@ function dispoFlyerHTML(p){
   +'.mf-rt p{margin:0 0 8px}.mf-rt p:last-child{margin-bottom:0}.mf-rt ul,.mf-rt ol{margin:6px 0 8px 22px}.mf-rt li{margin:3px 0}.mf-rt b,.mf-rt strong{font-weight:800}'
   +'.mf-body{padding:22px 20px 40px}.mf-card{background:#fff;border:1px solid var(--ln);border-radius:16px;box-shadow:0 6px 24px rgba(14,36,56,.06);padding:22px;margin-bottom:18px}.mf-card h2{font-size:13px;text-transform:uppercase;letter-spacing:1.2px;color:var(--gdd);font-weight:800;margin-bottom:14px}'
   +'.mf-gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.mf-gal a{border-radius:11px;overflow:hidden;aspect-ratio:4/3;background:#dde5ec;display:block}.mf-gal img{width:100%;height:100%;object-fit:cover;display:block}'
+  +'.mf-compimgs{display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px}@media(min-width:640px){.mf-compimgs{grid-template-columns:1fr 1fr}}.mf-compimgs a{display:block;border-radius:12px;overflow:hidden}.mf-compimgs img{width:100%;height:auto;max-height:none;object-fit:contain;border-radius:12px;border:1px solid var(--ln);display:block;background:#fff}'
   +'.mf-link{display:inline-flex;align-items:center;gap:8px;margin-top:14px;text-decoration:none;font-weight:700;font-size:14px;color:var(--nv);border:1.5px solid var(--ln);border-radius:11px;padding:11px 16px}.mf-link:hover{border-color:var(--gd)}'
   +'.mf-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.mf-stat{background:#f7f9fb;border:1px solid var(--ln);border-radius:13px;padding:16px 8px;text-align:center}.mf-stat .v{font-size:20px;font-weight:800;color:var(--nv)}.mf-stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin-top:3px;font-weight:600}'
   +'.mf-price-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.mf-pb{border-radius:14px;padding:18px;text-align:center}.mf-ask{background:linear-gradient(135deg,var(--nv),var(--nv2));color:#fff}.mf-arv{background:#f2f8f4;border:1.5px solid #cfe7da}.mf-pb .lbl{font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:800}.mf-ask .lbl{color:var(--gd)}.mf-arv .lbl{color:var(--grn)}.mf-pb .amt{font-size:28px;font-weight:900;margin-top:6px}'
   +'.mf-comps{font-size:14.5px;color:#33414f;white-space:pre-line}'
   +'.mf-cta{background:linear-gradient(135deg,var(--nv),var(--nv2));color:#fff;border-radius:16px;padding:26px 22px;text-align:center;margin-bottom:18px}.mf-cta h3{font-size:20px;font-weight:800;margin-bottom:6px}.mf-cta p{color:#cdd8e2;font-size:14px;max-width:480px;margin:0 auto 16px}.mf-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}.mf-btn{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-weight:800;font-size:15px;padding:14px 22px;border-radius:12px}.mf-gold{background:linear-gradient(135deg,var(--gd),var(--gdd));color:var(--nv)}.mf-ghost{background:rgba(255,255,255,.12);color:#fff;border:1.5px solid rgba(255,255,255,.25)}'
+  +'.mf-offer{max-width:360px;margin:20px auto 0;text-align:left;border-top:1px solid rgba(255,255,255,.15);padding-top:18px}.mf-offer-h{color:#fff;font-weight:800;font-size:15px;margin-bottom:12px;text-align:center}.mf-oi{width:100%;border:0;border-radius:10px;padding:12px;font-size:15px;margin-bottom:9px;background:rgba(255,255,255,.15);color:#fff;font-family:inherit}.mf-oi::placeholder{color:#b7c4d1}'
   +'.mf-jv{display:block;text-decoration:none;background:#fff;border:2px dashed var(--gd);border-radius:16px;padding:20px;text-align:center;margin-bottom:26px}.mf-jv:hover{background:#fffaf0}.mf-jv .t{font-weight:800;color:var(--nv);font-size:16px}.mf-jv .s{color:var(--gdd);font-weight:700;font-size:13px;margin-top:4px}'
   +'.mf-foot{background:var(--nv);color:#aebccb;font-size:12.5px}.mf-foot .wrap{padding:28px 20px 34px;text-align:center}.mf-fsoc{justify-content:center;margin-bottom:16px}.mf-fsoc a{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:#fff}.mf-fbrand{color:#fff;font-weight:800;letter-spacing:1px;margin-bottom:4px}.mf-faddr{margin-bottom:14px;line-height:1.7}.mf-legal{border-top:1px solid rgba(255,255,255,.12);padding-top:14px;font-size:11.5px;line-height:1.7;color:#8ea0b2;max-width:640px;margin:6px auto 0}.mf-legal .warn{color:#e7bd73}'
   +'@media(max-width:560px){.mf-hero h1{font-size:23px}.mf-hero-wrap{flex-direction:column-reverse;align-items:stretch}.mf-hero-photo{width:100%;flex:none}.mf-stats{grid-template-columns:repeat(2,1fr)}.mf-pb .amt{font-size:22px}}'
@@ -8258,7 +8293,15 @@ function dispoFlyerHTML(p){
   +'</div></section>'
   +'<div class="mf-body"><div class="wrap">'+statHTML+gal+priceHTML+compsHTML+notesHTML
     +'<div class="mf-cta"><h3>Interested in this deal?</h3><p>Showings are by appointment only. Call or text Micky at '+esc(DISPO_CTA_PHONE||'')+(DISPO_CTA_EMAIL?', or email us':'')+' &mdash; serious cash buyers only.</p>'
-      +(ctaBtns?'<div class="mf-btns">'+ctaBtns+'</div>':'')+'</div>'
+      +(ctaBtns?'<div class="mf-btns">'+ctaBtns+'</div>':'')
+      +(DISPO_CTA_EMAIL?'<div class="mf-offer">'
+        +'<div class="mf-offer-h">&#9993;&#65039; Submit an offer</div>'
+        +'<input class="mf-oi mf-oname" placeholder="Your name">'
+        +'<input class="mf-oi mf-ooffer" placeholder="Your offer ($)">'
+        +'<input class="mf-oi mf-ocontact" placeholder="Phone or email">'
+        +'<button type="button" class="mf-btn mf-gold" style="width:100%;justify-content:center;border:0;cursor:pointer" data-addr="'+esc(p.address||'')+'" data-email="'+esc(DISPO_CTA_EMAIL)+'" onclick="mfSubmitOffer(this)">Submit Offer</button>'
+        +'<div class="mf-othanks" style="display:none;color:#eaf1f7;font-size:13px;margin-top:10px;line-height:1.5"></div>'
+      +'</div>':'')+'</div>'
     +'<a class="mf-jv" href="'+esc(jv)+'" target="_blank"><div class="t">Are you an Agent or Wholesaler?</div><div class="s">Click here to learn about our Joint Venture Program &rarr;</div></a>'
   +'</div></div>'
   +'<footer class="mf-foot"><div class="wrap">'+social('mf-fsoc')
