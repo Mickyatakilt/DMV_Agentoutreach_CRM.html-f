@@ -4517,8 +4517,11 @@ var d4dScanPollTimer = null;
 // Each graded d4d_leads row = one Street View image fetched. Counting graded rows
 // since the last Pacific midnight (when Google's daily quota resets) tells us how
 // much of today's ~300-image budget is used. We warn at ~95% used (≈5% left).
-var D4D_GOOGLE_LIMIT = 300;     // self-imposed Street-View images/day (matches the robot's cap)
-var D4D_GOOGLE_WARN = 0.95;     // warn when only ~5% of the daily budget remains
+// Real free ceiling is the ~$200/mo Google credit (~28k images/mo ≈ ~900/day sustainable).
+// This is a soft, informational target — Google served 363 in one day with zero errors, so we
+// never BLOCK scanning; we just show a heads-up as you approach the daily free-tier target.
+var D4D_GOOGLE_LIMIT = 900;     // soft daily free-tier target (informational only, never blocks)
+var D4D_GOOGLE_WARN = 0.95;     // heads-up when only ~5% of the daily target remains
 var d4dGoogleUsed = null;       // cached: images used today (null = not loaded yet)
 var d4dGoogleChecking = false;
 
@@ -4555,11 +4558,11 @@ function d4dLimitBannerHTML(){
   if(d4dGoogleUsed === null){ d4dRefreshGoogleUsage(); return ''; }        // lazy first load
   if(d4dGoogleUsed < Math.floor(D4D_GOOGLE_LIMIT*D4D_GOOGLE_WARN)) return ''; // plenty left → no banner
   var atCap = d4dGoogleUsed >= D4D_GOOGLE_LIMIT, left = Math.max(0, D4D_GOOGLE_LIMIT - d4dGoogleUsed);
-  var bg=atCap?'#fef2f2':'#fffbeb', bd=atCap?'#fca5a5':'#fcd34d', bl=atCap?'#dc2626':'#d97706', tx=atCap?'#991b1b':'#92400e';
-  var head = atCap ? 'Google image limit reached for today' : 'Almost at today’s Google image limit';
-  var msg = d4dGoogleUsed + ' of ' + D4D_GOOGLE_LIMIT + ' Street View images used today. '
-          + (atCap ? 'New scans can’t pull fresh photos until this resets around midnight Pacific.'
-                   : 'Only about ' + left + ' left — scans may return few leads until it resets around midnight Pacific.');
+  var bg='#fffbeb', bd='#fcd34d', bl='#d97706', tx='#92400e';   // amber, info-only (scanning never blocked)
+  var head = atCap ? 'Past today’s free image target (scanning still works)' : 'Nearing today’s free image target';
+  var msg = d4dGoogleUsed + ' of ~' + D4D_GOOGLE_LIMIT + ' Street View images used today (the free-tier daily target). '
+          + (atCap ? 'You can keep scanning — this is just a heads-up that further scans today start dipping into paid usage. Resets around midnight Pacific.'
+                   : 'About ' + left + ' left before you reach the free daily target. Resets around midnight Pacific.');
   return '<div style="display:flex;align-items:center;gap:11px;background:'+bg+';border:1px solid '+bd+';border-left:4px solid '+bl+';border-radius:10px;padding:11px 14px;margin-bottom:12px">'
     + '<span style="font-size:18px;line-height:1">&#9888;&#65039;</span>'
     + '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13.5px;color:'+tx+'">'+head+'</div>'
@@ -4588,18 +4591,13 @@ function d4dScanSetMsg(t){ var e=document.getElementById('d4d-scan-msg'); if(e) 
 
 async function d4dScanNow(){
   if(d4dScan.state==='running') return;
-  // Check today's Google budget BEFORE we start. Block at the cap, warn near it.
+  // Refresh today's Google usage for the heads-up. We NEVER block scanning on it (info only).
   try { d4dGoogleUsed=null; await d4dRefreshGoogleUsage(); } catch(e){}
-  if(d4dGoogleUsed !== null && d4dGoogleUsed >= D4D_GOOGLE_LIMIT){
-    if(activeTab==='review') renderReviewTab();
-    showToast('Google image limit reached ('+d4dGoogleUsed+'/'+D4D_GOOGLE_LIMIT+'). Resets ~midnight Pacific — try again then.','error');
-    return;
-  }
   d4dScan.state='running'; d4dScan.sawRunning=false; d4dScan.baseline=null;
   d4dScan.hotBefore = d4dCountReviewLeads();
   if(activeTab==='review') renderReviewTab();
   if(d4dGoogleUsed !== null && d4dGoogleUsed >= Math.floor(D4D_GOOGLE_LIMIT*D4D_GOOGLE_WARN)){
-    showToast('Heads up: near today’s Google limit ('+d4dGoogleUsed+'/'+D4D_GOOGLE_LIMIT+'). This scan may return few leads.','error');
+    showToast('Heads up: you’re near today’s free image target ('+d4dGoogleUsed+'/'+D4D_GOOGLE_LIMIT+'). Scanning still works.','error');
   }
   d4dScanSetMsg('Starting the robot…');
   // Baseline = the most recent run BEFORE we trigger, so we can tell our new run apart.
@@ -4640,7 +4638,7 @@ async function d4dScanPoll(tries){
       } else {
         // No new hot leads — tell Mike why (out of budget vs. just nothing qualified) so he knows whether to scan again.
         var noMsg = (d4dGoogleUsed!==null && d4dGoogleUsed>=D4D_GOOGLE_LIMIT)
-          ? 'No new leads — today’s Google image limit is used up. Try again after it resets (~midnight Pacific).'
+          ? 'No new leads this run — most of today’s areas are already scanned. Fresh budget/areas reset ~midnight Pacific.'
           : 'No qualified leads this run — click ⚡ Scan Now again to check more areas.';
         d4dScanSetMsg(noMsg);
         showToast(noMsg,'error');
