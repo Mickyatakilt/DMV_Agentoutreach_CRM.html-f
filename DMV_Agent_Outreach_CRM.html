@@ -4500,6 +4500,78 @@ function d4dTimeAgo(iso){
   if(h < 48) return h + ' hour' + (h===1?'':'s') + ' ago';
   return Math.floor(h/24) + ' day' + (Math.floor(h/24)===1?'':'s') + ' ago';
 }
+// ============================================================================
+// D4D "SCAN NOW" — one click fires the whole scan+grade pipeline on demand.
+// Calls the d4d-scan-now edge function (which holds the GitHub token server-side)
+// to trigger the GitHub Actions robot immediately, instead of waiting on GitHub's
+// unreliable nightly cron. When the run finishes (~5-10 min) it pushes hot leads
+// into this Review tab; we poll its status and auto-reload so they appear with no
+// manual refresh. A server-side guard prevents double-firing (protects the free
+// Google Street-View image budget).
+// ============================================================================
+var D4D_SCAN_FN_URL = SUPABASE_URL + '/functions/v1/d4d-scan-now';
+var d4dScan = { state:'idle', baseline:null, sawRunning:false };
+var d4dScanPollTimer = null;
+
+async function d4dScanFn(payload){
+  var r = await fetch(D4D_SCAN_FN_URL, {
+    method:'POST',
+    headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+    body:JSON.stringify(payload||{})
+  });
+  return r.json().catch(function(){ return {}; });
+}
+function d4dScanBtnHTML(){
+  var running = d4dScan.state==='running';
+  var label = running ? '&#9203; Scanning…' : '&#9889; Scan Now';
+  return '<button id="d4d-scan-btn" class="btn btn-sm" '+(running?'disabled':'')
+    + ' onclick="d4dScanNow()" title="Run the Driving-for-Dollars robot right now — new hot leads land in this Review queue in about 5-10 minutes"'
+    + ' style="font-weight:700;background:#111827;color:#fff;border-color:#111827'+(running?';opacity:.7;cursor:default':'')+'">'+label+'</button>'
+    + '<span id="d4d-scan-msg" style="font-size:11.5px;color:var(--text3);margin-left:8px"></span>';
+}
+function d4dScanSetMsg(t){ var e=document.getElementById('d4d-scan-msg'); if(e) e.textContent=t||''; }
+
+async function d4dScanNow(){
+  if(d4dScan.state==='running') return;
+  d4dScan.state='running'; d4dScan.sawRunning=false; d4dScan.baseline=null;
+  if(activeTab==='review') renderReviewTab();
+  d4dScanSetMsg('Starting the robot…');
+  // Baseline = the most recent run BEFORE we trigger, so we can tell our new run apart.
+  try { var pre = await d4dScanFn({action:'status'}); d4dScan.baseline = (pre && pre.latest && pre.latest.started) || null; } catch(e){}
+  var res = await d4dScanFn({action:'trigger'});
+  if(res && res.error){
+    d4dScan.state='idle';
+    if(activeTab==='review') renderReviewTab();
+    var m = res.message || 'Could not start the scan.';
+    if(res.error==='missing_pat') m = 'Setup needed: the GitHub token (GITHUB_PAT) isn’t set on the server yet.';
+    showToast(m,'error');
+    return;
+  }
+  if(res && res.already_running){ d4dScan.sawRunning=true; showToast('A scan is already running — watching it now.','success'); }
+  else { showToast('Scan started! New hot leads will appear here in about 5-10 minutes.','success'); }
+  d4dScanSetMsg('Scanning… keep working — leads land here automatically when it’s done.');
+  d4dScanPoll(0);
+}
+async function d4dScanPoll(tries){
+  if(tries > 60){ // ~30 min safety cap on the watcher (the run itself still completes server-side)
+    d4dScan.state='idle';
+    if(activeTab==='review') renderReviewTab();
+    showToast('Scan is taking longer than usual — leads will still appear here when it finishes.','success');
+    return;
+  }
+  var st = await d4dScanFn({action:'status'});
+  var l = st && st.latest;
+  var isOurs = d4dScan.sawRunning || (l && l.started && (!d4dScan.baseline || l.started > d4dScan.baseline));
+  if(st && st.running && isOurs){ d4dScan.sawRunning = true; d4dScanSetMsg('Scanning… (driving areas + grading houses)'); }
+  if(isOurs && l && l.status==='completed' && !(st && st.running)){
+    d4dScan.state='idle';
+    try { await loadFromSupabase(); await refreshD4dHealth(); render(); } catch(e){}
+    if(l.conclusion==='success') showToast('Scan complete — new hot leads are in the Review queue.','success');
+    else showToast('Scan finished with an issue ('+(l.conclusion||'?')+'). Some leads may be missing.','error');
+    return;
+  }
+  d4dScanPollTimer = setTimeout(function(){ d4dScanPoll(tries+1); }, 30000);
+}
 function d4dScanBannerHTML(){
   if(!d4dHealth){ refreshD4dHealth(); return ''; } // lazy first load
   if(!d4dHealth.failed || d4dBannerDismissed) return '';
@@ -4596,7 +4668,7 @@ function renderReviewTab(){
       +'<span id="rv-skip-progress" style="font-size:12px;color:var(--text3)"></span>'
     +'</div>';
   document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
-    +'<div style="margin-bottom:16px"><h2 style="font-size:16px;font-weight:700">&#128269; Review Queue</h2>'
+    +'<div style="margin-bottom:16px"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><h2 style="font-size:16px;font-weight:700">&#128269; Review Queue</h2><div style="display:flex;align-items:center">'+d4dScanBtnHTML()+'</div></div>'
     +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Leads flagged Needs Review (by the team or by a recipient) or added here when sent out. Sent By / Sent shows who flagged it and when; Review Note is their reason. This is a work queue -- leads stay in their database either way.</p></div>'
     +d4dScanBannerHTML()+bulkBarHtml+rows+'</div>';
   rvUpdateBar();
