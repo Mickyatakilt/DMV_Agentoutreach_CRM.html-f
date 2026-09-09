@@ -4510,8 +4510,63 @@ function d4dTimeAgo(iso){
 // Google Street-View image budget).
 // ============================================================================
 var D4D_SCAN_FN_URL = SUPABASE_URL + '/functions/v1/d4d-scan-now';
-var d4dScan = { state:'idle', baseline:null, sawRunning:false };
+var d4dScan = { state:'idle', baseline:null, sawRunning:false, hotBefore:0 };
 var d4dScanPollTimer = null;
+
+// --- Google Street-View daily image budget (heads-up before you hit the cap) -----
+// Each graded d4d_leads row = one Street View image fetched. Counting graded rows
+// since the last Pacific midnight (when Google's daily quota resets) tells us how
+// much of today's ~300-image budget is used. We warn at ~95% used (≈5% left).
+var D4D_GOOGLE_LIMIT = 300;     // self-imposed Street-View images/day (matches the robot's cap)
+var D4D_GOOGLE_WARN = 0.95;     // warn when only ~5% of the daily budget remains
+var d4dGoogleUsed = null;       // cached: images used today (null = not loaded yet)
+var d4dGoogleChecking = false;
+
+// UTC instant of the most recent midnight in America/Los_Angeles (Google's reset).
+function d4dPacificDayStartISO(){
+  var now = new Date();
+  var parts = new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',hour12:false,
+    year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(now);
+  var o={}; parts.forEach(function(p){ o[p.type]=p.value; });
+  var asUTC = Date.UTC(+o.year,+o.month-1,+o.day,+o.hour,+o.minute,+o.second);
+  var offset = now.getTime() - asUTC;                        // Pacific tz offset (ms)
+  var midWall = Date.UTC(+o.year,+o.month-1,+o.day,0,0,0);   // Pacific midnight, labelled UTC
+  return new Date(midWall + offset).toISOString();
+}
+async function d4dRefreshGoogleUsage(){
+  if(d4dGoogleChecking) return;
+  d4dGoogleChecking = true;
+  try {
+    var since = d4dPacificDayStartISO();
+    var rows = await sbFetch('d4d_leads?select=id&status=eq.graded&graded_at=gte.'+encodeURIComponent(since)+'&limit=1000');
+    d4dGoogleUsed = Array.isArray(rows) ? rows.length : 0;
+  } catch(e){ /* keep prior value on error */ }
+  finally {
+    d4dGoogleChecking = false;
+    if(activeTab==='review') renderReviewTab();
+  }
+}
+// Count of D4D auto-scan leads currently in the Review queue (to measure a run's new hot leads).
+function d4dCountReviewLeads(){
+  return leads.filter(function(l){ return !l.deleted && l.needsReview && (l.leadSource==='D4D Auto-Scan'||l.reviewSentBy==='D4D Auto-Scan'); }).length;
+}
+// Amber/red banner shown in Review while today's Google budget is near or at the cap.
+function d4dLimitBannerHTML(){
+  if(d4dGoogleUsed === null){ d4dRefreshGoogleUsage(); return ''; }        // lazy first load
+  if(d4dGoogleUsed < Math.floor(D4D_GOOGLE_LIMIT*D4D_GOOGLE_WARN)) return ''; // plenty left → no banner
+  var atCap = d4dGoogleUsed >= D4D_GOOGLE_LIMIT, left = Math.max(0, D4D_GOOGLE_LIMIT - d4dGoogleUsed);
+  var bg=atCap?'#fef2f2':'#fffbeb', bd=atCap?'#fca5a5':'#fcd34d', bl=atCap?'#dc2626':'#d97706', tx=atCap?'#991b1b':'#92400e';
+  var head = atCap ? 'Google image limit reached for today' : 'Almost at today’s Google image limit';
+  var msg = d4dGoogleUsed + ' of ' + D4D_GOOGLE_LIMIT + ' Street View images used today. '
+          + (atCap ? 'New scans can’t pull fresh photos until this resets around midnight Pacific.'
+                   : 'Only about ' + left + ' left — scans may return few leads until it resets around midnight Pacific.');
+  return '<div style="display:flex;align-items:center;gap:11px;background:'+bg+';border:1px solid '+bd+';border-left:4px solid '+bl+';border-radius:10px;padding:11px 14px;margin-bottom:12px">'
+    + '<span style="font-size:18px;line-height:1">&#9888;&#65039;</span>'
+    + '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13.5px;color:'+tx+'">'+head+'</div>'
+    + '<div style="font-size:12px;color:'+tx+';margin-top:2px">'+esc(msg)+'</div></div>'
+    + '<button onclick="d4dGoogleUsed=null;renderReviewTab()" class="btn btn-white btn-sm" title="Re-check today’s usage" style="font-weight:700;color:'+tx+';border-color:'+bd+'">&#8635;</button>'
+  + '</div>';
+}
 
 async function d4dScanFn(payload){
   var r = await fetch(D4D_SCAN_FN_URL, {
@@ -4533,8 +4588,19 @@ function d4dScanSetMsg(t){ var e=document.getElementById('d4d-scan-msg'); if(e) 
 
 async function d4dScanNow(){
   if(d4dScan.state==='running') return;
+  // Check today's Google budget BEFORE we start. Block at the cap, warn near it.
+  try { d4dGoogleUsed=null; await d4dRefreshGoogleUsage(); } catch(e){}
+  if(d4dGoogleUsed !== null && d4dGoogleUsed >= D4D_GOOGLE_LIMIT){
+    if(activeTab==='review') renderReviewTab();
+    showToast('Google image limit reached ('+d4dGoogleUsed+'/'+D4D_GOOGLE_LIMIT+'). Resets ~midnight Pacific — try again then.','error');
+    return;
+  }
   d4dScan.state='running'; d4dScan.sawRunning=false; d4dScan.baseline=null;
+  d4dScan.hotBefore = d4dCountReviewLeads();
   if(activeTab==='review') renderReviewTab();
+  if(d4dGoogleUsed !== null && d4dGoogleUsed >= Math.floor(D4D_GOOGLE_LIMIT*D4D_GOOGLE_WARN)){
+    showToast('Heads up: near today’s Google limit ('+d4dGoogleUsed+'/'+D4D_GOOGLE_LIMIT+'). This scan may return few leads.','error');
+  }
   d4dScanSetMsg('Starting the robot…');
   // Baseline = the most recent run BEFORE we trigger, so we can tell our new run apart.
   try { var pre = await d4dScanFn({action:'status'}); d4dScan.baseline = (pre && pre.latest && pre.latest.started) || null; } catch(e){}
@@ -4565,9 +4631,23 @@ async function d4dScanPoll(tries){
   if(st && st.running && isOurs){ d4dScan.sawRunning = true; d4dScanSetMsg('Scanning… (driving areas + grading houses)'); }
   if(isOurs && l && l.status==='completed' && !(st && st.running)){
     d4dScan.state='idle';
-    try { await loadFromSupabase(); await refreshD4dHealth(); render(); } catch(e){}
-    if(l.conclusion==='success') showToast('Scan complete — new hot leads are in the Review queue.','success');
-    else showToast('Scan finished with an issue ('+(l.conclusion||'?')+'). Some leads may be missing.','error');
+    try { await loadFromSupabase(); await refreshD4dHealth(); d4dGoogleUsed=null; await d4dRefreshGoogleUsage(); render(); } catch(e){}
+    if(l.conclusion==='success'){
+      var added = d4dCountReviewLeads() - (d4dScan.hotBefore||0);
+      if(added > 0){
+        d4dScanSetMsg('');
+        showToast(added+' new qualified lead'+(added===1?'':'s')+' added to the Review queue.','success');
+      } else {
+        // No new hot leads — tell Mike why (out of budget vs. just nothing qualified) so he knows whether to scan again.
+        var noMsg = (d4dGoogleUsed!==null && d4dGoogleUsed>=D4D_GOOGLE_LIMIT)
+          ? 'No new leads — today’s Google image limit is used up. Try again after it resets (~midnight Pacific).'
+          : 'No qualified leads this run — click ⚡ Scan Now again to check more areas.';
+        d4dScanSetMsg(noMsg);
+        showToast(noMsg,'error');
+      }
+    } else {
+      showToast('Scan finished with an issue ('+(l.conclusion||'?')+'). Some leads may be missing.','error');
+    }
     return;
   }
   d4dScanPollTimer = setTimeout(function(){ d4dScanPoll(tries+1); }, 30000);
@@ -4670,7 +4750,7 @@ function renderReviewTab(){
   document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
     +'<div style="margin-bottom:16px"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><h2 style="font-size:16px;font-weight:700">&#128269; Review Queue</h2><div style="display:flex;align-items:center">'+d4dScanBtnHTML()+'</div></div>'
     +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Leads flagged Needs Review (by the team or by a recipient) or added here when sent out. Sent By / Sent shows who flagged it and when; Review Note is their reason. This is a work queue -- leads stay in their database either way.</p></div>'
-    +d4dScanBannerHTML()+bulkBarHtml+rows+'</div>';
+    +d4dScanBannerHTML()+d4dLimitBannerHTML()+bulkBarHtml+rows+'</div>';
   rvUpdateBar();
 }
 // ============================================================================
