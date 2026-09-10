@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>DMV Wholesale CRM</title>
+<!-- ===== PWA: installable "Mestate CRM" app (additive; does not change desktop) ===== -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e2438">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mestate CRM">
+<link rel="apple-touch-icon" href="icon-180.png">
 <style>
   :root {
     --bg:#f0f4f8;--surface:#fff;--surface2:#f8fafc;--surface3:#f1f5f9;
@@ -465,6 +473,69 @@
   tr.hot-row > td{background:#dc2626 !important;}
   tr.hot-row, tr.hot-row td, tr.hot-row .address-cell, tr.hot-row a,
   tr.hot-row .money-val, tr.hot-row .arv-val, tr.hot-row span:not(.badge){color:#fff !important;}
+
+  /* ============================================================================
+     MOBILE APP SHELL (PWA) — phone-only. Every rule below is gated to <=768px or
+     an additive class hidden on desktop, so the desktop UI is byte-for-byte the same.
+     ============================================================================ */
+  .crm-bottomnav{display:none;}  /* hidden on desktop; shown only on phones */
+  @media(max-width:768px){
+    /* Never let the page itself scroll sideways; wide content scrolls inside its own box */
+    html,body{overflow-x:hidden;}
+    .table-container,.cards-container,.followup-container{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    /* Safe-area padding (notch + home bar) */
+    .header{padding-top:env(safe-area-inset-top);padding-left:14px !important;}
+    /* The old hamburger + slide-out drawer are replaced by the bottom tab bar on phones */
+    .crm-sb-burger{display:none !important;}
+    .crm-sidebar,.crm-sb-scrim{display:none !important;}
+    .section-main{margin-left:0 !important;padding-bottom:calc(62px + env(safe-area-inset-bottom));}
+
+    /* ---- Bottom tab bar (app-style navigation) ---- */
+    .crm-bottomnav{
+      display:flex;position:fixed;left:0;right:0;bottom:0;z-index:330;
+      background:var(--sb-bg,#0f172a);border-top:1px solid rgba(255,255,255,.10);
+      padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -2px 14px rgba(0,0,0,.22);
+    }
+    .crm-bn-item{
+      flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+      padding:7px 2px 6px;min-height:54px;border:none;background:none;cursor:pointer;
+      color:var(--sb-fg-dim,#64748b);font-size:10px;font-weight:700;line-height:1.1;
+      -webkit-tap-highlight-color:transparent;font-family:inherit;
+    }
+    .crm-bn-item .bn-ic{font-size:20px;line-height:1;}
+    .crm-bn-item.active{color:#fff;}
+    .crm-bn-item.active .bn-ic{transform:translateY(-1px);}
+
+    /* ---- Full-screen modals with a reachable sticky footer ---- */
+    .modal-overlay{padding:0;align-items:stretch;justify-content:stretch;}
+    .modal{max-width:100%;width:100%;max-height:100%;height:100%;border-radius:0;}
+    .modal-header{border-radius:0;}
+    .modal-footer{border-radius:0;padding-bottom:calc(12px + env(safe-area-inset-bottom));flex-wrap:wrap;}
+
+    /* ---- Inputs: >=16px so iOS never auto-zooms on focus ---- */
+    input,select,textarea{font-size:16px !important;}
+
+    /* ---- Floating Ask AI: sit above the tab bar, and get out of the way of modals ---- */
+    .ask-fab{right:14px;bottom:calc(62px + env(safe-area-inset-bottom) + 12px);}
+    body:has(#modal-container .modal-overlay) .ask-fab{display:none !important;}
+    /* A full-screen modal owns the whole screen: hide the tab bar so its footer buttons aren't covered */
+    body:has(#modal-container .modal-overlay) .crm-bottomnav{display:none !important;}
+    .ask-overlay{padding-bottom:0;}
+
+    /* ---- Section header (Outreach etc.): let it breathe instead of cramming into 56px ---- */
+    .header{height:auto;min-height:52px;flex-wrap:wrap;padding:8px 12px;gap:8px;padding-top:calc(8px + env(safe-area-inset-top));}
+    .logo{font-size:15px;flex:1 1 auto;min-width:0;}
+    .logo-sub{display:none;}
+    .header > div[style*="max-width:380px"]{order:3;flex:1 1 100%;margin:0 !important;max-width:100% !important;}
+    .header-right{flex:1 1 100%;flex-wrap:wrap;justify-content:flex-start;}
+    .header-right .btn{flex:0 0 auto;}
+    /* ---- Sub-tab row (DMV Leads / Follow-Ups / Tasks…): scroll sideways, don't clip ---- */
+    .tabs{position:static;padding:0 10px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;}
+    .tabs::-webkit-scrollbar{display:none;}
+    .tab{flex:0 0 auto;}
+    /* ---- Toolbars / stat rows / dashboard grids: never force the page wider than the screen ---- */
+    .stats-bar,.toolbar{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  }
 </style>
 </head>
 <body>
@@ -1693,11 +1764,11 @@ function switchUser(){renderLogin();}
 // container, then delegates the 'outreach' section to renderOutreach() (the ORIGINAL
 // app body, unchanged) or shows a "coming soon" placeholder for the other sections.
 const SB_ITEMS = [
-  {k:'dashboard', ic:'&#128202;', lb:'Dashboard',     soon:false},
-  {k:'outreach',  ic:'&#128227;', lb:'CRM Outreach',  soon:false},
-  {k:'lists',     ic:'&#128199;', lb:'List Tracking', soon:false},
-  {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', soon:false},
-  {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  soon:false}
+  {k:'dashboard', ic:'&#128202;', lb:'Dashboard',     sl:'Dashboard', soon:false},
+  {k:'outreach',  ic:'&#128227;', lb:'CRM Outreach',  sl:'Outreach',  soon:false},
+  {k:'lists',     ic:'&#128199;', lb:'List Tracking', sl:'Lists',     soon:false},
+  {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', sl:'Probate',   soon:false},
+  {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  sl:'Dispo',    soon:false}
 ];
 function sidebarHTML(){
   var nav = SB_ITEMS.map(function(it){
@@ -1714,7 +1785,17 @@ function sidebarHTML(){
       +'<nav class="crm-sb-nav">'+nav+'</nav>'
       +'<div class="crm-sb-collapse" onclick="toggleSidebar()"><span class="crm-sb-ico">&#171;</span><span>Collapse</span></div>'
       +'<div class="crm-sb-foot"><span>DMV Agent Outreach &middot; v2.0</span></div>'
-    +'</aside>';
+    +'</aside>'
+    +bottomNavHTML();
+}
+// Phone-only bottom tab bar (hidden on desktop via CSS). Mirrors SB_ITEMS + activeSection.
+function bottomNavHTML(){
+  var items = SB_ITEMS.map(function(it){
+    return '<button class="crm-bn-item '+(activeSection===it.k?'active':'')+'" onclick="setSection(\''+it.k+'\')" aria-label="'+it.lb+'">'
+      +'<span class="bn-ic">'+it.ic+'</span><span class="bn-lb">'+it.sl+'</span>'
+    +'</button>';
+  }).join('');
+  return '<nav class="crm-bottomnav">'+items+'</nav>';
 }
 function sbIsMobile(){ try{ return window.matchMedia('(max-width:768px)').matches; }catch(e){ return (document.documentElement.clientWidth||window.innerWidth)<=768; } }
 function setSection(s){ activeSection=s; if(sbIsMobile()) document.body.classList.remove('sb-open'); render(); }
@@ -8697,6 +8778,44 @@ async function bootApp(){
   renderAuthLogin();
 }
 bootApp();
+
+/* ===== PWA: register the service worker (installability + fast shell). Additive. ===== */
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('sw.js').catch(function(){/* non-fatal */});
+  });
+}
+
+/* ===== One-time "Add to Home Screen" hint — iOS Safari only, not already installed ===== */
+(function(){
+  try{
+    var isStandalone = window.navigator.standalone===true ||
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    var ua = navigator.userAgent||'';
+    var isIOS = /iPhone|iPad|iPod/.test(ua);
+    var isSafari = isIOS && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+    if(isStandalone || !isSafari) return;
+    if(localStorage.getItem('mestate_a2hs_dismissed')==='1') return;
+    window.addEventListener('load',function(){
+      setTimeout(function(){
+        if(document.getElementById('a2hs-hint')) return;
+        var b=document.createElement('div');
+        b.id='a2hs-hint';
+        b.style.cssText='position:fixed;left:10px;right:10px;bottom:calc(70px + env(safe-area-inset-bottom));z-index:400;'
+          +'background:#0e2438;color:#fff;border-radius:14px;padding:12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.35);'
+          +'font-size:13px;line-height:1.4;display:flex;align-items:center;gap:10px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+        b.innerHTML='<span style="font-size:20px">📲</span>'
+          +'<span style="flex:1">Install <b>Mestate CRM</b>: tap <b>Share</b> ↑ then <b>Add to Home Screen</b>.</span>'
+          +'<button id="a2hs-x" style="background:rgba(255,255,255,.18);border:none;color:#fff;width:26px;height:26px;border-radius:8px;font-size:14px;cursor:pointer;flex:0 0 auto">✕</button>';
+        document.body.appendChild(b);
+        document.getElementById('a2hs-x').onclick=function(){
+          try{localStorage.setItem('mestate_a2hs_dismissed','1');}catch(e){}
+          b.remove();
+        };
+      },1600);
+    });
+  }catch(e){}
+})();
 </script>
 </body>
 </html>

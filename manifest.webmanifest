@@ -1,0 +1,16 @@
+{
+  "name": "Mestate Agent Outreach CRM",
+  "short_name": "Mestate CRM",
+  "description": "Mestate DMV agent outreach, probate, list tracking, and dispo CRM.",
+  "start_url": "./DMV_Agent_Outreach_CRM.html",
+  "scope": "/DMV_Agentoutreach_CRM.html-f/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0e2438",
+  "theme_color": "#0e2438",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
