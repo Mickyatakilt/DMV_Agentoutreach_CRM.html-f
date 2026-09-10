@@ -2,7 +2,7 @@
    DATA SAFETY: Supabase (and any API) calls are NEVER cached — always live network.
    Only the static app shell (HTML + icons + manifest) is cached, cache-first.
    Bump VERSION on every deploy to bust the old shell cache. */
-const VERSION = 'mestate-crm-v2';
+const VERSION = 'mestate-crm-v3';
 const SHELL = [
   './DMV_Agent_Outreach_CRM.html',
   './manifest.webmanifest',

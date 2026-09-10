@@ -4906,7 +4906,7 @@ function renderReviewTab(){
           var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
           var title = kind==='task' ? (l.location||l.name||'Untitled') : (l.address||l.name||'Untitled');
           // Facebook-scrape batch row: one dated entry whose CSV payload lives in .notes.
-          var isFbBatch = kind==='task' && l.sourceGroup==='FB Scrape Batch';
+          var isFbBatch = (kind==='task' && l.sourceGroup==='FB Scrape Batch') || (kind==='lead' && l.leadSource==='FB Scrape Batch');
           var dlBtn = (isFbBatch && (l.notes||'').indexOf(',')>-1)
             ? '<button class="btn btn-primary btn-sm" onclick="fbBatchDownload('+l.id+')" title="Download this scrape as a CSV" style="font-weight:700">&#11015; Download CSV</button> '
             : '';
@@ -4979,7 +4979,7 @@ function renderReviewTab(){
 // Download a Facebook-scrape batch row as a CSV. The whole day's Name,Phone,Group,Link
 // payload is stored on the jv_lead's .notes field by the fb-scrape-daily edge function.
 function fbBatchDownload(id){
-  var l=jvLeads.find(function(x){return x.id===id;});
+  var l=jvLeads.find(function(x){return x.id===id;}) || leads.find(function(x){return x.id===id;});
   if(!l || !(l.notes||'').trim()){ showToast('No CSV data on this scrape','error'); return; }
   var blob=new Blob(['﻿'+l.notes],{type:'text/csv;charset=utf-8;'});
   var url=URL.createObjectURL(blob);
