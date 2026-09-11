@@ -4911,9 +4911,14 @@ function renderReviewTab(){
             ? '<button class="btn btn-primary btn-sm" onclick="fbBatchDownload('+l.id+')" title="Download this scrape as a CSV" style="font-weight:700">&#11015; Download CSV</button> '
             : '';
           // D4D auto-scan / estate leads: make the address a Google Maps link (new tab).
+          // Prefer webLink — the EXACT Street View pano the robot graded (2025+). A plain address
+          // search lets Google pick its own (often older) default pano, which looked like stale data.
           var isD4D = kind==='lead' && (l.leadSource==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan');
+          var d4dMapHref = (l.webLink && /^https?:/i.test(l.webLink))
+            ? l.webLink
+            : 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(l.address||title);
           var titleHtml = isD4D
-            ? '<a href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(l.address||title)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline">'+esc(title)+'</a>'
+            ? '<a href="'+esc(d4dMapHref)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline">'+esc(title)+'</a>'
             : esc(title);
           var offer = kind==='task' ? l.askingPrice : l.offer;
           var status = kind==='task' ? l.jvStatus : l.status;
@@ -5864,8 +5869,8 @@ function renderDetailModal(){
           <div class="detail-section"><div class="detail-section-title">Links</div>
             <div style="display:flex;flex-direction:column;gap:6px">
               ${l.address?'<div><span class="detail-label">Zillow</span>&nbsp;&nbsp;<a href="#" onclick="event.preventDefault();openZillow();" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="#" onclick="event.preventDefault();openRedfin();" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}
-              ${isD4DLead(l)&&l.address?'<div><span class="detail-label">Maps</span>&nbsp;&nbsp;<a href="'+buildMapsUrl(l.address)+'" target="_blank" class="detail-link">&#128506;&#65039; View on Google Maps &#8599;</a></div>':''}
-              ${l.webLink&&l.webLink.startsWith('http')?'<div><span class="detail-label">Listing</span>&nbsp;&nbsp;<a href="'+esc(l.webLink)+'" target="_blank" class="detail-link">View Listing &#8599;</a></div>':'<div style="color:var(--text4);font-size:12px">No listing link</div>'}
+              ${isD4DLead(l)&&l.address?'<div><span class="detail-label">Street View</span>&nbsp;&nbsp;<a href="'+((l.webLink&&l.webLink.startsWith('http'))?esc(l.webLink):buildMapsUrl(l.address))+'" target="_blank" class="detail-link">&#128506;&#65039; '+((l.webLink&&l.webLink.startsWith('http'))?'Exact graded photo':'View on Google Maps')+' &#8599;</a></div>':''}
+              ${l.webLink&&l.webLink.startsWith('http')&&!isD4DLead(l)?'<div><span class="detail-label">Listing</span>&nbsp;&nbsp;<a href="'+esc(l.webLink)+'" target="_blank" class="detail-link">View Listing &#8599;</a></div>':(isD4DLead(l)?'':'<div style="color:var(--text4);font-size:12px">No listing link</div>')}
               ${l.comps&&l.comps.startsWith('http')?'<div><span class="detail-label">Comps</span>&nbsp;&nbsp;<a href="'+esc(l.comps.split(' ')[0])+'" target="_blank" class="detail-link">View Comps &#8599;</a></div>':'<div style="color:var(--text4);font-size:12px">No comp link</div>'}
             </div>
           </div>
