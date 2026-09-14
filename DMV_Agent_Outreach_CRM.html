@@ -3750,8 +3750,8 @@ function pbOpenSkiptraceImport(){
     + '</div>'
     + '<div class="modal-footer">'
       + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
-      + '<button class="btn btn-secondary btn-sm" onclick="pbRunFreshImport()" title="For a fresh list with no id column: add these rows as a new Scraped batch in the State above">&#43; Add as new batch</button>'
-      + '<button class="btn btn-primary btn-sm" onclick="pbRunSkiptraceImport()">Import &amp; Fill</button>'
+      + '<button id="pb-st-fresh" class="btn btn-secondary btn-sm" onclick="pbRunFreshImport()" title="For a fresh list with no id column: add these rows as a new Scraped batch in the State above">&#43; Add as new batch</button>'
+      + '<button id="pb-st-fill" class="btn btn-primary btn-sm" onclick="pbRunSkiptraceImport()">Import &amp; Fill</button>'
     + '</div></div></div>';
 }
 function pbSkiptraceFile(ev){
@@ -3789,12 +3789,18 @@ function pbSkiptracePreview(){
   var el=document.getElementById('pb-st-count'); if(!el) return;
   var p=pbParseSkiptrace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
   if(!p){ el.textContent=''; return; }
+  // Swap which button is the primary (blue) one so the right action is obvious.
+  var bFill=document.getElementById('pb-st-fill'), bFresh=document.getElementById('pb-st-fresh');
   if(p.error==='no_id'){
     var fp=pbParseReplace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
     var n=(fp&&fp.rows)?fp.rows.length:0;
-    el.innerHTML='<span style="color:#b45309">&#9888; No <b>id</b> column &mdash; this is a fresh list. '+n.toLocaleString()+' row'+(n!==1?'s':'')+' ready. Type a <b>State</b> above and click <b>&#43; Add as new batch</b> to import as a new Scraped batch (dated today).</span>';
+    if(bFill) bFill.style.display='none';
+    if(bFresh){ bFresh.className='btn btn-primary btn-sm'; bFresh.textContent='＋ Add '+n.toLocaleString()+' as new batch'; }
+    el.innerHTML='<span style="color:#b45309">&#9888; No <b>id</b> column &mdash; this is a fresh list. '+n.toLocaleString()+' row'+(n!==1?'s':'')+' ready. Type a <b>State</b> above and click the blue <b>Add as new batch</b> button.</span>';
     return;
   }
+  if(bFill){ bFill.style.display=''; bFill.className='btn btn-primary btn-sm'; }
+  if(bFresh){ bFresh.className='btn btn-secondary btn-sm'; bFresh.textContent='＋ Add as new batch'; }
   var known=(crmProbate||[]); var ids=new Set(known.map(function(x){return +x.id;}));
   var match=p.rows.filter(function(x){ return ids.has(x.id); }).length;
   el.innerHTML=p.rows.length+' row'+(p.rows.length!==1?'s':'')+' &middot; '+match+' match existing lead'+(match!==1?'s':'')+(p.rows.length-match?' &middot; '+(p.rows.length-match)+' won’t match':'');
