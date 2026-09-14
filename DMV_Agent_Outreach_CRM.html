@@ -3787,7 +3787,7 @@ function pbSkiptracePreview(){
   var el=document.getElementById('pb-st-count'); if(!el) return;
   var p=pbParseSkiptrace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
   if(!p){ el.textContent=''; return; }
-  if(p.error==='no_id'){ el.innerHTML='<span style="color:#dc2626">&#9888; No <b>id</b> column found — re-download the file from here so the id is included.</span>'; return; }
+  if(p.error==='no_id'){ el.innerHTML='<span style="color:#dc2626">&#9888; No <b>id</b> column found. This button fills in place by id. To upload a fresh skip-traced list (Name / Phone / Address) with no id, close this and open a batch, then use <b>&#8681; Replace with skip-traced list</b>.</span>'; return; }
   var known=(crmProbate||[]); var ids=new Set(known.map(function(x){return +x.id;}));
   var match=p.rows.filter(function(x){ return ids.has(x.id); }).length;
   el.innerHTML=p.rows.length+' row'+(p.rows.length!==1?'s':'')+' &middot; '+match+' match existing lead'+(match!==1?'s':'')+(p.rows.length-match?' &middot; '+(p.rows.length-match)+' won’t match':'');
@@ -3795,7 +3795,7 @@ function pbSkiptracePreview(){
 async function pbRunSkiptraceImport(){
   var p=pbParseSkiptrace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
   if(!p){ showToast('Nothing to import','error'); return; }
-  if(p.error==='no_id'){ showToast('That file has no id column — re-download from here first','error'); return; }
+  if(p.error==='no_id'){ showToast('No id column. To upload a fresh list, open a batch and use “Replace with skip-traced list”.','error'); return; }
   var byId={}; (crmProbate||[]).forEach(function(x){ byId[+x.id]=x; });
   var matched=[], unmatched=0;
   p.rows.forEach(function(x){ if(byId[x.id]) matched.push(x); else unmatched++; });
@@ -3833,6 +3833,17 @@ function pbSplitAddr(full){
   else if(parts.length===2){ city=parts[1]||''; }
   return {street:street,city:city,zip:zip};
 }
+// Skip-tracer exports often carry a 2nd "legend" row that just names the columns
+// (e.g. Wireless 1 / Owner 1 First Name / property_address). It is not a real person —
+// drop it so it never becomes a bogus lead.
+function pbIsLegendRow(nm,ph,ad){
+  var L=function(s){ return String(s||'').trim().toLowerCase(); };
+  var n=L(nm), p=L(ph), a=L(ad);
+  if(/^owner\s*\d*\s*first name$/.test(n)) return true;
+  if(/^wireless(\s*\d+)?$/.test(p) || p==='phone number' || p==='phone') return true;
+  if(a==='property_address' || a==='source' || a==='address' || a==='street address') return true;
+  return false;
+}
 function pbParseReplace(text){
   var rows=ltParseCSV(text||''); if(rows.length<2) return {rows:[]};
   var header=rows[0];
@@ -3849,20 +3860,39 @@ function pbParseReplace(text){
     var ph = iPhone>=0?(row[iPhone]||'').trim():'';
     var ad = iAddr>=0?(row[iAddr]||'').trim():'';
     if(!nm && !ph && !ad) continue;
+    if(pbIsLegendRow(nm,ph,ad)) continue;
     out.push({name:nm,phone:ph,address:ad});
   }
   return {rows:out, cols:{name:(iName>=0||iFirst>=0||iLast>=0), phone:iPhone>=0, addr:iAddr>=0}};
 }
+// All still-Not-Scraped leads in a state, plus how many distinct batches they span.
+// Used to offer "replace every Not-Scraped batch in this state" in one shot.
+function pbStateNotScraped(st){
+  var seen={}, ids=[], dates=[];
+  (crmProbate||[]).forEach(function(p){
+    if(p.state!==st) return;
+    var bb=pbbGet(p.datePulled,st)||{};
+    if(bb.skiptraced==='Yes'||bb.skiptraced==='Texted') return; // only Not-Scraped
+    ids.push(+p.id);
+    if(!seen[p.datePulled||'']){ seen[p.datePulled||'']=1; dates.push(p.datePulled||''); }
+  });
+  return {dates:dates, leadIds:ids, batches:dates.length};
+}
 var __pbRepText='', __pbRepKey=null;
 function pbOpenReplaceBatch(dt,st){
-  __pbRepText=''; __pbRepKey={date:dt,state:st};
+  __pbRepText=''; __pbRepKey={date:dt,state:st,scope:'batch'};
   var arr=(crmProbate||[]).filter(function(p){return p.datePulled===dt&&p.state===st;});
   var b=pbbGet(dt,st); var label=b.name?b.name:(dt?ltFmtDate(dt):'this batch');
+  var sns=pbStateNotScraped(st); var multi=sns.batches>1;
   document.getElementById('modal-container').innerHTML =
     '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:560px">'
     + '<div class="modal-header"><div class="modal-title">&#8681; Replace &ldquo;'+esc(label)+'&rdquo; with skip-traced list</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
     + '<div class="modal-body">'
-      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">Upload the file your skip-tracer returned (columns: <b>First Name, Last Name, Phone Number, Address</b>). This <b style="color:#dc2626">deletes the '+arr.length.toLocaleString()+' current lead'+(arr.length!==1?'s':'')+'</b> in this batch and replaces them with the uploaded rows, marked <b>Scraped</b>. This can&rsquo;t be undone.</p>'
+      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">Upload the file your skip-tracer returned. Only <b>Name / Phone Number / Address</b> are read (a legend row and any extra columns are ignored). The selected leads below are <b style="color:#dc2626">deleted</b> and replaced with the uploaded rows, marked <b>Scraped</b>. This can&rsquo;t be undone.</p>'
+      + (multi ? '<div class="form-field"><label class="form-label">Replace which leads?</label>'
+          + '<label style="display:block;font-size:12.5px;margin:3px 0;cursor:pointer"><input type="radio" name="pb-rep-scope" value="batch" checked onchange="__pbRepKey.scope=this.value"> Just this batch &mdash; '+arr.length.toLocaleString()+' lead'+(arr.length!==1?'s':'')+'</label>'
+          + '<label style="display:block;font-size:12.5px;margin:3px 0;cursor:pointer"><input type="radio" name="pb-rep-scope" value="state" onchange="__pbRepKey.scope=this.value"> All Not-Scraped batches in '+esc(st)+' &mdash; '+sns.batches+' batches, '+sns.leadIds.length.toLocaleString()+' leads</label>'
+          + '</div>' : '')
       + '<div class="form-field"><label class="form-label">Upload .csv</label><input type="file" accept=".csv,text/csv" class="form-input" onchange="pbReplaceFile(event)"></div>'
       + '<div class="form-field"><label class="form-label">&hellip; or paste rows</label><textarea id="pb-rep-text" class="form-input" rows="5" placeholder="First Name,Last Name,Phone Number,Address&#10;John,Smith,(240) 555-1212,&quot;101 Main St, Bethesda, MD 20817&quot;" oninput="__pbRepText=this.value;pbReplacePreview()"></textarea></div>'
       + '<div id="pb-rep-count" style="font-size:12px;color:var(--text3);margin:-4px 0 4px"></div>'
@@ -3900,9 +3930,11 @@ async function pbRunReplaceBatch(){
   var dt=__pbRepKey.date, st=__pbRepKey.state;
   var p=pbParseReplace(__pbRepText||(document.getElementById('pb-rep-text')||{}).value||'');
   if(!p.rows.length){ showToast('No rows found in that file','error'); return; }
-  var arr=(crmProbate||[]).filter(function(x){return x.datePulled===dt&&x.state===st;});
-  var oldIds=arr.map(function(x){return +x.id;});
-  if(!confirm('Replace this batch?\n\nReplace the '+oldIds.length+' current lead'+(oldIds.length!==1?'s':'')+' with '+p.rows.length+' skip-traced lead'+(p.rows.length!==1?'s':'')+'.\n\nThe new leads are imported first, then the old ones removed — so nothing is lost if the import is interrupted.')) return;
+  var scope=__pbRepKey.scope||'batch', oldIds;
+  if(scope==='state'){ oldIds=pbStateNotScraped(st).leadIds; }
+  else { oldIds=(crmProbate||[]).filter(function(x){return x.datePulled===dt&&x.state===st;}).map(function(x){return +x.id;}); }
+  var scopeLabel=(scope==='state')?('all Not-Scraped '+st+' leads'):'this batch';
+  if(!confirm('Replace '+scopeLabel+'?\n\nDelete the '+oldIds.length+' current lead'+(oldIds.length!==1?'s':'')+' and replace with '+p.rows.length+' skip-traced lead'+(p.rows.length!==1?'s':'')+'.\n\nThe new leads are imported first, then the old ones removed — so nothing is lost if the import is interrupted.')) return;
   var now=new Date().toISOString();
   var recs=p.rows.map(function(x){ var a=pbSplitAddr(x.address); return {
     source_case_id:null, state:st, county:'', decedent_name:x.name, pr_name:x.name,
