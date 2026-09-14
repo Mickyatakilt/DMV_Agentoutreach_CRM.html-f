@@ -3742,13 +3742,15 @@ function pbOpenSkiptraceImport(){
     '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:560px">'
     + '<div class="modal-header"><div class="modal-title">&#8681; Upload Skip-Traced File</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
     + '<div class="modal-body">'
-      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">Upload the file your skip-tracer returned. It must keep the <b>id</b> column from the download &mdash; each row is matched back to that exact lead, so nothing is duplicated. The <b>Name / Phone Number / Address</b> columns fill in place; the original scanned data stays untouched. Matched batches flip to <b>Skiptraced = Yes</b>.</p>'
+      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px"><b>Two ways to use this:</b><br>&bull; File has an <b>id</b> column &rarr; each row fills its matching lead in place, batches flip to <b>Skiptraced = Yes</b>. Use <b>Import &amp; Fill</b>.<br>&bull; Fresh list (<b>no id</b>, just Name / Phone / Address) &rarr; type a <b>State</b> below and it&rsquo;s added as a new <b>Scraped</b> batch dated today. Use <b>Add as new batch</b>.</p>'
       + '<div class="form-field"><label class="form-label">Upload .csv</label><input type="file" id="pb-st-file" accept=".csv,text/csv" class="form-input" onchange="pbSkiptraceFile(event)"></div>'
       + '<div class="form-field"><label class="form-label">&hellip; or paste rows</label><textarea id="pb-st-text" class="form-input" rows="5" placeholder="id,Name,Phone Number,Address\n123,John Smith,(240) 555-1212,101 Main St" oninput="__pbImpText=this.value;pbSkiptracePreview()"></textarea></div>'
       + '<div id="pb-st-count" style="font-size:12px;color:var(--text3);margin:-4px 0 4px"></div>'
+      + '<div class="form-field" style="margin-top:8px"><label class="form-label">State <span style="font-weight:400;color:var(--text3)">(only for a fresh no-id list &mdash; date is set to today automatically)</span></label><input type="text" id="pb-st-state" class="form-input" placeholder="e.g. SC" maxlength="24" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>'
     + '</div>'
     + '<div class="modal-footer">'
       + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-secondary btn-sm" onclick="pbRunFreshImport()" title="For a fresh list with no id column: add these rows as a new Scraped batch in the State above">&#43; Add as new batch</button>'
       + '<button class="btn btn-primary btn-sm" onclick="pbRunSkiptraceImport()">Import &amp; Fill</button>'
     + '</div></div></div>';
 }
@@ -3787,7 +3789,12 @@ function pbSkiptracePreview(){
   var el=document.getElementById('pb-st-count'); if(!el) return;
   var p=pbParseSkiptrace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
   if(!p){ el.textContent=''; return; }
-  if(p.error==='no_id'){ el.innerHTML='<span style="color:#dc2626">&#9888; No <b>id</b> column found. This button fills in place by id. To upload a fresh skip-traced list (Name / Phone / Address) with no id, close this and open a batch, then use <b>&#8681; Replace with skip-traced list</b>.</span>'; return; }
+  if(p.error==='no_id'){
+    var fp=pbParseReplace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
+    var n=(fp&&fp.rows)?fp.rows.length:0;
+    el.innerHTML='<span style="color:#b45309">&#9888; No <b>id</b> column &mdash; this is a fresh list. '+n.toLocaleString()+' row'+(n!==1?'s':'')+' ready. Type a <b>State</b> above and click <b>&#43; Add as new batch</b> to import as a new Scraped batch (dated today).</span>';
+    return;
+  }
   var known=(crmProbate||[]); var ids=new Set(known.map(function(x){return +x.id;}));
   var match=p.rows.filter(function(x){ return ids.has(x.id); }).length;
   el.innerHTML=p.rows.length+' row'+(p.rows.length!==1?'s':'')+' &middot; '+match+' match existing lead'+(match!==1?'s':'')+(p.rows.length-match?' &middot; '+(p.rows.length-match)+' won’t match':'');
@@ -3820,6 +3827,35 @@ async function pbRunSkiptraceImport(){
   showToast('Skip-trace: filled '+ok+' lead'+(ok!==1?'s':'')
     +(failed?' &middot; '+failed+' failed':'')
     +(unmatched?' &middot; '+unmatched+' unmatched':''),'success');
+}
+// Fresh no-id list uploaded from the top button: add every row as a new Scraped batch
+// (state typed by the user, date = today). Keeps existing leads untouched.
+async function pbRunFreshImport(){
+  var st=((document.getElementById('pb-st-state')||{}).value||'').trim().toUpperCase();
+  if(!st){ showToast('Type a State first (e.g. SC) to add a new batch','error'); return; }
+  var p=pbParseReplace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
+  if(!p||!p.rows.length){ showToast('No rows found in that file','error'); return; }
+  var dt=today();
+  if(!confirm('Add new batch?\n\nAdd '+p.rows.length+' skip-traced lead'+(p.rows.length!==1?'s':'')+' as a new Scraped batch in '+st+', dated '+dt+'.\n\nExisting leads are left untouched.')) return;
+  var now=new Date().toISOString();
+  var recs=p.rows.map(function(x){ var a=pbSplitAddr(x.address); return {
+    source_case_id:null, state:st, county:'', decedent_name:x.name, pr_name:x.name,
+    pr_address:x.address, pr_phone:x.phone||null, property_address:a.street, property_city:a.city, property_zip:a.zip,
+    score:5, status:'New', date_pulled:dt, notes:'SKIPTRACE IMPORT',
+    skiptrace_name:x.name, skiptrace_phone:x.phone||null, skiptrace_address:x.address, skiptraced_at:now }; });
+  showToast('Importing '+recs.length.toLocaleString()+' skip-traced lead'+(recs.length!==1?'s':'')+'…','info');
+  var newIds=[];
+  try{ await crmProbateInsertMany(recs, newIds); }
+  catch(e){
+    try{ if(newIds.length) await crmProbateDeleteIds(newIds); }catch(_e){}
+    showToast('Import failed ('+(e&&e.message?String(e.message).slice(0,60):'error')+')','error');
+    return;
+  }
+  try{ await pbbSet(dt,st,'skiptraced','Yes'); }catch(e){}
+  closeModal();
+  crmProbate=null; crmProbateBatches=null;
+  if(activeSection==='probate') renderProbate();
+  showToast('Added new '+st+' batch with '+recs.length.toLocaleString()+' skip-traced lead'+(recs.length!==1?'s':''),'success');
 }
 // ---- Replace a whole batch with an uploaded skip-traced list (no id needed) ----
 // The skip-tracer returns First Name / Last Name / Phone Number / Address (no CRM id),
