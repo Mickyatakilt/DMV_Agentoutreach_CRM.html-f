@@ -3836,20 +3836,50 @@ async function pbRunSkiptraceImport(){
 }
 // Fresh no-id list uploaded from the top button: add every row as a new Scraped batch
 // (state typed by the user, date = today). Keeps existing leads untouched.
+// Digits-only phone key and a normalized address key, used to spot duplicates.
+function pbPhoneKey(s){ return String(s||'').replace(/\D/g,''); }
+function pbAddrKey(s){ return String(s||'').trim().toUpperCase().replace(/\s+/g,' '); }
 async function pbRunFreshImport(){
   var st=((document.getElementById('pb-st-state')||{}).value||'').trim().toUpperCase();
   if(!st){ showToast('Type a State first (e.g. SC) to add a new batch','error'); return; }
   var p=pbParseReplace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
   if(!p||!p.rows.length){ showToast('No rows found in that file','error'); return; }
   var dt=today();
-  if(!confirm('Add new batch?\n\nAdd '+p.rows.length+' skip-traced lead'+(p.rows.length!==1?'s':'')+' as a new Scraped batch in '+st+', dated '+dt+'.\n\nExisting leads are left untouched.')) return;
+  // 1) Drop rows with no usable phone number (need at least 10 digits).
+  var noPhone=0, withPhone=[];
+  p.rows.forEach(function(r){ if(pbPhoneKey(r.phone).length>=10) withPhone.push(r); else noPhone++; });
+  // 2) Index existing probate leads by phone + address, remembering scraped vs not-scraped.
+  var exPhone={}, exAddr={};
+  (crmProbate||[]).forEach(function(x){
+    var status=pbLeadBatchStatus(x); // 'scraped' | 'texted' | 'notscraped'
+    var d=pbPhoneKey(x.skiptracePhone||x.prPhone); if(d && exPhone[d]===undefined) exPhone[d]=status;
+    var a=pbAddrKey(x.skiptraceAddress||x.propertyAddress); if(a && exAddr[a]===undefined) exAddr[a]=status;
+  });
+  // 3) Split into brand-new vs already-in-CRM (and drop repeats inside the file).
+  var seen={}, fresh=[], dupScraped=0, dupNot=0, dupInFile=0;
+  withPhone.forEach(function(r){
+    var d=pbPhoneKey(r.phone), a=pbAddrKey(r.address);
+    if(seen[d]){ dupInFile++; return; }
+    var hit = (exPhone[d]!==undefined) ? exPhone[d] : (a && exAddr[a]!==undefined ? exAddr[a] : null);
+    if(hit!==null){ if(hit==='notscraped') dupNot++; else dupScraped++; return; }
+    seen[d]=1; fresh.push(r);
+  });
+  var dupCRM=dupScraped+dupNot;
+  if(!fresh.length){ showToast('Nothing new to add — every row is a duplicate or has no phone','error'); return; }
+  var msg='Add to '+st+' (dated '+dt+'):\n\n'
+    + '• '+fresh.length+' NEW lead'+(fresh.length!==1?'s':'')+' to add\n'
+    + (dupCRM? '• '+dupCRM+' already in your CRM — will be skipped ('+dupScraped+' already skip-traced, '+dupNot+' not skip-traced)\n':'')
+    + (dupInFile? '• '+dupInFile+' repeated inside the file — skipped\n':'')
+    + (noPhone? '• '+noPhone+' with no phone — skipped\n':'')
+    + '\nProceed?';
+  if(!confirm(msg)) return;
   var now=new Date().toISOString();
-  var recs=p.rows.map(function(x){ var a=pbSplitAddr(x.address); return {
+  var recs=fresh.map(function(x){ var a=pbSplitAddr(x.address); return {
     source_case_id:null, state:st, county:'', decedent_name:x.name, pr_name:x.name,
     pr_address:x.address, pr_phone:x.phone||null, property_address:a.street, property_city:a.city, property_zip:a.zip,
     score:5, status:'New', date_pulled:dt, notes:'SKIPTRACE IMPORT',
     skiptrace_name:x.name, skiptrace_phone:x.phone||null, skiptrace_address:x.address, skiptraced_at:now }; });
-  showToast('Importing '+recs.length.toLocaleString()+' skip-traced lead'+(recs.length!==1?'s':'')+'…','info');
+  showToast('Importing '+recs.length.toLocaleString()+' new lead'+(recs.length!==1?'s':'')+'…','info');
   var newIds=[];
   try{ await crmProbateInsertMany(recs, newIds); }
   catch(e){
@@ -3972,13 +4002,25 @@ async function pbRunReplaceBatch(){
   var dt=__pbRepKey.date, st=__pbRepKey.state;
   var p=pbParseReplace(__pbRepText||(document.getElementById('pb-rep-text')||{}).value||'');
   if(!p.rows.length){ showToast('No rows found in that file','error'); return; }
+  // Keep only phone-having rows and drop repeats inside the file.
+  var seen={}, kept=[], noPhone=0, dupInFile=0;
+  p.rows.forEach(function(r){
+    var d=pbPhoneKey(r.phone);
+    if(d.length<10){ noPhone++; return; }
+    if(seen[d]){ dupInFile++; return; }
+    seen[d]=1; kept.push(r);
+  });
+  if(!kept.length){ showToast('Nothing to import — no rows had a phone number','error'); return; }
   var scope=__pbRepKey.scope||'batch', oldIds;
   if(scope==='state'){ oldIds=pbStateNotScraped(st).leadIds; }
   else { oldIds=(crmProbate||[]).filter(function(x){return x.datePulled===dt&&x.state===st;}).map(function(x){return +x.id;}); }
   var scopeLabel=(scope==='state')?('all Not-Scraped '+st+' leads'):'this batch';
-  if(!confirm('Replace '+scopeLabel+'?\n\nDelete the '+oldIds.length+' current lead'+(oldIds.length!==1?'s':'')+' and replace with '+p.rows.length+' skip-traced lead'+(p.rows.length!==1?'s':'')+'.\n\nThe new leads are imported first, then the old ones removed — so nothing is lost if the import is interrupted.')) return;
+  if(!confirm('Replace '+scopeLabel+'?\n\nDelete the '+oldIds.length+' current lead'+(oldIds.length!==1?'s':'')+' and replace with '+kept.length+' skip-traced lead'+(kept.length!==1?'s':'')+'.\n'
+    + (noPhone? '• '+noPhone+' with no phone — skipped\n':'')
+    + (dupInFile? '• '+dupInFile+' repeated in the file — skipped\n':'')
+    + '\nThe new leads are imported first, then the old ones removed — so nothing is lost if the import is interrupted.')) return;
   var now=new Date().toISOString();
-  var recs=p.rows.map(function(x){ var a=pbSplitAddr(x.address); return {
+  var recs=kept.map(function(x){ var a=pbSplitAddr(x.address); return {
     source_case_id:null, state:st, county:'', decedent_name:x.name, pr_name:x.name,
     pr_address:x.address, pr_phone:x.phone||null, property_address:a.street, property_city:a.city, property_zip:a.zip,
     score:5, status:'New', date_pulled:dt, notes:'SKIPTRACE REPLACE',
