@@ -3343,9 +3343,21 @@ function renderProbate(){
   var textedCount=all.filter(function(p){return pbLeadBatchStatus(p)==='texted';}).length;
   var followupCount=all.filter(function(p){return !!p.followUpDate;}).length;
   var states=Array.from(new Set(all.map(function(p){return p.state;}).filter(Boolean))).sort();
+  // Each view tab is tinted by its status so it reads at a glance:
+  // filled/bold when selected, soft-tinted when not.
+  var PB_VIEW_COLORS={
+    all:      {solid:'#334155', tint:'#f1f5f9', text:'#334155', border:'#cbd5e1'},
+    notscraped:{solid:'#b45309', tint:'#fef3c7', text:'#92400e', border:'#fcd34d'},
+    scraped:  {solid:'#166534', tint:'#dcfce7', text:'#166534', border:'#86efac'},
+    texted:   {solid:'#1e40af', tint:'#dbeafe', text:'#1e40af', border:'#93c5fd'},
+    followup: {solid:'#7e22ce', tint:'#f3e8ff', text:'#7e22ce', border:'#d8b4fe'}
+  };
   function viewChip(v,label){
-    var on=pbView===v;
-    return '<button class="btn btn-sm" style="'+(on?'background:#334155;color:#fff;border-color:#334155':'background:#fff;color:#334155;border:1.5px solid #cbd5e1')+'" onclick="pbView=\''+v+'\';pbRenderArea()">'+label+'</button>';
+    var on=pbView===v, c=PB_VIEW_COLORS[v]||PB_VIEW_COLORS.all;
+    var style=on
+      ? 'background:'+c.solid+';color:#fff;border:1.5px solid '+c.solid+';font-weight:600'
+      : 'background:'+c.tint+';color:'+c.text+';border:1.5px solid '+c.border+';font-weight:600';
+    return '<button class="btn btn-sm" style="'+style+'" onclick="pbView=\''+v+'\';pbRenderArea()">'+label+'</button>';
   }
   host.innerHTML =
     '<div class="lt-wrap">'
