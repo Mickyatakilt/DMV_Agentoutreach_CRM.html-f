@@ -1086,6 +1086,7 @@ async function cancelScheduledSms(id){
 // page never fetches protected fields with the anon key -- it only gets data back
 // AFTER acceptance is recorded server-side and a per-lead token is issued.
 const AGREEMENT_FN_URL = SUPABASE_URL + '/functions/v1/lead-agreement';
+const JV_ESIGN_URL = SUPABASE_URL + '/functions/v1/jv-esign';
 const AGREEMENT_VERSION = '1.0';
 // The agreement clauses, used by the recipient gate AND the downloadable PDF record.
 // NOTE: the gate (renderAgreementGate) keeps its own inline-styled copy for layout;
@@ -2450,6 +2451,32 @@ var bySearch = '', byArea = '', byHot = false;
 // property builder draft (kept so re-renders don't lose typing); photos = array of image URLs
 var dispoDraft = {id:null,address:'',headerPhoto:'',price:'',arv:'',beds:'',baths:'',sqft:'',basement:'',description:'',comps:'',compsPhotos:[],notes:'',photos:[],photosLink:'',sourceType:'',contactName:'',contactEmail:'',contactPhone:''};
 
+// ===================== JV e-signature agreements =====================
+// Agreements live in `jv_agreements` (read via REST). Create + send + sign
+// all flow through the `jv-esign` edge function. Party A auto-signs on send;
+// Party B (contract holder) signs via an emailed link on a hosted page.
+var jvAgs = null;              // cached list, null = not loaded
+var JV_A_PATH = 'jv_agreements';
+// Build the default JV contract body (rich HTML) from the deal fields.
+function jvTemplate(o){
+  o = o||{};
+  var partyA = esc(o.party_a_name||'Hiredwise LLC');
+  var partyB = o.party_b_name ? esc(o.party_b_name) : '________________';
+  var addr   = o.property_address ? esc(o.property_address) : '________________';
+  var bpct   = (o.party_b_pct!=null && o.party_b_pct!=='') ? o.party_b_pct : 60;
+  var apct   = 100 - (+bpct||0);
+  return ''
+    + '<p>This Agreement is between <b>'+partyA+'</b> (“Party A”) and <b>'+partyB+'</b> (“Party B / Contract Holder”) regarding <b>'+addr+'</b> (“Property”).</p>'
+    + '<p><b>1. Contract Holder:</b> Party B represents that they are the direct contract holder working directly with the Seller and not through another party. Party B is solely responsible for all obligations, representations, and requirements under the Purchase Contract and any Assignment Agreement, including ensuring the transaction closes.</p>'
+    + '<p><b>2. Responsibilities:</b> '+partyA+' will market the Property and assist in locating and working with a buyer. Party B will provide all contracts and documents necessary to complete the transaction.</p>'
+    + '<p><b>3. Profit Split:</b> Net profit from the transaction will be split <b>'+bpct+'% to Party B</b> and <b>'+apct+'% to '+partyA+'</b>, after the purchase price and agreed transaction/closing expenses. '+partyA+'’s '+apct+'% shall be paid at closing.</p>'
+    + '<p><b>4. Non-Circumvention:</b> Neither party may bypass or circumvent the other party regarding any buyer, seller, or transaction introduced through this JV.</p>'
+    + '<p><b>5. Closing/Termination:</b> If the transaction does not close, neither party is entitled to a profit split. Any changes to this Agreement must be agreed to in writing by both parties.</p>';
+}
+function jvAgsFetch(){
+  return sbFetch(JV_A_PATH+'?select=*&order=id.desc&limit=500').then(function(rows){ jvAgs = rows||[]; }).catch(function(){ jvAgs = []; });
+}
+
 function byFromDb(r){ return {id:r.id,name:r.name||'',email:r.email||'',phone:r.phone||'',area:r.area||'',
   hot:!!r.hot,buyBox:r.buy_box||'',tags:r.tags||'',notes:r.notes||''}; }
 function byToDb(b){ return {name:b.name||'',email:b.email||'',phone:b.phone||'',area:b.area||'',
@@ -2782,6 +2809,15 @@ function renderDispo(){
         + '</div>'
         + '<div id="dp-linkwrap" style="display:none;margin-top:12px"></div>'
       + '</div>'
+      // ---- JV Agreements (e-signature) ----
+      + '<div class="lt-head" style="margin:22px 0 10px"><div><h2 style="font-size:16px">&#9997;&#65039; JV Agreements</h2>'
+        + '<p style="font-size:12px;color:var(--text3);margin:2px 0 0">Fill the contract holder, split &amp; email, then send a link they sign online. You both get a signed PDF by email.</p></div>'
+        + '<div class="lt-actions">'
+          + '<button class="btn btn-secondary btn-sm" onclick="jvAgs=null;jvAgsRenderList()">&#8635; Refresh</button>'
+          + '<button class="btn btn-primary btn-sm" onclick="jvOpenModal(null)">&#43; New Agreement</button>'
+        + '</div>'
+      + '</div>'
+      + '<div id="jv-ags-list"><div style="padding:18px;text-align:center;color:var(--text4);font-size:13px">Loading&hellip;</div></div>'
     // ---- Saved deals ----
     + '<div class="lt-head" style="margin:22px 0 10px"><div><h2 style="font-size:16px">&#128188; Saved Deals</h2></div>'
       + '<div class="lt-actions"><button class="btn btn-secondary btn-sm" onclick="crmProps=null;renderDispo()">&#8635; Refresh</button></div>'
@@ -2814,7 +2850,153 @@ function renderDispo(){
   dispoRenderPhotoStrip();
   dispoRenderCompStrip();
   byRenderArea();
+  jvAgsRenderList();
   if(dispoDraft && dispoDraft.id) nciMount('property', dispoDraft.id);
+}
+
+// ---- JV Agreements: list + status ----
+function jvStatusChip(s){
+  var map={ sent:['#3730a3','#e0e7ff','Sent'], viewed:['#92400e','#fef3c7','Viewed'], signed:['#065f46','#d1fae5','&#9989; Signed'], void:['#64748b','#e2e8f0','Void'] };
+  var m=map[s]||map.sent; return '<span class="lt-chip" style="color:'+m[0]+';background:'+m[1]+'">'+m[2]+'</span>';
+}
+function jvAgsRenderList(){
+  var host=document.getElementById('jv-ags-list'); if(!host) return;
+  if(jvAgs===null){ jvAgsFetch().then(function(){ if(activeSection==='dispo') jvAgsRenderList(); }); return; }
+  if(!jvAgs.length){ host.innerHTML='<div style="padding:22px;text-align:center;color:var(--text4);font-size:13px;border:1px dashed var(--border);border-radius:10px">No agreements yet. Click <b>New Agreement</b> to send your first one.</div>'; return; }
+  host.innerHTML='<div class="dp-deals-grid">'+jvAgs.map(function(a){
+    var when=a.party_b_signed_at?('Signed '+new Date(a.party_b_signed_at).toLocaleDateString()):(a.created_at?('Sent '+new Date(a.created_at).toLocaleDateString()):'');
+    var split=(a.party_b_pct!=null)?(a.party_b_pct+'/'+a.party_a_pct):'';
+    var link=JV_ESIGN_URL+'?token='+encodeURIComponent(a.share_token);
+    var acts='';
+    if(a.status==='signed'){
+      acts='<button class="btn btn-secondary btn-sm" onclick="window.open(\''+(a.pdf_url||link+'&pdf=1')+'\',\'_blank\')">&#128196; PDF</button>';
+    } else if(a.status!=='void'){
+      acts='<button class="btn btn-primary btn-sm" onclick="jvCopyLink('+a.id+')">&#128203; Link</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="window.open(\''+link+'\',\'_blank\')">&#8599;</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="jvOpenModal('+a.id+')" title="Edit &amp; resend">&#9998;</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="jvVoid('+a.id+')" title="Void">&#128465;</button>';
+    }
+    return '<div class="dp-deal" style="grid-template-columns:1fr"><div class="dp-deal-body" style="padding:12px 14px">'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="dp-deal-addr" style="flex:1;min-width:120px">'+esc(a.party_b_name||'(no name)')+'</div>'+jvStatusChip(a.status)+'</div>'
+      +'<div class="dp-deal-meta" style="margin-top:3px">'+esc(a.property_address||'')+(split?(' &middot; '+split+' split'):'')+'</div>'
+      +'<div class="dp-deal-meta" style="margin-top:2px;color:var(--text4)">'+esc(a.party_b_email||'')+(when?(' &middot; '+when):'')+'</div>'
+      +'<div class="dp-deal-acts" style="margin-top:8px">'+acts+'</div>'
+      +'</div></div>';
+  }).join('')+'</div>';
+}
+function jvCopyLink(id){
+  var a=(jvAgs||[]).find(function(x){return +x.id===+id;}); if(!a) return;
+  var link=JV_ESIGN_URL+'?token='+encodeURIComponent(a.share_token);
+  navigator.clipboard.writeText(link).then(function(){ showToast('Signing link copied'); }, function(){ prompt('Copy this signing link:', link); });
+}
+function jvVoid(id){
+  if(!confirm('Void this agreement? The signing link will stop working.')) return;
+  fetch(JV_ESIGN_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sbAuthToken()},body:JSON.stringify({action:'void',id:id})})
+    .then(function(r){return r.json();}).then(function(d){ if(d&&d.ok){ jvAgs=null; jvAgsRenderList(); showToast('Agreement voided'); } else { showToast((d&&d.error)||'Could not void','error'); } })
+    .catch(function(){ showToast('Network error','error'); });
+}
+
+// ---- JV Agreements: create / edit modal ----
+var jvBodyEdited=false;
+function jvOpenModal(id){
+  var a=(id!=null)?(jvAgs||[]).find(function(x){return +x.id===+id;}):null;
+  var isEdit=!!a;
+  var d=dispoDraft||{};
+  var pa = a?a.party_a_name:'Hiredwise LLC';
+  var pas= a?(a.party_a_signer||''):'';
+  var pb = a?(a.party_b_name||''):'';
+  var pbe= a?(a.party_b_email||''):'';
+  var addr=a?(a.property_address||''):(d.address||'');
+  var bpct=a&&a.party_b_pct!=null?a.party_b_pct:60;
+  var dt = a?(a.agreement_date||'').slice(0,10):(new Date().toISOString().slice(0,10));
+  var body=a?(a.body_html||''):jvTemplate({party_a_name:pa,party_b_name:pb,property_address:addr,party_b_pct:bpct});
+  jvBodyEdited=isEdit; // editing keeps saved body; new deals auto-rebuild until user edits
+  var deals=(crmProps||[]);
+  var dealOpts='<option value="">&#8212; none &#8212;</option>'+deals.map(function(p){ return '<option value="'+p.id+'"'+((a&&+a.deal_id===+p.id)?' selected':'')+'>'+esc(p.address||('Deal #'+p.id))+'</option>'; }).join('');
+  var html=''
+   +'<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:640px">'
+   +'<div class="modal-header"><div class="modal-title">&#9997;&#65039; '+(isEdit?'Edit Agreement':'New JV Agreement')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+   +'<div class="modal-body">'
+   +'<div class="dp-form">'
+     +'<div class="form-field"><label class="form-label">Link to deal <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select id="jv-deal" class="form-input" onchange="jvOnDealPick()">'+dealOpts+'</select></div>'
+     +'<div class="form-field"><label class="form-label">Agreement date</label><input id="jv-date" type="date" class="form-input" value="'+esc(dt)+'" oninput="jvSync()"></div>'
+     +'<div class="form-field full"><label class="form-label">Property address</label><input id="jv-addr" class="form-input" value="'+esc(addr)+'" oninput="jvSync()"></div>'
+     +'<div class="form-field"><label class="form-label">Party A (your company)</label><input id="jv-pa" class="form-input" value="'+esc(pa)+'" oninput="jvSync()"></div>'
+     +'<div class="form-field"><label class="form-label">Party A signer name <span style="font-weight:400;color:var(--text3)">(auto-signs on send)</span></label><input id="jv-pas" class="form-input" value="'+esc(pas)+'" placeholder="Your name"></div>'
+     +'<div class="form-field"><label class="form-label">Contract holder (Party B)</label><input id="jv-pb" class="form-input" value="'+esc(pb)+'" placeholder="Their full name" oninput="jvSync()"></div>'
+     +'<div class="form-field"><label class="form-label">Contract holder email</label><input id="jv-pbe" type="email" class="form-input" value="'+esc(pbe)+'" placeholder="them@email.com"></div>'
+     +'<div class="form-field"><label class="form-label">Their split %</label><input id="jv-bpct" type="number" min="0" max="100" class="form-input" value="'+esc(bpct)+'" oninput="jvSync()"></div>'
+     +'<div class="form-field"><label class="form-label">Your split %</label><input id="jv-apct" class="form-input" value="'+esc(100-(+bpct||0))+'" readonly style="background:var(--bg2,#f1f5f9)"></div>'
+     +'<div class="form-field full"><label class="form-label">Agreement text <span style="font-weight:400;color:var(--text3)">(fully editable)</span> <button type="button" class="btn btn-secondary btn-sm" style="float:right;padding:2px 8px" onclick="jvResetBody()">&#8635; Reset to template</button></label>'
+       +'<div id="jv-body" class="form-input dp-rt" contenteditable="true" style="min-height:220px;line-height:1.5" oninput="jvBodyEdited=true">'+body+'</div></div>'
+   +'</div>'
+   +'<div id="jv-err" style="color:#dc2626;font-size:13px;margin-top:8px;min-height:16px"></div>'
+   +'</div>'
+   +'<div class="modal-footer">'
+     +'<button class="btn btn-secondary" onclick="closeModal()">Cancel</button>'
+     +'<button class="btn btn-primary" id="jv-send-btn" onclick="jvSend('+(isEdit?a.id:'null')+')">&#128232; '+(isEdit?'Save &amp; Resend':'Send for Signature')+'</button>'
+   +'</div>'
+   +'</div></div>';
+  document.getElementById('modal-container').innerHTML=html;
+}
+function jvOnDealPick(){
+  var sel=document.getElementById('jv-deal'); if(!sel||!sel.value) return;
+  var p=(crmProps||[]).find(function(x){return +x.id===+sel.value;}); if(!p) return;
+  var addr=document.getElementById('jv-addr'); if(addr && !addr.value.trim()){ addr.value=p.address||''; }
+  jvSync();
+}
+function jvSync(){
+  var bpct=+((document.getElementById('jv-bpct')||{}).value)||0;
+  var apctEl=document.getElementById('jv-apct'); if(apctEl) apctEl.value=100-bpct;
+  if(!jvBodyEdited){
+    var bodyEl=document.getElementById('jv-body');
+    if(bodyEl) bodyEl.innerHTML=jvTemplate({
+      party_a_name:(document.getElementById('jv-pa')||{}).value||'Hiredwise LLC',
+      party_b_name:(document.getElementById('jv-pb')||{}).value||'',
+      property_address:(document.getElementById('jv-addr')||{}).value||'',
+      party_b_pct:bpct
+    });
+  }
+}
+function jvResetBody(){
+  jvBodyEdited=false; jvSync();
+  var bodyEl=document.getElementById('jv-body');
+  if(bodyEl && jvBodyEdited===false){ /* jvSync already rebuilt */ }
+  jvBodyEdited=false;
+  showToast('Reset to template');
+}
+function jvSend(id){
+  var g=function(x){ var e=document.getElementById(x); return e?e.value.trim():''; };
+  var err=document.getElementById('jv-err');
+  var pb=g('jv-pb'), pbe=g('jv-pbe'), addr=g('jv-addr'), pas=g('jv-pas');
+  if(!pb){ err.textContent='Enter the contract holder name.'; return; }
+  if(!pbe){ err.textContent='Enter the contract holder email (that\'s where the link goes).'; return; }
+  if(!addr){ err.textContent='Enter the property address.'; return; }
+  var payload={
+    action:'create',
+    deal_id:g('jv-deal')||null,
+    party_a_name:g('jv-pa')||'Hiredwise LLC',
+    party_a_signer:pas||g('jv-pa')||'Hiredwise LLC',
+    party_b_name:pb, party_b_email:pbe, property_address:addr,
+    party_b_pct:+g('jv-bpct')||0,
+    agreement_date:g('jv-date')||null,
+    body_html:(document.getElementById('jv-body')||{}).innerHTML||'',
+    created_by:(authSession&&authSession.user&&authSession.user.email)||''
+  };
+  var btn=document.getElementById('jv-send-btn'); btn.disabled=true; var old=btn.innerHTML; btn.innerHTML='Sending…'; err.textContent='';
+  var run=function(){
+    // "edit & resend" = void the old one, then create fresh (keeps an audit trail row)
+    var pre = (id!=null&&id!=='null') ? fetch(JV_ESIGN_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sbAuthToken()},body:JSON.stringify({action:'void',id:id})}) : Promise.resolve();
+    return pre.then(function(){ return fetch(JV_ESIGN_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sbAuthToken()},body:JSON.stringify(payload)}); });
+  };
+  run().then(function(r){return r.json();}).then(function(d){
+    if(d&&d.ok){
+      closeModal(); jvAgs=null; if(activeSection==='dispo') jvAgsRenderList();
+      if(d.emailed){ showToast('Sent! Signing link emailed to '+pbe); }
+      else if(!d.mailConfigured){ showToast('Created. Email not set up yet — copy the link to send manually.'); prompt('Signing link (send this to '+pbe+'):', d.link); }
+      else { showToast('Created, but email failed. Copy the link to send manually.'); prompt('Signing link:', d.link); }
+    } else { err.textContent=(d&&d.error)||'Could not send.'; btn.disabled=false; btn.innerHTML=old; }
+  }).catch(function(){ err.textContent='Network error. Please try again.'; btn.disabled=false; btn.innerHTML=old; });
 }
 function dispoDealsHTML(){
   var list=(crmProps||[]);
