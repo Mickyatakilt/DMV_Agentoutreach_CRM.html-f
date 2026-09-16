@@ -1251,6 +1251,7 @@ function toRow(l) {
     phone: l.phone||'', marketing_type: l.marketingType||'',
     address: l.address||'', offer: l.offer||'', arv: l.arv||'',
     comps: l.comps||'', notes: l.notes||'', date: l.date||'',
+    contact_email: l.contactEmail||'',
     lead_source: l.leadSource||'', web_link: l.webLink||'',
     follow_up_date: l.followUpDate||'', nationwide: l.nationwide||'',
     needs_review: l.needsReview||false,
@@ -1273,6 +1274,7 @@ function fromRow(r) {
     phone: r.phone, marketingType: r.marketing_type,
     address: r.address, offer: r.offer, arv: r.arv,
     comps: r.comps, notes: r.notes, date: r.date,
+    contactEmail: r.contact_email||'',
     leadSource: r.lead_source, webLink: r.web_link,
     followUpDate: r.follow_up_date, nationwide: r.nationwide||'',
     needsReview: r.needs_review||false,
@@ -1368,6 +1370,7 @@ function toJVRow(l) {
     id: l.id, name: l.name||'', phone: l.phone||'', score: l.score||'',
     notes: l.notes||'', fb_link: l.fbLink||'', source_group: l.sourceGroup||'',
     location: l.location||'', asking_price: l.askingPrice||'', arv: l.arv||'',
+    contact_email: l.contactEmail||'',
     profit_est: l.profitEst||'', follow_up_date: l.followUpDate||'',
     ghl_contact_id: l.ghlContactId||'',
     jv_status: l.jvStatus||'', date_added: l.dateAdded||'',
@@ -1384,6 +1387,7 @@ function fromJVRow(r) {
     id: r.id, name: r.name||'', phone: r.phone||'', score: r.score||'',
     notes: r.notes||'', fbLink: r.fb_link||'', sourceGroup: r.source_group||'',
     location: r.location||'', askingPrice: r.asking_price||'', arv: r.arv||'',
+    contactEmail: r.contact_email||'',
     profitEst: r.profit_est||'', followUpDate: r.follow_up_date||'',
     ghlContactId: r.ghl_contact_id||'',
     jvStatus: r.jv_status||'', dateAdded: r.date_added||'',
@@ -6188,6 +6192,7 @@ function renderDetailModal(){
             <div class="detail-grid">
               <div class="detail-item"><span class="detail-label">Agent</span><span class="detail-val">${esc(l.name)||''}</span></div>
               <div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':''}</span></div>
+              <div class="detail-item"><span class="detail-label">Email</span><span class="detail-val">${l.contactEmail?'<a href="mailto:'+esc(l.contactEmail)+'" class="detail-link">'+esc(l.contactEmail)+'</a>':'<span style="color:var(--text4)">&#8212;</span>'}</span></div>
               <div class="detail-item"><span class="detail-label">Offer</span><span class="detail-val" style="color:var(--accent);font-weight:700;font-size:15px">${formatMoney(l.offer)}</span></div>
               <div class="detail-item"><span class="detail-label">ARV</span><span class="detail-val" style="color:var(--green);font-weight:700;font-size:15px">${formatMoney(l.arv)}</span></div>
               <div class="detail-item"><span class="detail-label">Beds</span><span class="detail-val">${esc(l.beds||'')||'&#8212;'}</span></div>
@@ -7049,6 +7054,7 @@ function openJVDetail(id){
   document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px"><div class="modal-header"><div><div class="modal-title">'+esc(l.name||'JV Lead')+'</div><div class="modal-subtitle">'+scoreBadgeHTML(l.score)+' &middot; '+esc(l.location||l.address||'')+sentIndicatorHTML(l)+'</div>'+(l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body">'
     +'<div class="form-section"><div class="detail-grid">'
     +'<div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">'+(l.phone?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':esc(l.phone||''))+(l.location?' <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="crmFindNumber('+l.id+')" title="Find the first wireless number for this address (needs US VPN)">&#128269; Find #</button>':'')+'</span></div>'
+    +'<div class="detail-item"><span class="detail-label">Email</span><span class="detail-val">'+(l.contactEmail?'<a href="mailto:'+esc(l.contactEmail)+'" class="detail-link">'+esc(l.contactEmail)+'</a>':'<span style="color:var(--text4)">&#8212;</span>')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Asking Price</span><span class="detail-val" style="color:var(--accent);font-weight:700">'+esc(l.askingPrice||'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">ARV</span><span class="detail-val" style="color:var(--green);font-weight:700">'+esc(l.arv||'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Profit Est</span><span class="detail-val">'+esc(l.profitEst||'')+'</span></div>'
@@ -7067,6 +7073,7 @@ function openJVDetail(id){
     +((l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':'')
     +agreementSectionHTML(l.id,'task',l.agreementStatus,l.agreementAcceptedAt)
     +ghlSmsSlotHTML('task',l.id)
+    +emailOfferSectionHTML(l,'task')
     +renderAttachmentsSection('task', l.id)
     +renderActivityLog('task', l.id, l.activityLog)
     +'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
@@ -7864,7 +7871,18 @@ function emailFromOptionsHTML(){
     return '<option value="'+esc(m.email)+'"'+sel+'>'+esc(m.name)+' ('+esc(m.email)+')</option>';
   }).join('');
 }
-function emailOfferSectionHTML(l){
+// Resolve a lead/task record + its address/price regardless of which tab it came from
+// (DMV Leads, Nationwide leads — both in `leads` — or Tasks in `jvLeads`).
+function emailRecordFor(kind, id){
+  if(kind==='task'){
+    var t = jvLeads.find(function(x){return x.id===id;});
+    return t ? {rec:t, list:'jv', address:t.location||t.address||'', price:t.askingPrice||''} : null;
+  }
+  var l = leads.find(function(x){return x.id===id;});
+  return l ? {rec:l, list:'lead', address:l.address||'', price:l.offer||''} : null;
+}
+function emailOfferSectionHTML(l, kind){
+  kind = kind||'lead';
   var contact = esc((l&&(l.contactEmail||l.email))||'');
   var hasTeam = getTeamMembers().length>0;
   return '<div class="detail-section"><div class="detail-section-title">&#9993;&#65039; Email Offer</div>'
@@ -7879,50 +7897,63 @@ function emailOfferSectionHTML(l){
     +     '<input id="email-contact-addr" class="form-input" type="email" placeholder="seller-or-agent@email.com" value="'+contact+'" style="flex:1;min-width:180px;font-size:12px">'
     +   '</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-    +     '<button class="btn btn-primary btn-sm" onclick="sendEmailOffer('+l.id+')">&#9993;&#65039; Send Email Offer</button>'
-    +     '<button class="btn btn-secondary btn-sm" onclick="followUpEmail('+l.id+')">&#128269; Follow Up Email</button>'
+    +     '<button class="btn btn-primary btn-sm" onclick="sendEmailOffer(\''+kind+'\','+l.id+')">&#9993;&#65039; Send Email Offer</button>'
+    +     '<button class="btn btn-secondary btn-sm" onclick="followUpEmail(\''+kind+'\','+l.id+')">&#128269; Follow Up Email</button>'
     +   '</div>'
-    +   (hasTeam?'':'<div style="font-size:11px;color:var(--text4)">Tip: add your teammates under &ldquo;Manage team&rdquo; so you can pick who the offer is sent from.</div>')
+    +   (hasTeam?'':'<div style="font-size:11px;color:var(--text4)">Tip: add your teammates under &ldquo;Manage team&rdquo; so you can log who the offer was sent from.</div>')
     + '</div></div>';
 }
 function rememberEmailFrom(v){ if(v) localStorage.setItem('crm_email_from', v); }
-function buildOfferBody(l){
-  var addr = (l&&l.address)||'';
-  var price = (l&&l.offer)||'';
+function buildOfferBody(addr, price){
   return 'Hello,\n\n'
     + 'Hope all is well. We are making an offer regarding your listing. A summary of the general terms are below. If the seller is interested in our offer, we will submit a formal offer for your review.\n\n'
     + 'Thanks,\n\n'
-    + 'Address: ' + addr + '\n'
+    + 'Address: ' + (addr||'') + '\n'
     + 'Buyer: Hiredwise LLC\n'
-    + 'Offer Price: $' + price + '\n'
+    + 'Offer Price: $' + (price||'') + '\n'
     + 'Earnest Money Deposit: $\n'
     + 'Settlement Date: 30 days Or Less\n'
     + 'Financing Type: Cash/Hard Money Lending\n'
     + 'Contingencies: 5 day inspection\n';
 }
-function sendEmailOffer(id){
-  var l = leads.find(function(x){return x.id===id;}); if(!l) return;
+// Save the entered email onto the record (as its Email/contact field) + persist,
+// so it shows in the contact info next time — for DMV, Nationwide, and Tasks.
+function saveContactEmailOnRecord(ctx, to){
+  var rec = ctx.rec;
+  rec.contactEmail = to;
+  rec.lastEmailedTo = to;
+  if(ctx.list==='jv'){
+    localStorage.setItem('crm_jv_leads', JSON.stringify(jvLeads));
+    saveJVToSupabase(rec);
+  } else {
+    localStorage.setItem('crm_leads', JSON.stringify(leads));
+    saveLeadToSupabase(rec);
+  }
+}
+function sendEmailOffer(kind, id){
+  var ctx = emailRecordFor(kind, id); if(!ctx) return;
   var to = ((document.getElementById('email-contact-addr')||{}).value||'').trim();
   if(!to){ showToast('Enter the contact’s email first', 'error'); var box=document.getElementById('email-contact-addr'); if(box) box.focus(); return; }
   var from = (document.getElementById('email-from-select')||{}).value||'';
-  var subject = 'Offer regarding your listing' + (l.address?(' at '+l.address):'');
-  var url = 'https://mail.google.com/mail/?view=cm&fs=1'
-    + (from?('&authuser='+encodeURIComponent(from)):'')
-    + '&to=' + encodeURIComponent(to)
-    + '&su=' + encodeURIComponent(subject)
-    + '&body=' + encodeURIComponent(buildOfferBody(l));
-  window.open(url, '_blank');
-  if(!l.activityLog) l.activityLog=[];
-  l.activityLog.push({type:'Email Offer', by:from||((currentUser&&currentUser.name)||'Team'), at:new Date().toISOString(), note:'Offer emailed to '+to});
-  l.lastEmailedTo = to;
-  localStorage.setItem('crm_leads', JSON.stringify(leads));
-  saveLeadToSupabase(l);
-  showToast('Offer email drafted to '+to+' — review & send in Gmail', 'success');
+  var subject = 'Offer regarding your listing' + (ctx.address?(' at '+ctx.address):'');
+  // mailto: opens the desktop mail app (Mail / Outlook), pre-filled. No browser tab.
+  var mailto = 'mailto:' + encodeURIComponent(to)
+    + '?subject=' + encodeURIComponent(subject)
+    + '&body=' + encodeURIComponent(buildOfferBody(ctx.address, ctx.price));
+  window.location.href = mailto;
+  // Record who sent it (from-account is record-only; the mail app controls the real sender).
+  var rec = ctx.rec;
+  if(!rec.activityLog) rec.activityLog=[];
+  rec.activityLog.push({type:'Email Offer', by:from||((currentUser&&currentUser.name)||'Team'), at:new Date().toISOString(), note:'Offer emailed to '+to+(from?(' (from '+from+')'):'')});
+  saveContactEmailOnRecord(ctx, to);
+  showToast('Offer opened in your mail app for '+to+' — email saved to contact', 'success');
 }
-function followUpEmail(id){
-  var l = leads.find(function(x){return x.id===id;}); if(!l) return;
-  var to = (((document.getElementById('email-contact-addr')||{}).value||'')||l.lastEmailedTo||'').trim();
+function followUpEmail(kind, id){
+  var ctx = emailRecordFor(kind, id); if(!ctx) return;
+  var to = (((document.getElementById('email-contact-addr')||{}).value||'')||ctx.rec.contactEmail||ctx.rec.lastEmailedTo||'').trim();
   if(!to){ showToast('Enter the contact’s email to search your inbox', 'error'); var box=document.getElementById('email-contact-addr'); if(box) box.focus(); return; }
+  // Save it too, so a typed-in email is remembered even on a follow-up.
+  saveContactEmailOnRecord(ctx, to);
   var from = (document.getElementById('email-from-select')||{}).value||'';
   var url = 'https://mail.google.com/mail/'
     + (from?('?authuser='+encodeURIComponent(from)):'')
