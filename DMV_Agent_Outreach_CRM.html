@@ -1769,7 +1769,8 @@ const SB_ITEMS = [
   {k:'outreach',  ic:'&#128227;', lb:'CRM Outreach',  sl:'Outreach',  soon:false},
   {k:'lists',     ic:'&#128199;', lb:'List Tracking', sl:'Lists',     soon:false},
   {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', sl:'Probate',   soon:false},
-  {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  sl:'Dispo',    soon:false}
+  {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  sl:'Dispo',    soon:false},
+  {k:'jv',        ic:'&#9997;&#65039;', lb:'JV Agreements', sl:'JV',  soon:false}
 ];
 function sidebarHTML(){
   var nav = SB_ITEMS.map(function(it){
@@ -2809,15 +2810,6 @@ function renderDispo(){
         + '</div>'
         + '<div id="dp-linkwrap" style="display:none;margin-top:12px"></div>'
       + '</div>'
-      // ---- JV Agreements (e-signature) ----
-      + '<div class="lt-head" style="margin:22px 0 10px"><div><h2 style="font-size:16px">&#9997;&#65039; JV Agreements</h2>'
-        + '<p style="font-size:12px;color:var(--text3);margin:2px 0 0">Fill the contract holder, split &amp; email, then send a link they sign online. You both get a signed PDF by email.</p></div>'
-        + '<div class="lt-actions">'
-          + '<button class="btn btn-secondary btn-sm" onclick="jvAgs=null;jvAgsRenderList()">&#8635; Refresh</button>'
-          + '<button class="btn btn-primary btn-sm" onclick="jvOpenModal(null)">&#43; New Agreement</button>'
-        + '</div>'
-      + '</div>'
-      + '<div id="jv-ags-list"><div style="padding:18px;text-align:center;color:var(--text4);font-size:13px">Loading&hellip;</div></div>'
     // ---- Saved deals ----
     + '<div class="lt-head" style="margin:22px 0 10px"><div><h2 style="font-size:16px">&#128188; Saved Deals</h2></div>'
       + '<div class="lt-actions"><button class="btn btn-secondary btn-sm" onclick="crmProps=null;renderDispo()">&#8635; Refresh</button></div>'
@@ -2850,37 +2842,66 @@ function renderDispo(){
   dispoRenderPhotoStrip();
   dispoRenderCompStrip();
   byRenderArea();
-  jvAgsRenderList();
   if(dispoDraft && dispoDraft.id) nciMount('property', dispoDraft.id);
 }
 
-// ---- JV Agreements: list + status ----
+// ===================== JV Agreements section (own tab) =====================
 function jvStatusChip(s){
-  var map={ sent:['#3730a3','#e0e7ff','Sent'], viewed:['#92400e','#fef3c7','Viewed'], signed:['#065f46','#d1fae5','&#9989; Signed'], void:['#64748b','#e2e8f0','Void'] };
+  var map={
+    sent:['#3730a3','#e0e7ff','&#128228; Sent'],
+    received:['#0369a1','#e0f2fe','&#128231; Received'],
+    opened:['#92400e','#fef3c7','&#128064; Opened'],
+    completed:['#065f46','#d1fae5','&#9989; Completed'],
+    failed:['#b91c1c','#fee2e2','&#9888;&#65039; Failed'],
+    'void':['#64748b','#e2e8f0','Void']
+  };
   var m=map[s]||map.sent; return '<span class="lt-chip" style="color:'+m[0]+';background:'+m[1]+'">'+m[2]+'</span>';
+}
+function jvFmt(ts){ try{ return new Date(ts).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){ return ''; } }
+function renderJvAgreements(){
+  var host=document.getElementById('section-main'); if(!host) return;
+  host.innerHTML =
+    '<div class="lt-wrap">'
+    + '<div class="lt-head">'
+      + '<div><h2>&#9997;&#65039; JV Agreements</h2>'
+        + '<p>Send a Joint Venture agreement for e-signature. Fill the contract holder, split &amp; email, then send a link they sign on the spot. Track it live: <b>Sent &rarr; Received &rarr; Opened &rarr; Completed</b>. When completed, you both get the signed PDF by email.</p></div>'
+      + '<div class="lt-actions">'
+        + '<button class="btn btn-secondary btn-sm" onclick="jvAgs=null;jvAgsRenderList()">&#8635; Refresh</button>'
+        + '<button class="btn btn-primary btn-sm" onclick="jvOpenModal(null)">&#43; New Agreement</button>'
+      + '</div>'
+    + '</div>'
+    + '<div id="jv-ags-list"><div style="padding:24px;text-align:center;color:var(--text4);font-size:13px">Loading&hellip;</div></div>'
+    + '</div>';
+  jvAgsRenderList();
 }
 function jvAgsRenderList(){
   var host=document.getElementById('jv-ags-list'); if(!host) return;
-  if(jvAgs===null){ jvAgsFetch().then(function(){ if(activeSection==='dispo') jvAgsRenderList(); }); return; }
-  if(!jvAgs.length){ host.innerHTML='<div style="padding:22px;text-align:center;color:var(--text4);font-size:13px;border:1px dashed var(--border);border-radius:10px">No agreements yet. Click <b>New Agreement</b> to send your first one.</div>'; return; }
+  if(jvAgs===null){ jvAgsFetch().then(function(){ if(activeSection==='jv') jvAgsRenderList(); }); return; }
+  if(!jvAgs.length){ host.innerHTML='<div style="padding:30px 22px;text-align:center;color:var(--text4);font-size:13px;border:1px dashed var(--border);border-radius:12px">No agreements yet. Click <b>&#43; New Agreement</b> to send your first one.</div>'; return; }
   host.innerHTML='<div class="dp-deals-grid">'+jvAgs.map(function(a){
-    var when=a.party_b_signed_at?('Signed '+new Date(a.party_b_signed_at).toLocaleDateString()):(a.created_at?('Sent '+new Date(a.created_at).toLocaleDateString()):'');
-    var split=(a.party_b_pct!=null)?(a.party_b_pct+'/'+a.party_a_pct):'';
+    var split=(a.party_b_pct!=null)?(a.party_b_pct+'% / '+a.party_a_pct+'%'):'';
     var link=JV_ESIGN_URL+'?token='+encodeURIComponent(a.share_token);
+    // Timeline line: show the furthest stage reached with its time.
+    var stage='';
+    if(a.status==='completed' && a.party_b_signed_at) stage='Completed '+jvFmt(a.party_b_signed_at);
+    else if(a.status==='opened' && a.opened_at) stage='Opened '+jvFmt(a.opened_at);
+    else if(a.status==='received' && a.received_at) stage='Received '+jvFmt(a.received_at);
+    else if(a.status==='failed') stage='Delivery failed'+(a.fail_reason?(' — '+esc(a.fail_reason)):'');
+    else if(a.created_at) stage='Sent '+jvFmt(a.created_at);
     var acts='';
-    if(a.status==='signed'){
-      acts='<button class="btn btn-secondary btn-sm" onclick="window.open(\''+(a.pdf_url||link+'&pdf=1')+'\',\'_blank\')">&#128196; PDF</button>';
+    if(a.status==='completed'){
+      acts='<button class="btn btn-secondary btn-sm" onclick="window.open(\''+(a.pdf_url||link+'&pdf=1')+'\',\'_blank\')">&#128196; Signed PDF</button>';
     } else if(a.status!=='void'){
-      acts='<button class="btn btn-primary btn-sm" onclick="jvCopyLink('+a.id+')">&#128203; Link</button>'
-        + '<button class="btn btn-secondary btn-sm" onclick="window.open(\''+link+'\',\'_blank\')">&#8599;</button>'
-        + '<button class="btn btn-secondary btn-sm" onclick="jvOpenModal('+a.id+')" title="Edit &amp; resend">&#9998;</button>'
+      acts='<button class="btn btn-primary btn-sm" onclick="jvCopyLink('+a.id+')">&#128203; Copy link</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="window.open(\''+link+'\',\'_blank\')" title="Open signing page">&#8599; Open</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="jvOpenModal('+a.id+')" title="Edit &amp; resend">&#9998; Edit</button>'
         + '<button class="btn btn-secondary btn-sm" onclick="jvVoid('+a.id+')" title="Void">&#128465;</button>';
     }
-    return '<div class="dp-deal" style="grid-template-columns:1fr"><div class="dp-deal-body" style="padding:12px 14px">'
+    return '<div class="dp-deal" style="grid-template-columns:1fr"><div class="dp-deal-body" style="padding:14px 16px">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="dp-deal-addr" style="flex:1;min-width:120px">'+esc(a.party_b_name||'(no name)')+'</div>'+jvStatusChip(a.status)+'</div>'
-      +'<div class="dp-deal-meta" style="margin-top:3px">'+esc(a.property_address||'')+(split?(' &middot; '+split+' split'):'')+'</div>'
-      +'<div class="dp-deal-meta" style="margin-top:2px;color:var(--text4)">'+esc(a.party_b_email||'')+(when?(' &middot; '+when):'')+'</div>'
-      +'<div class="dp-deal-acts" style="margin-top:8px">'+acts+'</div>'
+      +'<div class="dp-deal-meta" style="margin-top:4px">'+esc(a.property_address||'')+(split?(' &middot; '+split+' split'):'')+'</div>'
+      +'<div class="dp-deal-meta" style="margin-top:2px;color:var(--text4)">'+esc(a.party_b_email||'')+(stage?(' &middot; '+stage):'')+'</div>'
+      +'<div class="dp-deal-acts" style="margin-top:10px">'+acts+'</div>'
       +'</div></div>';
   }).join('')+'</div>';
 }
@@ -2991,7 +3012,7 @@ function jvSend(id){
   };
   run().then(function(r){return r.json();}).then(function(d){
     if(d&&d.ok){
-      closeModal(); jvAgs=null; if(activeSection==='dispo') jvAgsRenderList();
+      closeModal(); jvAgs=null; if(activeSection==='jv') jvAgsRenderList();
       if(d.emailed){ showToast('Sent! Signing link emailed to '+pbe); }
       else if(!d.mailConfigured){ showToast('Created. Email not set up yet — copy the link to send manually.'); prompt('Signing link (send this to '+pbe+'):', d.link); }
       else { showToast('Created, but email failed. Copy the link to send manually.'); prompt('Signing link:', d.link); }
@@ -4891,6 +4912,7 @@ function render(){
   askMount(); // floating "Ask AI" button (mounts once to #ask-root; survives re-renders)
   if(activeSection==='lists'){ renderLists(); return; }
   if(activeSection==='dispo'){ renderDispo(); return; }
+  if(activeSection==='jv'){ renderJvAgreements(); return; }
   if(activeSection==='probate'){ renderProbate(); return; }
   if(activeSection==='dashboard'){ renderDashboard(); return; }
   if(activeSection!=='outreach'){ renderPlaceholderSection(activeSection); return; }
