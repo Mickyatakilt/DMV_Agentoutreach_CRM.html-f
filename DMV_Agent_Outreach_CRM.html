@@ -6192,9 +6192,9 @@ function renderDetailModal(){
             <div class="detail-grid">
               <div class="detail-item"><span class="detail-label">Agent</span><span class="detail-val">${esc(l.name)||''}</span></div>
               <div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':''}</span></div>
-              <div class="detail-item"><span class="detail-label">Email</span><span class="detail-val">${l.contactEmail?'<a href="mailto:'+esc(l.contactEmail)+'" class="detail-link">'+esc(l.contactEmail)+'</a>':'<span style="color:var(--text4)">&#8212;</span>'}</span></div>
               <div class="detail-item"><span class="detail-label">Offer</span><span class="detail-val" style="color:var(--accent);font-weight:700;font-size:15px">${formatMoney(l.offer)}</span></div>
               <div class="detail-item"><span class="detail-label">ARV</span><span class="detail-val" style="color:var(--green);font-weight:700;font-size:15px">${formatMoney(l.arv)}</span></div>
+              <div class="detail-item"><span class="detail-label">Email</span><span class="detail-val">${l.contactEmail?'<a href="mailto:'+esc(l.contactEmail)+'" class="detail-link">'+esc(l.contactEmail)+'</a>':'<span style="color:var(--text4)">&#8212;</span>'}</span></div>
               <div class="detail-item"><span class="detail-label">Beds</span><span class="detail-val">${esc(l.beds||'')||'&#8212;'}</span></div>
               <div class="detail-item"><span class="detail-label">Baths</span><span class="detail-val">${esc(l.baths||'')||'&#8212;'}</span></div>
               <div class="detail-item"><span class="detail-label">Sqft</span><span class="detail-val">${esc(l.sqft||'')||'&#8212;'}</span></div>
