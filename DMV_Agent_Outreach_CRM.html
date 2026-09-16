@@ -6210,6 +6210,7 @@ function renderDetailModal(){
           </div>
           ${renderAttachmentsSection('dmv', l.id)}
           ${ghlSmsSlotHTML('lead',l.id)}
+          ${emailOfferSectionHTML(l)}
           ${agreementSectionHTML(l.id,'lead',l.agreementStatus,l.agreementAcceptedAt)}
           ${renderActivityLog('lead', l.id, l.activityLog)}
         </div>
@@ -7846,6 +7847,89 @@ function getTeamMembers(){
   return JSON.parse(localStorage.getItem('crm_team_members')||'null') || [];
 }
 function saveTeamMembers(list){ localStorage.setItem('crm_team_members', JSON.stringify(list)); }
+
+// ===== Email: Send Offer + Follow Up (Gmail, $0) ==========================
+// Two-teammate friendly: the "Send from" dropdown reuses the saved team members
+// so you pick which Gmail account the offer is sent FROM / searched FROM.
+//   Send Email Offer -> opens a Gmail compose with the standard offer template
+//     (Address + Offer Price auto-filled from the lead).
+//   Follow Up Email   -> opens Gmail searched for the contact's email so you can
+//     find the existing thread in that inbox and reply in-thread.
+function emailFromOptionsHTML(){
+  var members = getTeamMembers();
+  var last = localStorage.getItem('crm_email_from')||'';
+  if(!members.length){ return '<option value="">&#8212; add a team member first &#8212;</option>'; }
+  return members.map(function(m){
+    var sel = (m.email===last)?' selected':'';
+    return '<option value="'+esc(m.email)+'"'+sel+'>'+esc(m.name)+' ('+esc(m.email)+')</option>';
+  }).join('');
+}
+function emailOfferSectionHTML(l){
+  var contact = esc((l&&(l.contactEmail||l.email))||'');
+  var hasTeam = getTeamMembers().length>0;
+  return '<div class="detail-section"><div class="detail-section-title">&#9993;&#65039; Email Offer</div>'
+    + '<div style="display:flex;flex-direction:column;gap:8px">'
+    +   '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+    +     '<label class="detail-label" style="min-width:66px">Send from</label>'
+    +     '<select id="email-from-select" class="form-input" style="flex:1;min-width:180px;font-size:12px" onchange="rememberEmailFrom(this.value)">'+emailFromOptionsHTML()+'</select>'
+    +     '<a href="#" onclick="event.preventDefault();showTeamManager();" class="detail-link" style="font-size:11px">Manage team</a>'
+    +   '</div>'
+    +   '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+    +     '<label class="detail-label" style="min-width:66px">Contact email</label>'
+    +     '<input id="email-contact-addr" class="form-input" type="email" placeholder="seller-or-agent@email.com" value="'+contact+'" style="flex:1;min-width:180px;font-size:12px">'
+    +   '</div>'
+    +   '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    +     '<button class="btn btn-primary btn-sm" onclick="sendEmailOffer('+l.id+')">&#9993;&#65039; Send Email Offer</button>'
+    +     '<button class="btn btn-secondary btn-sm" onclick="followUpEmail('+l.id+')">&#128269; Follow Up Email</button>'
+    +   '</div>'
+    +   (hasTeam?'':'<div style="font-size:11px;color:var(--text4)">Tip: add your teammates under &ldquo;Manage team&rdquo; so you can pick who the offer is sent from.</div>')
+    + '</div></div>';
+}
+function rememberEmailFrom(v){ if(v) localStorage.setItem('crm_email_from', v); }
+function buildOfferBody(l){
+  var addr = (l&&l.address)||'';
+  var price = (l&&l.offer)||'';
+  return 'Hello,\n\n'
+    + 'Hope all is well. We are making an offer regarding your listing. A summary of the general terms are below. If the seller is interested in our offer, we will submit a formal offer for your review.\n\n'
+    + 'Thanks,\n\n'
+    + 'Address: ' + addr + '\n'
+    + 'Buyer: Hiredwise LLC\n'
+    + 'Offer Price: $' + price + '\n'
+    + 'Earnest Money Deposit: $\n'
+    + 'Settlement Date: 30 days Or Less\n'
+    + 'Financing Type: Cash/Hard Money Lending\n'
+    + 'Contingencies: 5 day inspection\n';
+}
+function sendEmailOffer(id){
+  var l = leads.find(function(x){return x.id===id;}); if(!l) return;
+  var to = ((document.getElementById('email-contact-addr')||{}).value||'').trim();
+  if(!to){ showToast('Enter the contact’s email first', 'error'); var box=document.getElementById('email-contact-addr'); if(box) box.focus(); return; }
+  var from = (document.getElementById('email-from-select')||{}).value||'';
+  var subject = 'Offer regarding your listing' + (l.address?(' at '+l.address):'');
+  var url = 'https://mail.google.com/mail/?view=cm&fs=1'
+    + (from?('&authuser='+encodeURIComponent(from)):'')
+    + '&to=' + encodeURIComponent(to)
+    + '&su=' + encodeURIComponent(subject)
+    + '&body=' + encodeURIComponent(buildOfferBody(l));
+  window.open(url, '_blank');
+  if(!l.activityLog) l.activityLog=[];
+  l.activityLog.push({type:'Email Offer', by:from||((currentUser&&currentUser.name)||'Team'), at:new Date().toISOString(), note:'Offer emailed to '+to});
+  l.lastEmailedTo = to;
+  localStorage.setItem('crm_leads', JSON.stringify(leads));
+  saveLeadToSupabase(l);
+  showToast('Offer email drafted to '+to+' — review & send in Gmail', 'success');
+}
+function followUpEmail(id){
+  var l = leads.find(function(x){return x.id===id;}); if(!l) return;
+  var to = (((document.getElementById('email-contact-addr')||{}).value||'')||l.lastEmailedTo||'').trim();
+  if(!to){ showToast('Enter the contact’s email to search your inbox', 'error'); var box=document.getElementById('email-contact-addr'); if(box) box.focus(); return; }
+  var from = (document.getElementById('email-from-select')||{}).value||'';
+  var url = 'https://mail.google.com/mail/'
+    + (from?('?authuser='+encodeURIComponent(from)):'')
+    + '#search/' + encodeURIComponent(to);
+  window.open(url, '_blank');
+  showToast('Opening Gmail search for '+to, 'success');
+}
 // UPDATE 2: "Sent to <Name> by Email on <date>" indicator for the detail header.
 // Looks up the recipient's name from the saved team members by email; falls back to the email.
 function sentToName(email){
@@ -7881,19 +7965,49 @@ function addTeamMember(){
 }
 function removeTeamMember(i){
   var list = getTeamMembers();
+  var m = list[i]; if(!m) return;
+  if(!confirm('Remove '+(m.name||m.email||'this team member')+' from the team?')) return;
   list.splice(i,1);
   saveTeamMembers(list);
+  teamEditIdx = -1;
   showTeamManager();
+  showToast('Team member removed','success');
+}
+// Which row is currently in edit mode (-1 = none). Re-rendered inline by showTeamManager.
+var teamEditIdx = -1;
+function startEditTeamMember(i){ teamEditIdx = i; showTeamManager(); }
+function cancelEditTeamMember(){ teamEditIdx = -1; showTeamManager(); }
+function saveEditTeamMember(i){
+  var name = (document.getElementById('edit-team-name-'+i)||{}).value||'';
+  var email = (document.getElementById('edit-team-email-'+i)||{}).value||'';
+  name = name.trim(); email = email.trim();
+  if(!name || !email){ showToast('Enter both name and email','error'); return; }
+  var list = getTeamMembers();
+  if(!list[i]) return;
+  list[i] = {name:name, email:email};
+  saveTeamMembers(list);
+  teamEditIdx = -1;
+  showTeamManager();
+  showToast('Team member updated','success');
 }
 function showTeamManager(){
   var list = getTeamMembers();
   var rows = list.length===0
     ? '<div style="font-size:12px;color:var(--text3);padding:8px 0">No team members yet. Add one below.</div>'
     : list.map(function(m,i){
+        if(i===teamEditIdx){
+          return '<div style="display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">'
+            +'<input id="edit-team-name-'+i+'" class="form-input" value="'+esc(m.name)+'" placeholder="Name" style="flex:1;min-width:110px;font-size:12px">'
+            +'<input id="edit-team-email-'+i+'" class="form-input" value="'+esc(m.email)+'" placeholder="Email" style="flex:1;min-width:140px;font-size:12px">'
+            +'<button class="btn btn-primary btn-sm" onclick="saveEditTeamMember('+i+')">Save</button>'
+            +'<button class="btn btn-secondary btn-sm" onclick="cancelEditTeamMember()">Cancel</button>'
+            +'</div>';
+        }
         return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">'
           +'<span style="flex:1;font-size:13px;font-weight:600">'+esc(m.name)+'</span>'
-          +'<span style="font-size:12px;color:var(--text3)">'+esc(m.email)+'</span>'
-          +'<button onclick="removeTeamMember('+i+')" style="background:var(--red-bg);border:1px solid #fca5a5;color:var(--red);border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">&#128465;</button>'
+          +'<span style="font-size:12px;color:var(--text3);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m.email)+'</span>'
+          +'<button onclick="startEditTeamMember('+i+')" style="background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600">&#9998; Edit</button>'
+          +'<button onclick="removeTeamMember('+i+')" style="background:var(--red-bg);border:1px solid #fca5a5;color:var(--red);border-radius:5px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600">&#128465; Remove</button>'
           +'</div>';
       }).join('');
   document.getElementById('modal-container').innerHTML = '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:480px"><div class="modal-header"><div class="modal-title">&#128101; Team Members</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body">'
