@@ -8914,26 +8914,30 @@ async function mtRefresh(){
     var users = res.users||[];
     window.__mtUsers = users; // cache so the row Edit button can prefill without another round-trip
     if(users.length===0){ el.innerHTML = '<div style="color:var(--text3);font-size:13px">No accounts yet.</div>'; return; }
-    el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--text3)"><th style="padding:4px 6px">Name</th><th>Role</th><th>Scope</th><th>Access Key</th><th></th></tr></thead><tbody>'
-      + users.map(function(u){
-          var scope = u.role==='recipient'
-            ? [u.scope_dmv?'DMV':null,u.scope_nationwide?'NW':null,u.scope_emailed?'Emailed':null].filter(Boolean).join(', ')||'—'
-            : 'Full';
-          var keyCell = u.access_key
-            ? '<span style="font-family:monospace;background:var(--surface3,#f2f2f4);padding:1px 6px;border-radius:5px">'+esc(u.access_key)+'</span> <button class="btn btn-secondary btn-sm" title="Copy key" onclick="mtCopyKey(\''+esc(u.access_key)+'\')">Copy</button>'
-            : '<span style="color:var(--text4)">—</span>';
-          return '<tr style="border-top:1px solid var(--border)'+(u.disabled?';opacity:.5':'')+'">'
-            +'<td style="padding:6px">'+esc(u.name||'')+'<div style="color:var(--text4);font-size:11px">'+esc(u.email)+'</div></td>'
-            +'<td>'+esc(u.role)+'</td>'
-            +'<td>'+esc(scope)+'</td>'
-            +'<td>'+keyCell+'</td>'
-            +'<td style="padding:6px 4px"><div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">'
-              +'<button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px" onclick="mtEdit(\''+u.id+'\')">&#9998; Edit</button>'
-              +'<button class="btn btn-secondary btn-sm" style="font-size:11px;padding:3px 8px" onclick="mtToggleDisabled(\''+u.id+'\','+(u.disabled?'false':'true')+')">'+(u.disabled?'Enable':'Disable')+'</button>'
-              +'<button class="btn btn-secondary btn-sm" style="font-size:11px;padding:3px 8px" onclick="mtResetKey(\''+u.id+'\')">New Key</button>'
-              +'<button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px" onclick="mtDelete(\''+u.id+'\',\''+esc(u.email)+'\')">&#128465; Remove</button>'
-            +'</div></td></tr>';
-        }).join('') + '</tbody></table>';
+    // Stacked cards (NOT a table) so nothing can be pushed off the right edge — the
+    // action buttons (Edit / Disable / New Key / Remove) always sit on their own line.
+    el.innerHTML = users.map(function(u){
+      var scope = u.role==='recipient'
+        ? [u.scope_dmv?'DMV':null,u.scope_nationwide?'NW':null,u.scope_emailed?'Emailed':null].filter(Boolean).join(', ')||'—'
+        : 'Full';
+      var keyRow = u.access_key
+        ? '<span style="font-family:monospace;background:var(--surface3,#f2f2f4);padding:2px 8px;border-radius:5px;font-size:12px">'+esc(u.access_key)+'</span> <button class="btn btn-secondary btn-sm" style="font-size:11px;padding:3px 8px" title="Copy key" onclick="mtCopyKey(\''+esc(u.access_key)+'\')">Copy</button>'
+        : '<span style="color:var(--text4)">no key</span>';
+      return '<div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px'+(u.disabled?';opacity:.55':'')+'">'
+        +   '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">'
+        +     '<div style="font-weight:700;font-size:14px">'+esc(u.name||'')+'</div>'
+        +     '<div style="font-size:11px;color:var(--text3)"><b>'+esc(u.role)+'</b> &middot; '+esc(scope)+'</div>'
+        +   '</div>'
+        +   '<div style="color:var(--text4);font-size:12px;margin:2px 0 8px">'+esc(u.email)+'</div>'
+        +   '<div style="margin-bottom:10px">'+keyRow+'</div>'
+        +   '<div style="display:flex;flex-wrap:wrap;gap:6px;border-top:1px solid var(--border);padding-top:10px">'
+        +     '<button class="btn btn-primary btn-sm" onclick="mtEdit(\''+u.id+'\')">&#9998; Edit</button>'
+        +     '<button class="btn btn-secondary btn-sm" onclick="mtToggleDisabled(\''+u.id+'\','+(u.disabled?'false':'true')+')">'+(u.disabled?'Enable':'Disable')+'</button>'
+        +     '<button class="btn btn-secondary btn-sm" onclick="mtResetKey(\''+u.id+'\')">New Key</button>'
+        +     '<button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="mtDelete(\''+u.id+'\',\''+esc(u.email)+'\')">&#128465; Remove</button>'
+        +   '</div>'
+        + '</div>';
+    }).join('');
   } catch(e){ el.innerHTML = '<div style="color:var(--red);font-size:12px">'+esc(e.message)+'</div>'; }
 }
 function mtCopyKey(key){
