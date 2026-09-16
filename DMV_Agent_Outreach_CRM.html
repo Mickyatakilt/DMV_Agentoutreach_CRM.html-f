@@ -1087,6 +1087,8 @@ async function cancelScheduledSms(id){
 // AFTER acceptance is recorded server-side and a per-lead token is issued.
 const AGREEMENT_FN_URL = SUPABASE_URL + '/functions/v1/lead-agreement';
 const JV_ESIGN_URL = SUPABASE_URL + '/functions/v1/jv-esign';
+// Hosted signing page (Supabase can't serve rendered HTML). The contract holder opens this.
+const JV_SIGN_URL = 'https://mickyatakilt.github.io/DMV_Agentoutreach_CRM.html-f/sign.html';
 const AGREEMENT_VERSION = '1.0';
 // The agreement clauses, used by the recipient gate AND the downloadable PDF record.
 // NOTE: the gate (renderAgreementGate) keeps its own inline-styled copy for layout;
@@ -2880,7 +2882,7 @@ function jvAgsRenderList(){
   if(!jvAgs.length){ host.innerHTML='<div style="padding:30px 22px;text-align:center;color:var(--text4);font-size:13px;border:1px dashed var(--border);border-radius:12px">No agreements yet. Click <b>&#43; New Agreement</b> to send your first one.</div>'; return; }
   host.innerHTML='<div class="dp-deals-grid">'+jvAgs.map(function(a){
     var split=(a.party_b_pct!=null)?(a.party_b_pct+'% / '+a.party_a_pct+'%'):'';
-    var link=JV_ESIGN_URL+'?token='+encodeURIComponent(a.share_token);
+    var link=JV_SIGN_URL+'?token='+encodeURIComponent(a.share_token);
     // Timeline line: show the furthest stage reached with its time.
     var stage='';
     if(a.status==='completed' && a.party_b_signed_at) stage='Completed '+jvFmt(a.party_b_signed_at);
@@ -2907,7 +2909,7 @@ function jvAgsRenderList(){
 }
 function jvCopyLink(id){
   var a=(jvAgs||[]).find(function(x){return +x.id===+id;}); if(!a) return;
-  var link=JV_ESIGN_URL+'?token='+encodeURIComponent(a.share_token);
+  var link=JV_SIGN_URL+'?token='+encodeURIComponent(a.share_token);
   navigator.clipboard.writeText(link).then(function(){ showToast('Signing link copied'); }, function(){ prompt('Copy this signing link:', link); });
 }
 function jvVoid(id){

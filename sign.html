@@ -1,0 +1,143 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Joint Venture Agreement — Sign</title>
+<style>
+  :root{--bg:#f4f6f9;--card:#fff;--ink:#0f172a;--sub:#64748b;--line:#e2e8f0;--brand:#111827;--accent:#2563eb;--ok:#059669}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:20px 16px 80px}
+  .top{display:flex;align-items:center;gap:10px;margin:6px 2px 16px}
+  .top b{font-size:15px}
+  .badge{margin-left:auto;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;background:#eef2ff;color:#3730a3}
+  .badge.ok{background:#ecfdf5;color:var(--ok)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 22px;box-shadow:0 1px 3px rgba(15,23,42,.05);margin-bottom:16px}
+  h1{font-size:20px;margin:0 0 4px}
+  .doc{font-size:14.5px;color:#1e293b}
+  .doc p{margin:0 0 10px}
+  .sig-line{margin-top:18px;padding-top:16px;border-top:1px dashed var(--line)}
+  .lbl{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--sub);text-transform:uppercase;margin-bottom:6px}
+  .partyA{font-family:"Segoe Script","Snell Roundhand",cursive;font-size:26px;color:#111}
+  .meta{font-size:12.5px;color:var(--sub);margin-top:4px}
+  .field{margin:12px 0}
+  input[type=text]{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:16px}
+  .pad-wrap{border:1px solid var(--line);border-radius:12px;background:#fbfdff;position:relative;overflow:hidden}
+  canvas{display:block;width:100%;height:190px;touch-action:none}
+  .pad-hint{position:absolute;left:14px;bottom:10px;color:#cbd5e1;font-size:13px;pointer-events:none}
+  .pad-tools{display:flex;gap:10px;margin-top:8px}
+  .tab{display:flex;gap:8px;margin:6px 0 12px}
+  .tab button{flex:1;padding:9px;border:1px solid var(--line);background:#fff;border-radius:10px;font-size:13.5px;font-weight:600;color:var(--sub);cursor:pointer}
+  .tab button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .agree{display:flex;gap:10px;align-items:flex-start;margin:16px 0;font-size:13.5px;color:#334155}
+  .agree input{margin-top:3px;width:18px;height:18px}
+  .btn{display:block;width:100%;padding:15px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-size:16px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.link{background:var(--ok)}
+  .ghost{background:#fff;border:1px solid var(--line);color:var(--sub);font-size:13px;font-weight:600;padding:8px 12px;border-radius:9px;cursor:pointer}
+  .err{color:#dc2626;font-size:13px;margin-top:8px;min-height:16px}
+  .foot{text-align:center;color:var(--sub);font-size:11.5px;margin-top:18px;line-height:1.5}
+  .done{text-align:center;padding:26px 10px}
+  .done .ic{font-size:44px}
+  .loading{text-align:center;color:var(--sub);padding:60px 10px;font-size:14px}
+</style></head>
+<body><div class="wrap">
+  <div class="top"><b>MEstate</b><span class="badge" id="statusBadge">Loading…</span></div>
+  <div id="app"><div class="loading">Loading your agreement…</div></div>
+  <div class="foot">Executed electronically under the U.S. ESIGN Act. Both parties receive a copy by email.<br>Powered by MEstate CRM</div>
+</div>
+<script>
+var FN = "https://jwctfsapxrdzznjaaufo.supabase.co/functions/v1/jv-esign";
+var TOKEN = new URLSearchParams(location.search).get('token') || '';
+var mode='draw', drawn=false, canvas, ctx, AG=null;
+
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtDate(d){ if(!d) return ''; try{ return new Date(d).toLocaleDateString('en-US',{timeZone:'America/New_York'}); }catch(e){ return d; } }
+
+function boot(){
+  if(!TOKEN){ document.getElementById('app').innerHTML='<div class="card"><div class="loading">Invalid link.</div></div>'; document.getElementById('statusBadge').textContent='Invalid'; return; }
+  fetch(FN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'get',token:TOKEN})})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(!d || !d.ok || !d.agreement){ document.getElementById('app').innerHTML='<div class="card"><div class="loading">This agreement was not found.</div></div>'; document.getElementById('statusBadge').textContent='Not found'; return; }
+      AG=d.agreement; render();
+    })
+    .catch(function(){ document.getElementById('app').innerHTML='<div class="card"><div class="loading">Could not load. Please refresh.</div></div>'; });
+}
+
+function render(){
+  var a=AG, done=(a.status==='completed');
+  var pdf=a.pdf_url || (FN+'?token='+encodeURIComponent(TOKEN)+'&pdf=1');
+  var badge=document.getElementById('statusBadge');
+  badge.textContent = done ? 'Completed' : 'Awaiting your signature';
+  badge.className = 'badge'+(done?' ok':'');
+  var html =
+    '<div class="card">'
+    + '<h1>Joint Venture Agreement</h1>'
+    + '<div class="meta">'+esc(a.property_address||'')+'</div>'
+    + '<div class="doc" style="margin-top:14px">'+(a.body_html||'')+'</div>'
+    + '<div class="sig-line">'
+      + '<div class="lbl">Party A — '+esc(a.party_a_name||'Hiredwise LLC')+'</div>'
+      + '<div class="partyA">'+esc(a.party_a_signer||a.party_a_name||'')+'</div>'
+      + '<div class="meta">Signed · '+esc(fmtDate(a.party_a_signed_at)||a.agreement_date||'')+'</div>'
+    + '</div>'
+    + '</div>';
+  if(done){
+    html += '<div class="card"><div class="done"><div class="ic">✅</div><h2 style="margin:8px 0 4px">Agreement signed</h2>'
+      + '<p style="color:#64748b;margin:0 0 18px">A signed copy has been emailed to you. You can also download it below.</p>'
+      + '<a class="btn link" style="text-decoration:none" href="'+esc(pdf)+'">⬇️ Download signed PDF</a></div></div>';
+    document.getElementById('app').innerHTML=html;
+    return;
+  }
+  html += '<div class="card">'
+    + '<div class="lbl">Party B — Contract Holder</div>'
+    + '<div class="field"><input type="text" id="fullName" placeholder="Type your full legal name" value="'+esc(a.party_b_name||'')+'" autocomplete="name"></div>'
+    + '<div class="tab"><button type="button" id="tabDraw" class="on" onclick="setMode(\'draw\')">✍️ Draw</button><button type="button" id="tabType" onclick="setMode(\'type\')">⌨️ Type</button></div>'
+    + '<div id="drawMode"><div class="pad-wrap"><canvas id="pad"></canvas><span class="pad-hint" id="padHint">Sign here with your finger or mouse</span></div><div class="pad-tools"><button type="button" class="ghost" onclick="clearPad()">Clear</button></div></div>'
+    + '<div id="typeMode" style="display:none"><input type="text" id="typedSig" placeholder="Type your signature" oninput="update()" style="font-family:\'Segoe Script\',\'Snell Roundhand\',cursive;font-size:24px"><div style="height:8px"></div></div>'
+    + '<label class="agree"><input type="checkbox" id="agree"><span>I, the Contract Holder, agree to the terms above and consent to sign this Joint Venture Agreement electronically. I understand my electronic signature is legally binding.</span></label>'
+    + '<button class="btn" id="signBtn" onclick="submitSig()" disabled>Sign &amp; Submit</button>'
+    + '<div class="err" id="err"></div>'
+    + '</div>';
+  document.getElementById('app').innerHTML=html;
+  setupPad();
+  // Beacon "opened" (real browser only)
+  try{ fetch(FN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'opened',token:TOKEN})}); }catch(e){}
+}
+
+function setupPad(){
+  canvas=document.getElementById('pad'); if(!canvas) return;
+  fit(); window.addEventListener('resize',function(){ var d=drawn; fit(); drawn=d; });
+  var drawing=false,last=null;
+  function pos(e){ var r=canvas.getBoundingClientRect(); var t=e.touches?e.touches[0]:e; return {x:t.clientX-r.left,y:t.clientY-r.top}; }
+  function start(e){ e.preventDefault(); drawing=true; last=pos(e); }
+  function move(e){ if(!drawing)return; e.preventDefault(); var p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; drawn=true; var h=document.getElementById('padHint'); if(h)h.style.display='none'; update(); }
+  function end(){ drawing=false; }
+  ['mousedown','touchstart'].forEach(function(ev){canvas.addEventListener(ev,start,{passive:false});});
+  ['mousemove','touchmove'].forEach(function(ev){canvas.addEventListener(ev,move,{passive:false});});
+  ['mouseup','mouseleave','touchend'].forEach(function(ev){canvas.addEventListener(ev,end);});
+  document.getElementById('fullName').addEventListener('input',update);
+  document.getElementById('agree').addEventListener('change',update);
+}
+function fit(){ if(!canvas) return; var r=canvas.getBoundingClientRect(); var dpr=window.devicePixelRatio||1; canvas.width=r.width*dpr; canvas.height=r.height*dpr; ctx=canvas.getContext('2d'); ctx.scale(dpr,dpr); ctx.lineWidth=2.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#0f172a'; }
+function clearPad(){ if(!ctx)return; ctx.clearRect(0,0,canvas.width,canvas.height); drawn=false; var h=document.getElementById('padHint'); if(h)h.style.display=''; update(); }
+function setMode(m){ mode=m; document.getElementById('tabDraw').classList.toggle('on',m==='draw'); document.getElementById('tabType').classList.toggle('on',m==='type'); document.getElementById('drawMode').style.display=m==='draw'?'':'none'; document.getElementById('typeMode').style.display=m==='type'?'':'none'; update(); }
+function hasSig(){ return mode==='draw' ? drawn : (document.getElementById('typedSig').value.trim().length>0); }
+function update(){ var ok=document.getElementById('fullName').value.trim() && document.getElementById('agree').checked && hasSig(); document.getElementById('signBtn').disabled=!ok; }
+function typedToDataUrl(text){ var c=document.createElement('canvas'); c.width=520; c.height=140; var x=c.getContext('2d'); x.fillStyle='#0f172a'; x.font='54px "Segoe Script","Snell Roundhand",cursive'; x.textBaseline='middle'; x.fillText(text,10,80); return c.toDataURL('image/png'); }
+function submitSig(){
+  var btn=document.getElementById('signBtn'), err=document.getElementById('err');
+  var name=document.getElementById('fullName').value.trim();
+  if(!name){ err.textContent='Please type your full name.'; return; }
+  var sig = mode==='draw' ? canvas.toDataURL('image/png') : typedToDataUrl(document.getElementById('typedSig').value.trim());
+  btn.disabled=true; btn.textContent='Submitting…'; err.textContent='';
+  fetch(FN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'sign',token:TOKEN,name:name,sig:sig})})
+    .then(function(r){return r.json();})
+    .then(function(d){ if(d && d.ok){
+        document.getElementById('app').innerHTML='<div class="card"><div class="done"><div class="ic">✅</div><h2 style="margin:8px 0 4px">Agreement signed</h2><p style="color:#64748b;margin:0 0 18px">A signed copy has been emailed to you.</p><a class="btn link" style="text-decoration:none" href="'+esc(d.pdf)+'">⬇️ Download signed PDF</a></div></div>';
+        var b=document.getElementById('statusBadge'); b.textContent='Completed'; b.className='badge ok'; window.scrollTo(0,0);
+      } else { err.textContent=(d&&d.error)||'Could not submit. Please try again.'; btn.disabled=false; btn.textContent='Sign & Submit'; } })
+    .catch(function(){ err.textContent='Network error. Please try again.'; btn.disabled=false; btn.textContent='Sign & Submit'; });
+}
+boot();
+</script>
+</body></html>
