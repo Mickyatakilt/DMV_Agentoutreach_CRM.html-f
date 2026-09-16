@@ -8876,7 +8876,7 @@ async function showManageTeam(){
     <div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:720px">
       <div class="modal-header"><div class="modal-title">&#128101; Manage Team & Recipients</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>
       <div class="modal-body">
-        <div id="mt-list" style="margin-bottom:16px"><div style="color:var(--text3);font-size:13px">Loading…</div></div>
+        <div id="mt-list" style="margin-bottom:16px;overflow-x:auto"><div style="color:var(--text3);font-size:13px">Loading…</div></div>
         <div style="border-top:1px solid var(--border);padding-top:14px">
           <div class="form-section-title" style="margin-bottom:8px">Add a new account</div>
           <div class="form-grid cols-2" style="gap:8px">
@@ -8927,12 +8927,12 @@ async function mtRefresh(){
             +'<td>'+esc(u.role)+'</td>'
             +'<td>'+esc(scope)+'</td>'
             +'<td>'+keyCell+'</td>'
-            +'<td style="white-space:nowrap">'
-              +'<button class="btn btn-primary btn-sm" onclick="mtEdit(\''+u.id+'\')">Edit</button> '
-              +'<button class="btn btn-secondary btn-sm" onclick="mtToggleDisabled(\''+u.id+'\','+(u.disabled?'false':'true')+')">'+(u.disabled?'Enable':'Disable')+'</button> '
-              +'<button class="btn btn-secondary btn-sm" onclick="mtResetKey(\''+u.id+'\')">New Key</button> '
-              +'<button class="btn btn-danger btn-sm" onclick="mtDelete(\''+u.id+'\',\''+esc(u.email)+'\')">Delete</button>'
-            +'</td></tr>';
+            +'<td style="padding:6px 4px"><div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">'
+              +'<button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px" onclick="mtEdit(\''+u.id+'\')">&#9998; Edit</button>'
+              +'<button class="btn btn-secondary btn-sm" style="font-size:11px;padding:3px 8px" onclick="mtToggleDisabled(\''+u.id+'\','+(u.disabled?'false':'true')+')">'+(u.disabled?'Enable':'Disable')+'</button>'
+              +'<button class="btn btn-secondary btn-sm" style="font-size:11px;padding:3px 8px" onclick="mtResetKey(\''+u.id+'\')">New Key</button>'
+              +'<button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px" onclick="mtDelete(\''+u.id+'\',\''+esc(u.email)+'\')">&#128465; Remove</button>'
+            +'</div></td></tr>';
         }).join('') + '</tbody></table>';
   } catch(e){ el.innerHTML = '<div style="color:var(--red);font-size:12px">'+esc(e.message)+'</div>'; }
 }
