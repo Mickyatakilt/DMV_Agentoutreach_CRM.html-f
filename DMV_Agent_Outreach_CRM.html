@@ -1777,6 +1777,7 @@ const SB_ITEMS = [
   {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', sl:'Probate',   soon:false},
   {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  sl:'Dispo',    soon:false},
   {k:'d4d',       ic:'&#128663;', lb:'D4D', sl:'D4D',  soon:false},
+  {k:'fb',        ic:'&#128241;', lb:'FB Scraper', sl:'FB', soon:false},
   {k:'jv',        ic:'&#9997;&#65039;', lb:'JV Agreements', sl:'JV',  soon:false}
 ];
 function sidebarHTML(){
@@ -4921,6 +4922,7 @@ function render(){
   if(activeSection==='dispo'){ renderDispo(); return; }
   if(activeSection==='jv'){ renderJvAgreements(); return; }
   if(activeSection==='d4d'){ renderD4DSection(); return; }
+  if(activeSection==='fb'){ renderFBSection(); return; }
   if(activeSection==='probate'){ renderProbate(); return; }
   if(activeSection==='dashboard'){ renderDashboard(); return; }
   if(activeSection!=='outreach'){ renderPlaceholderSection(activeSection); return; }
@@ -5376,6 +5378,239 @@ function fbBatchDownload(id){
   document.body.appendChild(a); a.click();
   setTimeout(function(){ URL.revokeObjectURL(url); document.body.removeChild(a); },100);
   showToast('Downloaded '+fn,'success');
+}
+// ============================================================================
+// FACEBOOK SCRAPER SECTION (left-sidebar "FB Scraper")
+// ----------------------------------------------------------------------------
+// Manages the master group list (fb_group_links) and the ⚡ Scrape now button.
+// PRIMARY path = the logged-in Playwright scraper on Mike's Mac (does public +
+// PRIVATE groups). The Mac worker heartbeats fb_worker_status; if it's online we
+// queue a request row (fb_scan_requests) it picks up. If the Mac is OFF (stale
+// heartbeat) we fall back to the Apify cloud (fb-scrape-now edge fn, public
+// groups only). Either way results land as a dated batch row + Download CSV,
+// exactly like the daily run. Auto-run = rotate 5-7 groups once a day (worker).
+// ============================================================================
+var fbGroups = null;        // cached group list (null = not loaded)
+var fbWorker = null;        // {last_seen,host} heartbeat row
+var fbScan = { running:false };
+var fbScanTimer = null;
+var FB_ONLINE_MS = 90*1000; // heartbeat fresher than this => Mac is online
+var FB_SCRAPE_NOW_FN = SUPABASE_URL + '/functions/v1/fb-scrape-now';
+
+function fbWorkerOnline(){
+  if(!fbWorker || !fbWorker.last_seen) return false;
+  return (Date.now() - new Date(fbWorker.last_seen).getTime()) < FB_ONLINE_MS;
+}
+function fbGroupSlug(url){
+  var m = String(url||'').match(/groups\/([^/?#]+)/);
+  return m ? m[1] : (url||'');
+}
+// The FB batch rows already live in the global `leads` array (needs_review rows
+// tagged lead_source='FB Scrape Batch'). Show the most recent here too.
+function fbBatches(){
+  return leads.filter(function(l){ return !l.deleted && l.leadSource==='FB Scrape Batch'; })
+    .sort(function(a,b){ return (b.reviewSentAt||b.date||'') > (a.reviewSentAt||a.date||'') ? 1 : -1; });
+}
+async function fbLoadState(){
+  try {
+    var res = await Promise.all([
+      sbFetch('fb_group_links?select=id,name,url,rating,last_used,notes&order=last_used.asc.nullsfirst,id.asc'),
+      sbFetch('fb_worker_status?select=last_seen,host&id=eq.1')
+    ]);
+    fbGroups = res[0] || [];
+    fbWorker = (res[1] && res[1][0]) || null;
+  } catch(e){ fbGroups = fbGroups||[]; }
+}
+function fbStatusPillHTML(){
+  var on = fbWorkerOnline();
+  var bg = on ? '#dcfce7' : '#f1f5f9', bd = on ? '#86efac' : '#cbd5e1', tx = on ? '#166534' : '#64748b';
+  var dot = on ? '#22c55e' : '#94a3b8';
+  var txt = on ? 'Mac online' : 'Mac offline &middot; cloud backup';
+  var seen = fbWorker && fbWorker.last_seen ? (' &middot; last seen '+new Date(fbWorker.last_seen).toLocaleTimeString()) : '';
+  return '<span title="When your Mac is on, Scrape now runs the full local scraper (incl. private groups). When it&#39;s off, it uses the Apify cloud backup (public groups)."'
+    +' style="display:inline-flex;align-items:center;gap:6px;background:'+bg+';border:1px solid '+bd+';color:'+tx+';border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700">'
+    +'<span style="width:8px;height:8px;border-radius:50%;background:'+dot+'"></span>'+txt+'<span style="font-weight:500;color:'+tx+';opacity:.8">'+seen+'</span></span>';
+}
+function fbScanBtnHTML(){
+  var running = fbScan.running;
+  return '<button id="fb-scan-btn" class="btn btn-sm" '+(running?'disabled':'')
+    +' onclick="fbScrapeNow()" style="font-weight:700;background:#1877f2;color:#fff;border-color:#1877f2'+(running?';opacity:.7;cursor:default':'')+'">'
+    +(running?'&#9203; Scraping&hellip;':'&#9889; Scrape now')+'</button>'
+    +' <button class="btn btn-secondary btn-sm" onclick="fbOpenGroups()" style="font-weight:700">&#9881; Manage groups'+(fbGroups?(' ('+fbGroups.length+')'):'')+'</button>'
+    +'<span id="fb-scan-msg" style="font-size:11.5px;color:var(--text3);margin-left:8px"></span>';
+}
+function fbSetMsg(t){ var e=document.getElementById('fb-scan-msg'); if(e) e.textContent=t||''; }
+function fbRefreshSection(){ if(activeSection==='fb') renderFBSection(); }
+
+function renderFBSection(){
+  var host=document.getElementById('section-main'); if(!host) return;
+  if(fbGroups===null){ fbLoadState().then(function(){ if(activeSection==='fb') renderFBSection(); }); }
+  var groupsN = fbGroups ? fbGroups.length : 0;
+  var usable = fbGroups ? fbGroups.filter(function(g){ return !/bad link|not good/i.test(g.notes||''); }).length : 0;
+  // Next-up rotation preview (least-recently-used, skipping bad links).
+  var nextUp = (fbGroups||[]).filter(function(g){ return !/bad link|not good/i.test(g.notes||''); }).slice(0,6)
+    .map(function(g){ return esc(g.name||fbGroupSlug(g.url)); }).join(', ');
+  var batches = fbBatches();
+  var lastRun = batches.length ? (batches[0].date || (batches[0].reviewSentAt||'').split('T')[0]) : null;
+
+  var batchRows = batches.slice(0,30).map(function(l){
+    var hasCsv = (l.notes||'').indexOf(',')>-1;
+    var dl = hasCsv ? '<button class="btn btn-primary btn-sm" onclick="fbBatchDownload('+l.id+')" style="font-weight:700">&#11015; Download CSV</button>' : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
+    return '<tr>'
+      +'<td style="white-space:nowrap;font-size:12px;color:var(--text3)">'+esc(l.date||'')+'</td>'
+      +'<td style="font-weight:600">'+esc(l.name||'')+'</td>'
+      +'<td style="font-size:12px;color:var(--text2);max-width:420px">'+esc(l.reviewNote||'')+'</td>'
+      +'<td style="text-align:right">'+dl+'</td>'
+    +'</tr>';
+  }).join('');
+  var batchesTable = batches.length
+    ? '<div class="table-container"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Scrape</th><th>Summary</th><th style="text-align:right">CSV</th></tr></thead><tbody>'+batchRows+'</tbody></table></div></div>'
+    : '<div class="empty"><div class="empty-icon">&#128241;</div><h3>No scrapes yet &mdash; click &#9889; Scrape now</h3></div>';
+
+  host.innerHTML = '<div class="lt-wrap">'
+    +'<div class="lt-head"><div><h2>&#128241; Facebook Scraper</h2>'
+    +'<p>Pulls fresh <b>Name + Phone</b> seller/investor leads from your Facebook groups. Your Mac scrapes <b>public &amp; private</b> groups when it&#8217;s on; the cloud covers public groups when it&#8217;s off. It rotates <b>5&ndash;7 groups a day</b> automatically, and each run lands below as a dated row with <b>Download CSV</b> (the same row also shows in the &#128269; Review queue).</p></div>'
+    +'<div class="lt-actions" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+fbStatusPillHTML()+'<div>'+fbScanBtnHTML()+'</div></div></div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
+      +fbStatCard('Groups saved', groupsN, usable+' usable')
+      +fbStatCard('Groups / day', '5&ndash;7', 'rotating')
+      +fbStatCard('Last run', lastRun?esc(lastRun):'&mdash;', batches.length+' total runs')
+    +'</div>'
+    +(nextUp?'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Next up: '+nextUp+'&hellip;</div>':'')
+    +batchesTable
+    +'</div>';
+}
+function fbStatCard(label,val,sub){
+  return '<div style="flex:1;min-width:150px;background:var(--bg2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:10px 14px">'
+    +'<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.03em">'+label+'</div>'
+    +'<div style="font-size:22px;font-weight:800;color:var(--text1);margin-top:2px">'+val+'</div>'
+    +'<div style="font-size:11px;color:var(--text4)">'+sub+'</div></div>';
+}
+
+// ⚡ Scrape now: local when the Mac is online, cloud fallback when it's off.
+async function fbScrapeNow(){
+  if(fbScan.running) return;
+  fbScan.running = true; fbRefreshSection();
+  fbSetMsg('Checking your Mac&hellip;');
+  await fbLoadState();
+  var online = fbWorkerOnline();
+  var baseline = fbBatches().length;
+  try {
+    if(online){
+      // Queue a request row the Mac worker will pick up within ~20s.
+      var reqRows = await sbFetch('fb_scan_requests', 'POST', [{ requested_by: (currentUser&&currentUser.name)||'CRM', params:{ n:6 }, status:'pending' }]);
+      var reqId = reqRows && reqRows[0] && reqRows[0].id;
+      showToast('Sent to your Mac &mdash; scraping public + private groups. Leads land here in a few minutes.','success');
+      fbSetMsg('Running on your Mac&hellip; keep working, results appear automatically.');
+      fbPollRequest(reqId, baseline, 0);
+    } else {
+      showToast('Your Mac is off &mdash; running the cloud backup (public groups).','success');
+      fbSetMsg('Running cloud backup&hellip;');
+      var r = await fetch(FB_SCRAPE_NOW_FN, { method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:JSON.stringify({}) });
+      var out = await r.json().catch(function(){ return {}; });
+      fbScan.running = false;
+      if(out && out.ok){
+        try { await loadFromSupabase(); } catch(e){}
+        var added = (out.new_after_dedupe!=null)?out.new_after_dedupe:'';
+        showToast('Cloud scrape done'+(added!==''?(' &mdash; '+added+' new lead'+(added==1?'':'s')):'')+'.','success');
+        fbSetMsg('');
+      } else {
+        var m = (out&&out.error) ? ('Cloud scrape failed: '+(out.detail?JSON.stringify(out.detail).slice(0,120):out.error)) : 'Cloud scrape failed.';
+        showToast(m,'error'); fbSetMsg('');
+      }
+      fbRefreshSection();
+    }
+  } catch(e){
+    fbScan.running = false; showToast('Could not start the scrape: '+String(e).slice(0,140),'error'); fbSetMsg(''); fbRefreshSection();
+  }
+}
+async function fbPollRequest(reqId, baseline, tries){
+  if(tries > 40){ // ~10 min watcher cap (the run still completes on the Mac)
+    fbScan.running=false; fbRefreshSection();
+    showToast('Still scraping on your Mac &mdash; leads will appear here when it finishes.','success');
+    return;
+  }
+  var done=false, err=null, label='';
+  if(reqId){
+    try {
+      var rows = await sbFetch('fb_scan_requests?select=status,batch_label,error&id=eq.'+reqId);
+      var st = rows && rows[0];
+      if(st){ if(st.status==='done'){ done=true; label=st.batch_label||''; } else if(st.status==='error'){ done=true; err=st.error||'unknown error'; } }
+    } catch(e){}
+  }
+  if(done){
+    fbScan.running=false;
+    try { await loadFromSupabase(); } catch(e){}
+    if(err){ showToast('Scrape hit an error: '+String(err).slice(0,140),'error'); }
+    else {
+      var added = fbBatches().length - baseline;
+      showToast(label ? (label.replace('Facebook Scrape','Scrape done')) : 'Scrape done.', 'success');
+    }
+    fbSetMsg(''); fbRefreshSection();
+    return;
+  }
+  fbScanTimer = setTimeout(function(){ fbPollRequest(reqId, baseline, tries+1); }, 15000);
+}
+
+// ---- Group manager modal ----------------------------------------------------
+function fbOpenGroups(){
+  if(fbGroups===null){ fbLoadState().then(fbOpenGroups); return; }
+  var rows = fbGroups.map(fbGroupRowHTML).join('');
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:720px">'
+    +'<div class="modal-header"><div class="modal-title">&#128241; Manage Facebook Groups</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    +'<div class="modal-body">'
+      +'<p style="color:var(--text3);margin:0 0 10px;font-size:12.5px">Your master list. The scraper rotates through it 5&ndash;7 groups a day (oldest-used first). Mark a group&#8217;s notes with <b>&ldquo;bad link&rdquo;</b> to skip it. Ratings are just for your own reference.</p>'
+      +'<label style="font-weight:700;font-size:12.5px">Add groups (paste URLs, one per line)</label>'
+      +'<textarea id="fb-add-urls" rows="3" style="width:100%;box-sizing:border-box;font:12px ui-monospace,Menlo,monospace;border:1px solid var(--border,#ccc);border-radius:8px;padding:8px;margin:4px 0 6px" placeholder="https://www.facebook.com/groups/123456789&#10;https://www.facebook.com/groups/some-group"></textarea>'
+      +'<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-green btn-sm" onclick="fbAddGroups()" style="font-weight:700">&#43; Add to list</button></div>'
+      +'<div class="table-container"><div class="table-wrap" style="max-height:48vh;overflow:auto"><table><thead><tr><th>Group</th><th>Rating</th><th>Last used</th><th>Notes</th><th></th></tr></thead>'
+      +'<tbody id="fb-grp-tbody">'+rows+'</tbody></table></div></div>'
+      +'<div style="font-size:11px;color:var(--text4);margin-top:8px">'+fbGroups.length+' groups.</div>'
+    +'</div>'
+    +'<div class="modal-footer"><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button></div>'
+    +'</div></div>';
+}
+function fbGroupRowHTML(g){
+  var ratings=['','Good','Medium','Low'];
+  var opts=ratings.map(function(r){ return '<option value="'+r+'"'+((g.rating||'')===r?' selected':'')+'>'+(r||'&mdash;')+'</option>'; }).join('');
+  return '<tr id="fb-grp-'+g.id+'">'
+    +'<td style="max-width:220px"><a href="'+esc(g.url)+'" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline;word-break:break-all">'+esc(g.name||fbGroupSlug(g.url))+'</a></td>'
+    +'<td><select onchange="fbUpdateGroup('+g.id+',{rating:this.value})" style="font-size:12px;padding:3px;border:1px solid var(--border,#ccc);border-radius:6px">'+opts+'</select></td>'
+    +'<td style="font-size:12px;color:var(--text3);white-space:nowrap">'+(g.last_used?esc(g.last_used):'&mdash;')+'</td>'
+    +'<td><input value="'+esc(g.notes||'')+'" onchange="fbUpdateGroup('+g.id+',{notes:this.value})" placeholder="e.g. bad link" style="width:150px;font-size:12px;padding:3px 6px;border:1px solid var(--border,#ccc);border-radius:6px"></td>'
+    +'<td><button class="btn btn-danger btn-sm" onclick="fbDeleteGroup('+g.id+')" title="Remove this group">&times;</button></td>'
+  +'</tr>';
+}
+async function fbAddGroups(){
+  var ta=document.getElementById('fb-add-urls'); if(!ta) return;
+  var urls=(ta.value||'').split('\n').map(function(s){return s.trim();}).filter(function(s){return /facebook\.com\/groups\//i.test(s);});
+  if(!urls.length){ showToast('Paste at least one Facebook group URL','error'); return; }
+  var have={}; (fbGroups||[]).forEach(function(g){ have[fbGroupSlug(g.url)]=true; });
+  var seen={}, rows=[];
+  urls.forEach(function(u){ var s=fbGroupSlug(u); if(have[s]||seen[s]) return; seen[s]=true; rows.push({ name:s, url:u, notes:'Added in CRM' }); });
+  if(!rows.length){ showToast('Those groups are already in your list','error'); return; }
+  try {
+    await sbFetch('fb_group_links', 'POST', rows);
+    await fbLoadState();
+    showToast('Added '+rows.length+' group'+(rows.length==1?'':'s'),'success');
+    fbOpenGroups(); fbRefreshSection();
+  } catch(e){ showToast('Add failed: '+String(e).slice(0,140),'error'); }
+}
+async function fbUpdateGroup(id, patch){
+  try {
+    await sbFetch('fb_group_links?id=eq.'+id, 'PATCH', patch);
+    if(fbGroups){ var g=fbGroups.find(function(x){return x.id===id;}); if(g) Object.assign(g,patch); }
+  } catch(e){ showToast('Update failed','error'); }
+}
+async function fbDeleteGroup(id){
+  if(!confirm('Remove this group from the rotation?')) return;
+  try {
+    await sbFetch('fb_group_links?id=eq.'+id, 'DELETE');
+    fbGroups=(fbGroups||[]).filter(function(x){return x.id!==id;});
+    var tr=document.getElementById('fb-grp-'+id); if(tr) tr.remove();
+    fbRefreshSection();
+  } catch(e){ showToast('Delete failed','error'); }
 }
 // ============================================================================
 // REVIEW-QUEUE SKIP TRACE — select leads (single/multiple) and skip-trace them via
