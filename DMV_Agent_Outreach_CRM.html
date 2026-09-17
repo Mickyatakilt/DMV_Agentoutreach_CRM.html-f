@@ -4959,7 +4959,8 @@ function renderOutreach(){
       <div class="tab ${activeTab==='jvleads'?'active':''}" onclick="setTab('jvleads')">&#9989; Tasks <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${jvLeads.length}</span></div>
       <div class="tab ${activeTab==='nationwide'?'active':''}" onclick="setTab('nationwide')" style="${activeTab==='nationwide'?'':''}">&#127758; Nationwide <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.nationwide==='Yes').length}</span></div>
       <div class="tab ${activeTab==='sentout'?'active':''}" onclick="setTab('sentout')">&#128231; Sent Out <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.shared).length + jvLeads.filter(l=>!l.deleted&&l.shared).length}</span>${(function(){var n=recipientFUAlertCount();return n>0?' <span title="Recipient follow-ups overdue or due today" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">&#10071;'+n+'</span>':'';})()}</div>
-      <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
+      <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&!isD4DLead(l)).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
+      <div class="tab ${activeTab==='d4d'?'active':''}" onclick="setTab('d4d')">&#128663; D4D <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&isD4DLead(l)).length}</span></div>
       <div class="tab ${activeTab==='scheduledsms'?'active':''}" onclick="setTab('scheduledsms')">&#128197; Scheduled</div>
     </div>
     <div id="tab-content"></div>`;
@@ -4968,6 +4969,7 @@ function renderOutreach(){
   else if(activeTab==='jvleads') renderJVLeadsTab();
   else if(activeTab==='sentout') renderSentOutTab();
   else if(activeTab==='review') renderReviewTab();
+  else if(activeTab==='d4d') renderD4DTab();
   else if(activeTab==='scheduledsms') renderScheduledSmsTab();
   else renderNationwideTab();
 }
@@ -5046,7 +5048,7 @@ async function refreshD4dHealth(){
     d4dHealth = { failed:false, errCount:0, scanStale:false, latestScan:null, latestErrAt:null };
   } finally {
     d4dHealthChecking = false;
-    if(activeTab === 'review') renderReviewTab();
+    d4dRefreshTab();
   }
 }
 function d4dTimeAgo(iso){
@@ -5103,7 +5105,7 @@ async function d4dRefreshGoogleUsage(){
   } catch(e){ /* keep prior value on error */ }
   finally {
     d4dGoogleChecking = false;
-    if(activeTab==='review') renderReviewTab();
+    d4dRefreshTab();
   }
 }
 // Count of D4D auto-scan leads currently in the Review queue (to measure a run's new hot leads).
@@ -5124,7 +5126,7 @@ function d4dLimitBannerHTML(){
     + '<span style="font-size:18px;line-height:1">&#9888;&#65039;</span>'
     + '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13.5px;color:'+tx+'">'+head+'</div>'
     + '<div style="font-size:12px;color:'+tx+';margin-top:2px">'+esc(msg)+'</div></div>'
-    + '<button onclick="d4dGoogleUsed=null;renderReviewTab()" class="btn btn-white btn-sm" title="Re-check today’s usage" style="font-weight:700;color:'+tx+';border-color:'+bd+'">&#8635;</button>'
+    + '<button onclick="d4dGoogleUsed=null;d4dRefreshTab()" class="btn btn-white btn-sm" title="Re-check today’s usage" style="font-weight:700;color:'+tx+';border-color:'+bd+'">&#8635;</button>'
   + '</div>';
 }
 
@@ -5152,7 +5154,7 @@ async function d4dScanNow(){
   try { d4dGoogleUsed=null; await d4dRefreshGoogleUsage(); } catch(e){}
   d4dScan.state='running'; d4dScan.sawRunning=false; d4dScan.baseline=null;
   d4dScan.hotBefore = d4dCountReviewLeads();
-  if(activeTab==='review') renderReviewTab();
+  d4dRefreshTab();
   if(d4dGoogleUsed !== null && d4dGoogleUsed >= Math.floor(D4D_GOOGLE_LIMIT*D4D_GOOGLE_WARN)){
     showToast('Heads up: you’re near today’s free image target ('+d4dGoogleUsed+'/'+D4D_GOOGLE_LIMIT+'). Scanning still works.','error');
   }
@@ -5162,7 +5164,7 @@ async function d4dScanNow(){
   var res = await d4dScanFn({action:'trigger'});
   if(res && res.error){
     d4dScan.state='idle';
-    if(activeTab==='review') renderReviewTab();
+    d4dRefreshTab();
     var m = res.message || 'Could not start the scan.';
     if(res.error==='missing_pat') m = 'Setup needed: the GitHub token (GITHUB_PAT) isn’t set on the server yet.';
     showToast(m,'error');
@@ -5176,7 +5178,7 @@ async function d4dScanNow(){
 async function d4dScanPoll(tries){
   if(tries > 60){ // ~30 min safety cap on the watcher (the run itself still completes server-side)
     d4dScan.state='idle';
-    if(activeTab==='review') renderReviewTab();
+    d4dRefreshTab();
     showToast('Scan is taking longer than usual — leads will still appear here when it finishes.','success');
     return;
   }
@@ -5227,85 +5229,95 @@ function d4dScanBannerHTML(){
       + '<div style="font-size:12px;color:#b91c1c;margin-top:2px">' + esc(msg) + '</div>'
     + '</div>'
     + '<button onclick="refreshD4dHealth()" class="btn btn-white btn-sm" title="Re-check scan status" style="font-weight:700;color:#991b1b;border-color:#fca5a5">&#8635; Recheck</button>'
-    + '<button onclick="d4dBannerDismissed=true;renderReviewTab()" title="Hide until reload" style="background:none;border:none;color:#b91c1c;font-size:18px;line-height:1;cursor:pointer;padding:0 2px">&times;</button>'
+    + '<button onclick="d4dBannerDismissed=true;d4dRefreshTab()" title="Hide until reload" style="background:none;border:none;color:#b91c1c;font-size:18px;line-height:1;cursor:pointer;padding:0 2px">&times;</button>'
   + '</div>';
 }
-function renderReviewTab(){
-  var items = leads.filter(function(l){ return !l.deleted && l.needsReview; }).map(function(l){ return {kind:'lead', l:l}; })
-    .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview; }).map(function(t){ return {kind:'task', l:t}; }))
-    .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
-    // Note: Hot rows stay in place (turn red where they are) — no reordering, so clicks never shift the list under you.
-  var rows = items.length===0
-    ? '<div class="empty"><div class="empty-icon">&#128269;</div><h3>Nothing needs review</h3></div>'
+// A D4D auto-scan lead (from the Driving-for-Dollars robot). These now live in their OWN D4D tab,
+// not the Review queue.
+function isD4DLead(l){ return l.leadSource==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan'; }
+
+// Shared row builder for the Review + D4D tables (identical layout, different item sets).
+function rvRowHTML(it){
+  var l=it.l, kind=it.kind;
+  var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
+  var title = kind==='task' ? (l.location||l.name||'Untitled') : (l.address||l.name||'Untitled');
+  // Facebook-scrape batch row: one dated entry whose CSV payload lives in .notes.
+  var isFbBatch = (kind==='task' && l.sourceGroup==='FB Scrape Batch') || (kind==='lead' && l.leadSource==='FB Scrape Batch');
+  var dlBtn = (isFbBatch && (l.notes||'').indexOf(',')>-1)
+    ? '<button class="btn btn-primary btn-sm" onclick="fbBatchDownload('+l.id+')" title="Download this scrape as a CSV" style="font-weight:700">&#11015; Download CSV</button> '
+    : '';
+  // D4D auto-scan / estate leads: make the address a Google Maps link (new tab).
+  // Prefer webLink — the EXACT Street View pano the robot graded (2025+). A plain address
+  // search lets Google pick its own (often older) default pano, which looked like stale data.
+  var isD4D = kind==='lead' && isD4DLead(l);
+  var d4dMapHref = (l.webLink && /^https?:/i.test(l.webLink))
+    ? l.webLink
+    : 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(l.address||title);
+  var titleHtml = isD4D
+    ? '<a href="'+esc(d4dMapHref)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline">'+esc(title)+'</a>'
+    : esc(title);
+  var offer = kind==='task' ? l.askingPrice : l.offer;
+  var status = kind==='task' ? l.jvStatus : l.status;
+  var sentBy = l.reviewSentBy ? esc(l.reviewSentBy) : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
+  var sentAt = l.reviewSentAt ? new Date(l.reviewSentAt).toLocaleString() : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
+  var note = l.reviewNote ? '<div style="font-size:12px;max-width:240px;white-space:pre-wrap;color:var(--text2)">'+esc(l.reviewNote)+'</div>' : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
+  var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
+  var phoneHtml = l.phone
+    ? '<a href="tel:'+esc(String(l.phone).replace(/[^\\d+]/g,''))+'" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;white-space:nowrap;font-weight:600">'+esc(l.phone)+'</a>'
+    : (/Skip trace: no cell on file/.test(l.notes||'')
+        ? '<span style="color:#dc2626;font-size:11px;font-weight:600;white-space:nowrap">Number Not Available</span>'
+        : '<span style="color:var(--text4);font-size:11px">&#8212;</span>');
+  var isHot = kind==='lead' && !!l.d4dHot;
+  // 🔥 Hot toggle: click to flag a lead to come back to. When on, the whole row goes red
+  // (and the lead floats to the top); the white "Hot" letters stay readable on the red.
+  var hotBtn = kind==='lead'
+    ? '<button class="btn btn-sm" onclick="toggleD4dHot('+l.id+')" title="'+(isHot?'Hot — click to un-flag':'Mark Hot to come back to this lead')+'" '
+        +'style="margin-right:6px;font-weight:800;'+(isHot
+          ?'background:#fff;color:#dc2626;border:1px solid #fff'
+          :'background:none;color:#dc2626;border:1px solid #fca5a5')+'">&#128293; Hot</button>'
+    : '';
+  // "Find Owner" → open this property in Propwire (free owner lookup). Shown for D4D leads that have
+  // no real owner name yet (MD + NoVA have no free owner feed), so Mike can grab the owner in one click.
+  var ownerNmRaw = (kind==='lead' && l.name) ? String(l.name).trim() : '';
+  var hasRealOwner = ownerNmRaw && !/^(D4D Lead —|Name Not Available|⭐ ESTATE — )/i.test(ownerNmRaw) && ownerNmRaw.toUpperCase() !== String(title).toUpperCase();
+  var propwireBtn = (isD4D && !hasRealOwner && l.address)
+    ? '<button class="btn btn-sm" onclick="openPropwire('+l.id+')" title="Look up the owner on Propwire (free) — opens the property in a new tab" style="margin-right:6px;background:#ecfeff;color:#0e7490;border:1px solid #67e8f9;font-weight:700">&#128100; Find Owner</button>'
+    : '';
+  // Owner name shown ABOVE the address, if we have a real one (not a placeholder / address dup).
+  var ownerLine = hasRealOwner
+    ? '<div style="font-weight:700;font-size:13px;color:var(--text1)">'+esc(ownerNmRaw)+'</div>' : '';
+  return '<tr id="rrow-'+kind+'-'+l.id+'"'+(isHot?' class="hot-row"':'')+'>'
+    +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>'
+    +'<td onclick="'+openFn+'" style="cursor:pointer">'+ownerLine+'<div class="address-cell">'+typeTag+titleHtml+'</div></td>'
+    +'<td style="font-size:13px">'+phoneHtml+'</td>'
+    +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
+    +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
+    +'<td>'+note+'</td>'
+    +'<td><span class="money-val">'+formatMoney(offer)+'</span></td>'
+    +'<td><span class="arv-val">'+formatMoney(l.arv)+'</span></td>'
+    +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
+    +'<td>'+statusBadge(status)+'</td>'
+    +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
+      +dlBtn
+      +hotBtn
+      +propwireBtn
+      +'<button class="btn btn-secondary btn-sm" onclick="'+openFn+'">Open</button> '
+      +(kind==='lead' ? '<button class="btn btn-sm" onclick="sendLeadToTask('+l.id+')" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button> ' : '')
+      +'<button class="btn btn-green btn-sm" onclick="completeReview(\''+kind+'\','+l.id+')">&#9989; Complete</button> '
+      +'<button class="btn btn-danger btn-sm" onclick="removeFromReview(\''+kind+'\','+l.id+')">Remove</button>'
+    +'</td>'
+    +'</tr>';
+}
+function rvTableHTML(items, emptyIcon, emptyTitle){
+  return items.length===0
+    ? '<div class="empty"><div class="empty-icon">'+emptyIcon+'</div><h3>'+emptyTitle+'</h3></div>'
     : '<div class="table-container"><div class="table-wrap"><table>'
       +'<thead><tr><th style="width:30px;text-align:center"><input type="checkbox" title="Select all" onclick="rvToggleAll(this.checked)"></th><th>Lead</th><th>Phone</th><th>Sent By</th><th>Sent</th><th>Review Note</th><th>Offer</th><th>ARV</th><th>Follow-Up</th><th>Status</th><th></th></tr></thead><tbody>'
-      + items.map(function(it){
-          var l=it.l, kind=it.kind;
-          var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
-          var title = kind==='task' ? (l.location||l.name||'Untitled') : (l.address||l.name||'Untitled');
-          // Facebook-scrape batch row: one dated entry whose CSV payload lives in .notes.
-          var isFbBatch = (kind==='task' && l.sourceGroup==='FB Scrape Batch') || (kind==='lead' && l.leadSource==='FB Scrape Batch');
-          var dlBtn = (isFbBatch && (l.notes||'').indexOf(',')>-1)
-            ? '<button class="btn btn-primary btn-sm" onclick="fbBatchDownload('+l.id+')" title="Download this scrape as a CSV" style="font-weight:700">&#11015; Download CSV</button> '
-            : '';
-          // D4D auto-scan / estate leads: make the address a Google Maps link (new tab).
-          // Prefer webLink — the EXACT Street View pano the robot graded (2025+). A plain address
-          // search lets Google pick its own (often older) default pano, which looked like stale data.
-          var isD4D = kind==='lead' && (l.leadSource==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan');
-          var d4dMapHref = (l.webLink && /^https?:/i.test(l.webLink))
-            ? l.webLink
-            : 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(l.address||title);
-          var titleHtml = isD4D
-            ? '<a href="'+esc(d4dMapHref)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline">'+esc(title)+'</a>'
-            : esc(title);
-          var offer = kind==='task' ? l.askingPrice : l.offer;
-          var status = kind==='task' ? l.jvStatus : l.status;
-          var sentBy = l.reviewSentBy ? esc(l.reviewSentBy) : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
-          var sentAt = l.reviewSentAt ? new Date(l.reviewSentAt).toLocaleString() : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
-          var note = l.reviewNote ? '<div style="font-size:12px;max-width:240px;white-space:pre-wrap;color:var(--text2)">'+esc(l.reviewNote)+'</div>' : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
-          var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
-          var phoneHtml = l.phone
-            ? '<a href="tel:'+esc(String(l.phone).replace(/[^\\d+]/g,''))+'" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;white-space:nowrap;font-weight:600">'+esc(l.phone)+'</a>'
-            : (/Skip trace: no cell on file/.test(l.notes||'')
-                ? '<span style="color:#dc2626;font-size:11px;font-weight:600;white-space:nowrap">Number Not Available</span>'
-                : '<span style="color:var(--text4);font-size:11px">&#8212;</span>');
-          var isHot = kind==='lead' && !!l.d4dHot;
-          // 🔥 Hot toggle: click to flag a lead to come back to. When on, the whole row goes red
-          // (and the lead floats to the top); the white "Hot" letters stay readable on the red.
-          var hotBtn = kind==='lead'
-            ? '<button class="btn btn-sm" onclick="toggleD4dHot('+l.id+')" title="'+(isHot?'Hot — click to un-flag':'Mark Hot to come back to this lead')+'" '
-                +'style="margin-right:6px;font-weight:800;'+(isHot
-                  ?'background:#fff;color:#dc2626;border:1px solid #fff'
-                  :'background:none;color:#dc2626;border:1px solid #fca5a5')+'">&#128293; Hot</button>'
-            : '';
-          // Owner name (from D4D enrichment or a person lead) shown ABOVE the address, if we have one
-          // that isn't just the "D4D Lead — <addr>" placeholder or a duplicate of the address.
-          var ownerNm = (kind==='lead' && l.name) ? String(l.name).trim() : '';
-          var ownerLine = (ownerNm && !/^D4D Lead —/i.test(ownerNm) && ownerNm.toUpperCase() !== String(title).toUpperCase())
-            ? '<div style="font-weight:700;font-size:13px;color:var(--text1)">'+esc(ownerNm)+'</div>' : '';
-          return '<tr id="rrow-'+kind+'-'+l.id+'"'+(isHot?' class="hot-row"':'')+'>'
-            +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>'
-            +'<td onclick="'+openFn+'" style="cursor:pointer">'+ownerLine+'<div class="address-cell">'+typeTag+titleHtml+'</div></td>'
-            +'<td style="font-size:13px">'+phoneHtml+'</td>'
-            +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
-            +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
-            +'<td>'+note+'</td>'
-            +'<td><span class="money-val">'+formatMoney(offer)+'</span></td>'
-            +'<td><span class="arv-val">'+formatMoney(l.arv)+'</span></td>'
-            +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
-            +'<td>'+statusBadge(status)+'</td>'
-            +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
-              +dlBtn
-              +hotBtn
-              +'<button class="btn btn-secondary btn-sm" onclick="'+openFn+'">Open</button> '
-              +(kind==='lead' ? '<button class="btn btn-sm" onclick="sendLeadToTask('+l.id+')" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button> ' : '')
-              +'<button class="btn btn-green btn-sm" onclick="completeReview(\''+kind+'\','+l.id+')">&#9989; Complete</button> '
-              +'<button class="btn btn-danger btn-sm" onclick="removeFromReview(\''+kind+'\','+l.id+')">Remove</button>'
-            +'</td>'
-            +'</tr>';
-        }).join('')
+      + items.map(rvRowHTML).join('')
       +'</tbody></table></div></div>';
-  var bulkBarHtml = items.length===0 ? '' :
+}
+function rvBulkBarHTML(items){
+  return items.length===0 ? '' :
     '<div id="rv-bulkbar" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:10px 14px;margin-bottom:12px">'
       +'<span id="rv-bulk-count" style="font-size:13px;font-weight:600;color:var(--text2)">0 selected</span>'
       +'<button id="rv-skiptrace-btn" class="btn btn-primary btn-sm" onclick="rvSkipTraceSelected()" disabled style="font-weight:700">&#128269; Find Numbers (Skip Trace)</button>'
@@ -5313,11 +5325,40 @@ function renderReviewTab(){
       +'<button class="btn btn-secondary btn-sm" onclick="rvClearSel()">Clear</button>'
       +'<span id="rv-skip-progress" style="font-size:12px;color:var(--text3)"></span>'
     +'</div>';
+}
+function renderReviewTab(){
+  // Review = team/recipient-flagged leads + Tasks. D4D auto-scan leads live in the D4D tab now.
+  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && !isD4DLead(l); }).map(function(l){ return {kind:'lead', l:l}; })
+    .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview; }).map(function(t){ return {kind:'task', l:t}; }))
+    .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
+    // Note: Hot rows stay in place (turn red where they are) — no reordering, so clicks never shift the list under you.
   document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
-    +'<div style="margin-bottom:16px"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><h2 style="font-size:16px;font-weight:700">&#128269; Review Queue</h2><div style="display:flex;align-items:center">'+d4dScanBtnHTML()+'</div></div>'
-    +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Leads flagged Needs Review (by the team or by a recipient) or added here when sent out. Sent By / Sent shows who flagged it and when; Review Note is their reason. This is a work queue -- leads stay in their database either way.</p></div>'
-    +d4dScanBannerHTML()+d4dLimitBannerHTML()+bulkBarHtml+rows+'</div>';
+    +'<div style="margin-bottom:16px"><h2 style="font-size:16px;font-weight:700">&#128269; Review Queue</h2>'
+    +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Leads flagged Needs Review (by the team or by a recipient) or added here when sent out. Sent By / Sent shows who flagged it and when; Review Note is their reason. This is a work queue -- leads stay in their database either way. Driving-for-Dollars auto-scan leads are in the &#128663; D4D tab.</p></div>'
+    +rvBulkBarHTML(items)+rvTableHTML(items,'&#128269;','Nothing needs review')+'</div>';
   rvUpdateBar();
+}
+// Dedicated Driving-for-Dollars tab: only D4D auto-scan leads, plus the ⚡ Scan Now button,
+// the Google-budget banner, and the "no qualified leads" messaging.
+function renderD4DTab(){
+  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && isD4DLead(l); }).map(function(l){ return {kind:'lead', l:l}; })
+    .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
+  document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
+    +'<div style="margin-bottom:16px"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><h2 style="font-size:16px;font-weight:700">&#128663; Driving for Dollars</h2><div style="display:flex;align-items:center">'+d4dScanBtnHTML()+'</div></div>'
+    +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Distress leads found automatically by the Driving-for-Dollars robot (facade graded from Street View). Click &#9889; Scan Now to find more; new hot leads land here in ~5-10 minutes. Address links open the exact graded Street View. Use &#128100; Find Owner (Propwire) where the owner name is blank.</p></div>'
+    +d4dScanBannerHTML()+d4dLimitBannerHTML()+rvBulkBarHTML(items)+rvTableHTML(items,'&#128663;','No D4D leads yet — click &#9889; Scan Now')+'</div>';
+  rvUpdateBar();
+}
+// Re-render whichever queue tab (D4D or Review) is currently open — used by the scan/budget flow,
+// whose ⚡ Scan Now button now lives in the D4D tab.
+function d4dRefreshTab(){ if(activeTab==='d4d') renderD4DTab(); else if(activeTab==='review') renderReviewTab(); }
+// Open a property in Propwire (free owner lookup) for a D4D lead that has no owner name yet.
+function openPropwire(id){
+  var l=leads.find(function(x){return x.id===id;});
+  if(!l){ showToast('Lead not found','error'); return; }
+  var q = (l.address||l.name||'').trim();
+  if(!q){ showToast('No address on this lead','error'); return; }
+  window.open('https://propwire.com/search?q='+encodeURIComponent(q), '_blank', 'noopener');
 }
 // Download a Facebook-scrape batch row as a CSV. The whole day's Name,Phone,Group,Link
 // payload is stored on the jv_lead's .notes field by the fb-scrape-daily edge function.
@@ -5560,7 +5601,7 @@ async function rvSkipTraceSelected(){
   } finally {
     __rvSkip=null;
     reviewSel.clear();
-    renderReviewTab();
+    d4dRefreshTab();
   }
 }
 

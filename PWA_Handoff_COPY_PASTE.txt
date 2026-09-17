@@ -1,0 +1,96 @@
+# HANDOFF — Turn the Mestate CRM into an installable phone app (PWA) + make it mobile-friendly
+
+**Paste this whole document as the first message in a fresh Claude Code chat.** It contains all the context needed; don't re-derive it.
+
+---
+
+## GOAL
+Turn our existing single-file web CRM into a **real app on my iPhone** that I install to my home screen (no App Store, no Apple developer account) **and make the whole UI mobile-friendly** so nothing is cramped or cut off. App name on the phone = **"Mestate CRM"**, icon = our Mestate logo.
+
+Two layers:
+1. **Make it installable (PWA plumbing)** — manifest + service worker + icons + head tags. Fast, low-risk, additive files.
+2. **Mobile UI overhaul** — fix tables, modals, buttons, spacing at iPhone widths (375–430px).
+
+---
+
+## WHERE EVERYTHING IS (verify at session start — don't assume)
+- **The app is ONE file:** `DMV_Agent_Outreach_CRM.html` — a single self-contained HTML file, all JS + CSS inline (~630KB).
+- **Local repo:** `/Users/mickyatakilt/Desktop/Claude Files/Claude File Folders/dmv-crm-repo/`
+- **GitHub repo:** `github.com/Mickyatakilt/DMV_Agentoutreach_CRM.html-f`
+- **Live URL (GitHub Pages, HTTPS ✓ — required for PWA):**
+  `https://mickyatakilt.github.io/DMV_Agentoutreach_CRM.html-f/DMV_Agent_Outreach_CRM.html`
+  → It's a **project** Pages site, so the PWA `scope`/paths live under `/DMV_Agentoutreach_CRM.html-f/` (NOT root).
+- **Branches:** `main` (LIVE, AUTH on), `stage2-authkey` (AUTH off — verify if still used), `dispo-domain-staging`. Latest `main` commit at time of writing = `f44bfde` (the SMS Analytics Dashboard). **Pull the newest `main` first and work from live.**
+- **Supabase project:** `jwctfsapxrdzznjaaufo`. Anon key + `sbAuthToken()` auth already wired in the file. **Do NOT touch the database.**
+- **Logo for icons:** embedded in the HTML as a data-URI variable `DISPO_LOGO_URL = "data:image/...`. Generate the app icons from this (no external asset needed).
+
+## 🔒 DATA SAFETY — non-negotiable (Mike: "don't lose a single lead or data")
+- This is **UI/CSS + additive static files ONLY**. **NO** Supabase schema changes, **NO** data migration, **NO** deletes, **NO** touching `leads` / `jv_leads` / `crm_*` / probate / `ghl_messages`. The PWA reads the exact same live data.
+- **Before any edit:** pull latest live `main`, and save a **ROLLBACK copy** to scratchpad (e.g. `ROLLBACK_main_before_pwa.html`).
+- **All mobile CSS must be inside `@media (max-width:…)` breakpoints or additive classes** so the **desktop UI is byte-for-byte unchanged**. Verify desktop still looks identical after.
+- Deploy to `main` (and `stage2-authkey` if still in use); **screenshot + confirm with Mike before pushing.**
+
+---
+
+## PART 1 — MAKE IT INSTALLABLE (PWA plumbing)
+Add small additive files to the repo root + `<head>` tags in the HTML.
+
+**1. `<head>` tags** (near the existing `<meta name="viewport">` at ~line 5). Replace the viewport with notch-safe version and add the rest:
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e2438">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mestate CRM">
+<link rel="apple-touch-icon" href="icon-180.png">
+```
+
+**2. `manifest.webmanifest`** (repo root):
+- `name`: "Mestate Agent Outreach CRM"
+- `short_name`: "Mestate CRM"
+- `start_url`: `./DMV_Agent_Outreach_CRM.html` (or `.` if you rename to `index.html` — see note)
+- `scope`: `/DMV_Agentoutreach_CRM.html-f/`
+- `display`: "standalone"
+- `background_color`: "#0e2438", `theme_color`: "#0e2438"
+- `icons`: 192, 512, and a 512 **maskable**.
+
+**3. App icons (PNG)** — generate from `DISPO_LOGO_URL` in the HTML: `icon-192.png`, `icon-512.png`, `icon-180.png` (apple-touch icon must be **opaque** — Mestate logo centered on **navy #0e2438**, no transparency). Commit to repo root. (Can extract the data-URI and convert with `sips`/ImageMagick.)
+
+**4. `sw.js` service worker** (repo root) — minimal, for installability + fast shell:
+- **Cache-first** for the app shell (the HTML + icons).
+- **Network-only / NEVER cache** anything to `*.supabase.co` (data must always be live — critical for "don't lose data").
+- Include a `VERSION` string; bump it every deploy to bust the old cache.
+- Register from the HTML: `if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js'); }`
+
+**5. iOS install caveat:** iOS only installs PWAs from **Safari** (Share → Add to Home Screen); no auto prompt. Add a tiny one-time in-app hint shown only on mobile Safari ("Add to Home Screen to use as an app"). Confirm the installed standalone app keeps the login/session (uses localStorage + Supabase session — should persist).
+
+**Milestone:** Mike can Add-to-Home-Screen and it opens full-screen with the Mestate icon.
+
+---
+
+## PART 2 — MAKE IT MOBILE-FRIENDLY (audit at 375–430px, fix each)
+Use the browser MCP (`resize_window` mobile / 375px) and/or the iOS Simulator. Known trouble spots:
+
+- **Wide tables get cut off** (Outreach leads, List Tracking files + contacts sub-table, Probate batch tables, Buyers). Fix: wrap each in an `overflow-x:auto` container so the **page body never scrolls sideways**; better on phone = stacked **card-per-row** layout under `@media (max-width:640px)`.
+- **Modals** (`#modal-container`): on mobile make them full-screen / bottom-sheet, body scrollable, with **sticky footer action buttons** (Save/Send always reachable). The long ones: Outreach detail, Probate detail, Dispo form.
+- **Floating "Ask AI" FAB** overlaps modal footer buttons on small screens — reposition or hide it when a modal is open on mobile.
+- **The NEW Dashboard (SMS Analytics + Probate funnel)** — verify at 375px: the SMS KPI cards (`flex-wrap` w/ `min-width:130px`) should wrap 2-per-row; the date-preset button row should wrap; the daily chart is `overflow-x:auto`; the probate funnel bars are full-width. Make sure the 5 SMS cards + the date bar don't overflow.
+- **Inputs:** font-size **≥16px** on inputs/selects (stops iOS auto-zoom); touch targets ≥44px; bigger tap padding on the tiny row action buttons (👁/💬/✎/🗑).
+- **Safe areas** (notch/home bar): `env(safe-area-inset-*)` padding on header/footer/FAB with `viewport-fit=cover`.
+- **Sidebar:** an off-canvas drawer already exists (`sbIsMobile()` via `matchMedia('(max-width:768px)')`, `.crm-sb-burger`). Verify it works; consider a **bottom tab bar** for the main sections on phones (nicer app feel) — ask Mike first.
+- **Dashboard KPI grids + Follow-Up Hub columns:** stack to 1–2 columns on mobile.
+- **Also check on mobile:** the login screen, the shared recipient pages (`?shared=lead/task`), and the public deal flyer (`dispoFlyerHTML` — already responsive, lower priority).
+
+---
+
+## SUGGESTED ORDER
+1. Part 1 plumbing → confirm Mike can install to home screen and it opens full-screen.
+2. Part 2 mobile pass, section-by-section, screenshotting each at iPhone width; deploy in batches after Mike's OK. Fastest win first: viewport + tables + modals (fixes most of the "cut off" pain).
+
+## WHAT I NEED FROM MIKE
+- His iPhone to test the real install (Claude can verify layout in browser MCP + iOS Simulator, but real-device install is his to confirm).
+- Confirm `stage2-authkey` is still a live target (deploy both if so).
+
+## HARD RULES / COMMS
+- Additive UI/CSS only; rollback copy + screenshots + Mike's OK before push; never break Outreach / Dashboard / Lists / Probate / Dispo / Buyers / Ask AI or the live flyer. Keep replies short, questions as multiple-choice.
