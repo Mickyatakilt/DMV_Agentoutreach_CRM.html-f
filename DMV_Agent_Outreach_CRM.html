@@ -1776,6 +1776,7 @@ const SB_ITEMS = [
   {k:'lists',     ic:'&#128199;', lb:'List Tracking', sl:'Lists',     soon:false},
   {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', sl:'Probate',   soon:false},
   {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  sl:'Dispo',    soon:false},
+  {k:'d4d',       ic:'&#128663;', lb:'D4D', sl:'D4D',  soon:false},
   {k:'jv',        ic:'&#9997;&#65039;', lb:'JV Agreements', sl:'JV',  soon:false}
 ];
 function sidebarHTML(){
@@ -4919,6 +4920,7 @@ function render(){
   if(activeSection==='lists'){ renderLists(); return; }
   if(activeSection==='dispo'){ renderDispo(); return; }
   if(activeSection==='jv'){ renderJvAgreements(); return; }
+  if(activeSection==='d4d'){ renderD4DSection(); return; }
   if(activeSection==='probate'){ renderProbate(); return; }
   if(activeSection==='dashboard'){ renderDashboard(); return; }
   if(activeSection!=='outreach'){ renderPlaceholderSection(activeSection); return; }
@@ -4960,7 +4962,6 @@ function renderOutreach(){
       <div class="tab ${activeTab==='nationwide'?'active':''}" onclick="setTab('nationwide')" style="${activeTab==='nationwide'?'':''}">&#127758; Nationwide <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.nationwide==='Yes').length}</span></div>
       <div class="tab ${activeTab==='sentout'?'active':''}" onclick="setTab('sentout')">&#128231; Sent Out <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.shared).length + jvLeads.filter(l=>!l.deleted&&l.shared).length}</span>${(function(){var n=recipientFUAlertCount();return n>0?' <span title="Recipient follow-ups overdue or due today" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">&#10071;'+n+'</span>':'';})()}</div>
       <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&!isD4DLead(l)).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
-      <div class="tab ${activeTab==='d4d'?'active':''}" onclick="setTab('d4d')">&#128663; D4D <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&isD4DLead(l)).length}</span></div>
       <div class="tab ${activeTab==='scheduledsms'?'active':''}" onclick="setTab('scheduledsms')">&#128197; Scheduled</div>
     </div>
     <div id="tab-content"></div>`;
@@ -4969,7 +4970,6 @@ function renderOutreach(){
   else if(activeTab==='jvleads') renderJVLeadsTab();
   else if(activeTab==='sentout') renderSentOutTab();
   else if(activeTab==='review') renderReviewTab();
-  else if(activeTab==='d4d') renderD4DTab();
   else if(activeTab==='scheduledsms') renderScheduledSmsTab();
   else renderNationwideTab();
 }
@@ -5338,20 +5338,23 @@ function renderReviewTab(){
     +rvBulkBarHTML(items)+rvTableHTML(items,'&#128269;','Nothing needs review')+'</div>';
   rvUpdateBar();
 }
-// Dedicated Driving-for-Dollars tab: only D4D auto-scan leads, plus the ⚡ Scan Now button,
-// the Google-budget banner, and the "no qualified leads" messaging.
-function renderD4DTab(){
+// Dedicated Driving-for-Dollars SECTION (left-sidebar item, not a tab): only D4D auto-scan leads,
+// plus the ⚡ Scan Now button, the Google-budget banner, and the "no qualified leads" messaging.
+function renderD4DSection(){
+  var host=document.getElementById('section-main'); if(!host) return;
   var items = leads.filter(function(l){ return !l.deleted && l.needsReview && isD4DLead(l); }).map(function(l){ return {kind:'lead', l:l}; })
     .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
-  document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
-    +'<div style="margin-bottom:16px"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><h2 style="font-size:16px;font-weight:700">&#128663; Driving for Dollars</h2><div style="display:flex;align-items:center">'+d4dScanBtnHTML()+'</div></div>'
-    +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Distress leads found automatically by the Driving-for-Dollars robot (facade graded from Street View). Click &#9889; Scan Now to find more; new hot leads land here in ~5-10 minutes. Address links open the exact graded Street View. Use &#128100; Find Owner (Propwire) where the owner name is blank.</p></div>'
-    +d4dScanBannerHTML()+d4dLimitBannerHTML()+rvBulkBarHTML(items)+rvTableHTML(items,'&#128663;','No D4D leads yet — click &#9889; Scan Now')+'</div>';
+  host.innerHTML = '<div class="lt-wrap">'
+    +'<div class="lt-head"><div><h2>&#128663; Driving for Dollars</h2>'
+    +'<p>Distress leads found automatically by the Driving-for-Dollars robot (facade graded from Street View). Click &#9889; Scan Now to find more &mdash; new hot leads land here in ~5-10 minutes. Address links open the exact graded Street View. Use &#128100; Find Owner (Propwire) where the owner name is blank.</p></div>'
+    +'<div class="lt-actions">'+d4dScanBtnHTML()+'</div></div>'
+    +d4dScanBannerHTML()+d4dLimitBannerHTML()+rvBulkBarHTML(items)+rvTableHTML(items,'&#128663;','No D4D leads yet — click &#9889; Scan Now')
+    +'</div>';
   rvUpdateBar();
 }
 // Re-render whichever queue tab (D4D or Review) is currently open — used by the scan/budget flow,
 // whose ⚡ Scan Now button now lives in the D4D tab.
-function d4dRefreshTab(){ if(activeTab==='d4d') renderD4DTab(); else if(activeTab==='review') renderReviewTab(); }
+function d4dRefreshTab(){ if(activeSection==='d4d') renderD4DSection(); else if(activeSection==='outreach' && activeTab==='review') renderReviewTab(); }
 // Open a property in Propwire (free owner lookup) for a D4D lead that has no owner name yet.
 function openPropwire(id){
   var l=leads.find(function(x){return x.id===id;});
