@@ -39,6 +39,9 @@
   .done{text-align:center;padding:26px 10px}
   .done .ic{font-size:44px}
   .loading{text-align:center;color:var(--sub);padding:60px 10px;font-size:14px}
+  .doc .ph{background:#fef9c3;border:1px dashed #eab308;border-radius:5px;padding:0 6px;font-size:13px;color:#854d0e;font-weight:600;white-space:nowrap}
+  .doc .fill{font-weight:600;color:#0f172a}
+  .doc .sig-script{font-family:"Segoe Script","Snell Roundhand",cursive;font-size:22px;color:#111;line-height:1}
 </style></head>
 <body><div class="wrap">
   <div class="top"><b>MEstate</b><span class="badge" id="statusBadge">Loading…</span></div>
@@ -52,6 +55,22 @@ var mode='draw', drawn=false, canvas, ctx, AG=null;
 
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function fmtDate(d){ if(!d) return ''; try{ return new Date(d).toLocaleDateString('en-US',{timeZone:'America/New_York'}); }catch(e){ return d; } }
+// Replace signer-field tokens ({{SIGN}} {{NAME}} {{DATE}}) with real values (done)
+// or highlighted blanks (before signing). A raw token is never shown.
+function fillTokens(html, o){
+  o=o||{}; html=String(html||'');
+  if(o.done){
+    var nm=esc(o.name||'');
+    html=html.replace(/\{\{\s*SIGN\s*\}\}/gi,'<span class="sig-script">'+nm+'</span>');
+    html=html.replace(/\{\{\s*NAME\s*\}\}/gi,'<span class="fill">'+nm+'</span>');
+    html=html.replace(/\{\{\s*DATE\s*\}\}/gi,'<span class="fill">'+esc(o.date||'')+'</span>');
+  } else {
+    html=html.replace(/\{\{\s*SIGN\s*\}\}/gi,'<span class="ph ph-sign">✍️ sign below</span>');
+    html=html.replace(/\{\{\s*NAME\s*\}\}/gi,'<span class="ph ph-name">your name</span>');
+    html=html.replace(/\{\{\s*DATE\s*\}\}/gi,'<span class="ph ph-date">'+esc(o.date||'')+'</span>');
+  }
+  return html;
+}
 
 function boot(){
   if(!TOKEN){ document.getElementById('app').innerHTML='<div class="card"><div class="loading">Invalid link.</div></div>'; document.getElementById('statusBadge').textContent='Invalid'; return; }
@@ -67,6 +86,10 @@ function boot(){
 function render(){
   var a=AG, done=(a.status==='completed');
   var pdf=a.pdf_url || (FN+'?token='+encodeURIComponent(TOKEN)+'&pdf=1');
+  var today=fmtDate(new Date());
+  var docHtml=fillTokens(a.body_html, done
+    ? {done:true, name:(a.party_b_signed_name||a.party_b_name||''), date:(fmtDate(a.party_b_signed_at)||a.agreement_date||'')}
+    : {done:false, date:today});
   var badge=document.getElementById('statusBadge');
   badge.textContent = done ? 'Completed' : 'Awaiting your signature';
   badge.className = 'badge'+(done?' ok':'');
@@ -74,7 +97,7 @@ function render(){
     '<div class="card">'
     + '<h1>Joint Venture Agreement</h1>'
     + '<div class="meta">'+esc(a.property_address||'')+'</div>'
-    + '<div class="doc" style="margin-top:14px">'+(a.body_html||'')+'</div>'
+    + '<div class="doc" style="margin-top:14px">'+docHtml+'</div>'
     + '<div class="sig-line">'
       + '<div class="lbl">Party A — '+esc(a.party_a_name||'Hiredwise LLC')+'</div>'
       + '<div class="partyA">'+esc(a.party_a_signer||a.party_a_name||'')+'</div>'
@@ -122,7 +145,9 @@ function fit(){ if(!canvas) return; var r=canvas.getBoundingClientRect(); var dp
 function clearPad(){ if(!ctx)return; ctx.clearRect(0,0,canvas.width,canvas.height); drawn=false; var h=document.getElementById('padHint'); if(h)h.style.display=''; update(); }
 function setMode(m){ mode=m; document.getElementById('tabDraw').classList.toggle('on',m==='draw'); document.getElementById('tabType').classList.toggle('on',m==='type'); document.getElementById('drawMode').style.display=m==='draw'?'':'none'; document.getElementById('typeMode').style.display=m==='type'?'':'none'; update(); }
 function hasSig(){ return mode==='draw' ? drawn : (document.getElementById('typedSig').value.trim().length>0); }
-function update(){ var ok=document.getElementById('fullName').value.trim() && document.getElementById('agree').checked && hasSig(); document.getElementById('signBtn').disabled=!ok; }
+function update(){ var nm=document.getElementById('fullName').value.trim();
+  Array.prototype.forEach.call(document.querySelectorAll('.doc .ph-name'),function(s){ s.textContent=nm||'your name'; });
+  var ok=nm && document.getElementById('agree').checked && hasSig(); document.getElementById('signBtn').disabled=!ok; }
 function typedToDataUrl(text){ var c=document.createElement('canvas'); c.width=520; c.height=140; var x=c.getContext('2d'); x.fillStyle='#0f172a'; x.font='54px "Segoe Script","Snell Roundhand",cursive'; x.textBaseline='middle'; x.fillText(text,10,80); return c.toDataURL('image/png'); }
 function submitSig(){
   var btn=document.getElementById('signBtn'), err=document.getElementById('err');

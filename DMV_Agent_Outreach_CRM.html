@@ -330,6 +330,8 @@
   .dp-rt:empty:before{content:attr(data-ph);color:var(--text4);pointer-events:none;}
   .dp-rt ul,.dp-rt ol{margin:4px 0 4px 22px;}
   .dp-rt li{margin:2px 0;}
+  /* JV signer-field chips (Signature / Full name / Date placeholders) */
+  .jv-ph{display:inline-block;background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:6px;padding:0 7px;margin:0 1px;font-size:12.5px;font-weight:600;white-space:nowrap;-webkit-user-select:none;user-select:none;}
   .dp-dropzone{border:2px dashed var(--border);border-radius:12px;padding:18px;text-align:center;cursor:pointer;color:var(--text3);font-size:13px;transition:.15s;display:flex;flex-direction:column;align-items:center;gap:4px;}
   .dp-dropzone:hover,.dp-dropzone.drag{border-color:#6366f1;background:#eef2ff;color:#3730a3;}
   .dp-drop-ico{font-size:26px;}
@@ -2480,7 +2482,54 @@ function jvTemplate(o){
     + '<p><b>2. Responsibilities:</b> '+partyA+' will market the Property and assist in locating and working with a buyer. Party B will provide all contracts and documents necessary to complete the transaction.</p>'
     + '<p><b>3. Profit Split:</b> Net profit from the transaction will be split <b>'+bpct+'% to Party B</b> and <b>'+apct+'% to '+partyA+'</b>, after the purchase price and agreed transaction/closing expenses. '+partyA+'’s '+apct+'% shall be paid at closing.</p>'
     + '<p><b>4. Non-Circumvention:</b> Neither party may bypass or circumvent the other party regarding any buyer, seller, or transaction introduced through this JV.</p>'
-    + '<p><b>5. Closing/Termination:</b> If the transaction does not close, neither party is entitled to a profit split. Any changes to this Agreement must be agreed to in writing by both parties.</p>';
+    + '<p><b>5. Closing/Termination:</b> If the transaction does not close, neither party is entitled to a profit split. Any changes to this Agreement must be agreed to in writing by both parties.</p>'
+    + '<p style="margin-top:18px"><b>Party B / Contract Holder:</b></p>'
+    + '<p>Signature: {{SIGN}}</p>'
+    + '<p>Printed name: {{NAME}} &nbsp;&nbsp; Date: {{DATE}}</p>';
+}
+
+// ---- JV signer-field placeholders (Signature / Full name / Date) ----
+// Stored in body_html as clean text tokens {{SIGN}} {{NAME}} {{DATE}}. In the
+// editor they show as chips; the signing page + PDF replace them with real values,
+// so a raw token never appears on the signed document.
+function jvChipHtml(kind){
+  kind=String(kind||'').toUpperCase();
+  var label = kind==='SIGN' ? '✍️ Signature' : kind==='NAME' ? '🧑 Full name' : '📅 Date';
+  return '<span class="jv-ph" contenteditable="false" data-ph="'+kind+'">'+label+'</span>';
+}
+function jvTokensToChips(html){
+  return String(html||'')
+    .replace(/\{\{\s*SIGN\s*\}\}/gi, jvChipHtml('SIGN'))
+    .replace(/\{\{\s*NAME\s*\}\}/gi, jvChipHtml('NAME'))
+    .replace(/\{\{\s*DATE\s*\}\}/gi, jvChipHtml('DATE'));
+}
+function jvChipsToTokens(html){
+  var d=document.createElement('div'); d.innerHTML=String(html||'');
+  Array.prototype.forEach.call(d.querySelectorAll('.jv-ph'), function(s){
+    var k=(s.getAttribute('data-ph')||'').toUpperCase();
+    if(k==='SIGN'||k==='NAME'||k==='DATE') s.replaceWith(document.createTextNode('{{'+k+'}}'));
+    else s.remove();
+  });
+  return d.innerHTML;
+}
+function jvFieldBar(){
+  return '<div class="dp-rtbar" style="margin-top:4px">'
+   +'<span style="font-size:12px;color:var(--text3);align-self:center;margin-right:4px">Insert where signer fills →</span>'
+   +'<button type="button" class="dp-rtb" title="Insert a signature line" onmousedown="return jvInsertField(event,\'SIGN\')">✍️ Signature</button>'
+   +'<button type="button" class="dp-rtb" title="Insert a full-name line" onmousedown="return jvInsertField(event,\'NAME\')">🧑 Full name</button>'
+   +'<button type="button" class="dp-rtb" title="Insert a date line" onmousedown="return jvInsertField(event,\'DATE\')">📅 Date</button>'
+  +'</div>';
+}
+function jvInsertField(ev, kind){
+  ev.preventDefault();
+  var el=document.getElementById('jv-body'); if(!el) return false;
+  var chip=jvChipHtml(kind)+'&nbsp;';
+  var sel=window.getSelection();
+  var inEditor = sel && sel.rangeCount && el.contains(sel.anchorNode);
+  if(inEditor){ try{ document.execCommand('insertHTML',false,chip); }catch(e){ el.innerHTML+=chip; } }
+  else { el.innerHTML+=chip; }
+  jvBodyEdited=true;
+  return false;
 }
 function jvAgsFetch(){
   return sbFetch(JV_A_PATH+'?select=*&order=id.desc&limit=500').then(function(rows){ jvAgs = rows||[]; }).catch(function(){ jvAgs = []; });
@@ -2957,7 +3006,8 @@ function jvOpenModal(id){
      +'<div class="form-field"><label class="form-label">Their split %</label><input id="jv-bpct" type="number" min="0" max="100" class="form-input" value="'+esc(bpct)+'" oninput="jvSync()"></div>'
      +'<div class="form-field"><label class="form-label">Your split %</label><input id="jv-apct" class="form-input" value="'+esc(100-(+bpct||0))+'" readonly style="background:var(--bg2,#f1f5f9)"></div>'
      +'<div class="form-field full"><label class="form-label">Agreement text <span style="font-weight:400;color:var(--text3)">(fully editable)</span> <button type="button" class="btn btn-secondary btn-sm" style="float:right;padding:2px 8px" onclick="jvResetBody()">&#8635; Reset to template</button></label>'
-       +'<div id="jv-body" class="form-input dp-rt" contenteditable="true" style="min-height:220px;line-height:1.5" oninput="jvBodyEdited=true">'+body+'</div></div>'
+       +jvFieldBar()
+       +'<div id="jv-body" class="form-input dp-rt" contenteditable="true" style="min-height:220px;line-height:1.5" oninput="jvBodyEdited=true">'+jvTokensToChips(body)+'</div></div>'
    +'</div>'
    +'<div id="jv-err" style="color:#dc2626;font-size:13px;margin-top:8px;min-height:16px"></div>'
    +'</div>'
@@ -2979,12 +3029,12 @@ function jvSync(){
   var apctEl=document.getElementById('jv-apct'); if(apctEl) apctEl.value=100-bpct;
   if(!jvBodyEdited){
     var bodyEl=document.getElementById('jv-body');
-    if(bodyEl) bodyEl.innerHTML=jvTemplate({
+    if(bodyEl) bodyEl.innerHTML=jvTokensToChips(jvTemplate({
       party_a_name:(document.getElementById('jv-pa')||{}).value||'Hiredwise LLC',
       party_b_name:(document.getElementById('jv-pb')||{}).value||'',
       property_address:(document.getElementById('jv-addr')||{}).value||'',
       party_b_pct:bpct
-    });
+    }));
   }
 }
 function jvResetBody(){
@@ -3009,7 +3059,7 @@ function jvSend(id){
     party_b_name:pb, party_b_email:pbe, property_address:addr,
     party_b_pct:+g('jv-bpct')||0,
     agreement_date:g('jv-date')||null,
-    body_html:(document.getElementById('jv-body')||{}).innerHTML||'',
+    body_html:jvChipsToTokens((document.getElementById('jv-body')||{}).innerHTML||''),
     created_by:(authSession&&authSession.user&&authSession.user.email)||''
   };
   var btn=document.getElementById('jv-send-btn'); btn.disabled=true; var old=btn.innerHTML; btn.innerHTML='Sending…'; err.textContent='';
