@@ -5457,18 +5457,24 @@ function renderFBSection(){
   var batches = fbBatches();
   var lastRun = batches.length ? (batches[0].date || (batches[0].reviewSentAt||'').split('T')[0]) : null;
 
-  var batchRows = batches.slice(0,30).map(function(l){
+  var batchRows = batches.slice(0,60).map(function(l){
     var hasCsv = (l.notes||'').indexOf(',')>-1;
-    var dl = hasCsv ? '<button class="btn btn-primary btn-sm" onclick="fbBatchDownload('+l.id+')" style="font-weight:700">&#11015; Download CSV</button>' : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
-    return '<tr>'
+    var dl = hasCsv ? '<button class="btn btn-primary btn-sm" onclick="fbBatchDownload('+l.id+')" style="font-weight:700">&#11015; Download CSV</button> ' : '';
+    return '<tr id="fb-batch-'+l.id+'">'
       +'<td style="white-space:nowrap;font-size:12px;color:var(--text3)">'+esc(l.date||'')+'</td>'
       +'<td style="font-weight:600">'+esc(l.name||'')+'</td>'
-      +'<td style="font-size:12px;color:var(--text2);max-width:420px">'+esc(l.reviewNote||'')+'</td>'
-      +'<td style="text-align:right">'+dl+'</td>'
+      +'<td style="font-size:12px;color:var(--text2);max-width:380px">'+esc(l.reviewNote||'')+'</td>'
+      +'<td style="text-align:right;white-space:nowrap">'+dl
+        +'<button class="btn btn-danger btn-sm" onclick="fbDeleteBatch('+l.id+')" title="Delete this scrape">&#128465;</button>'
+      +'</td>'
     +'</tr>';
   }).join('');
+  var clearBtn = batches.length>1
+    ? '<button class="btn btn-secondary btn-sm" onclick="fbDeleteOldBatches()" title="Delete every scrape except the most recent" style="font-weight:700">&#128465; Delete all older scrapes</button>'
+    : '';
   var batchesTable = batches.length
-    ? '<div class="table-container"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Scrape</th><th>Summary</th><th style="text-align:right">CSV</th></tr></thead><tbody>'+batchRows+'</tbody></table></div></div>'
+    ? '<div style="display:flex;justify-content:flex-end;margin-bottom:8px">'+clearBtn+'</div>'
+      +'<div class="table-container"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Scrape</th><th>Summary</th><th style="text-align:right">Actions</th></tr></thead><tbody>'+batchRows+'</tbody></table></div></div>'
     : '<div class="empty"><div class="empty-icon">&#128241;</div><h3>No scrapes yet &mdash; click &#9889; Scrape now</h3></div>';
 
   host.innerHTML = '<div class="lt-wrap">'
@@ -5622,6 +5628,33 @@ async function fbDeleteGroup(id){
     var tr=document.getElementById('fb-grp-'+id); if(tr) tr.remove();
     fbRefreshSection();
   } catch(e){ showToast('Delete failed','error'); }
+}
+// Delete one scrape (the dated batch row). The lead CSV is a summary row; the
+// dedupe ledger stays, so those numbers won't come back on the next scrape.
+async function fbDeleteBatch(id){
+  if(!confirm('Delete this scrape? (The download for that day will be removed.)')) return;
+  try {
+    await sbFetch('leads?id=eq.'+id, 'DELETE');
+    if(typeof leads!=='undefined') leads = leads.filter(function(l){ return l.id!==id; });
+    var tr=document.getElementById('fb-batch-'+id); if(tr) tr.remove();
+    showToast('Scrape deleted','success');
+    fbRefreshSection();
+  } catch(e){ showToast('Delete failed: '+String(e).slice(0,120),'error'); }
+}
+// Delete every scrape except the most recent one.
+async function fbDeleteOldBatches(){
+  var b = fbBatches();
+  if(b.length<2){ showToast('Nothing older to delete','error'); return; }
+  var old = b.slice(1);   // keep the newest
+  if(!confirm('Delete '+old.length+' older scrape'+(old.length===1?'':'s')+'? (Keeps the most recent. Can’t be undone.)')) return;
+  try {
+    var ids = old.map(function(l){ return l.id; });
+    await sbFetch('leads?id=in.('+ids.join(',')+')', 'DELETE');
+    var gone = {}; ids.forEach(function(i){ gone[i]=true; });
+    if(typeof leads!=='undefined') leads = leads.filter(function(l){ return !gone[l.id]; });
+    showToast('Deleted '+ids.length+' older scrape'+(ids.length===1?'':'s'),'success');
+    fbRefreshSection();
+  } catch(e){ showToast('Delete failed: '+String(e).slice(0,120),'error'); }
 }
 // ============================================================================
 // REVIEW-QUEUE SKIP TRACE — select leads (single/multiple) and skip-trace them via
