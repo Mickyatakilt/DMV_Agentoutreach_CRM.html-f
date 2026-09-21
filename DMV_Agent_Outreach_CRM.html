@@ -4661,6 +4661,8 @@ function renderDashboard(){
       + '<p>Your whole pipeline at a glance &mdash; and one place that shows every follow-up due across Outreach, Tasks, Probate, and Lists so nothing slips.</p></div>'
       + '<div class="lt-actions"><button class="btn btn-secondary btn-sm" onclick="crmLists=null;crmProbate=null;crmBuyers=null;crmProps=null;renderDashboard()">&#8635; Refresh</button></div>'
     + '</div>'
+    // ===== Manager Agent briefing (Claude-powered) =====
+    + mgrBriefingCardHTML()
     // ===== SMS Marketing Analytics (live from GHL) =====
     + '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:6px">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">'
@@ -4708,7 +4710,7 @@ function renderDashboard(){
         : '<div class="lt-due-empty">No follow-up dates set anywhere yet. Set a follow-up on a lead, task, probate lead, or list and it shows up here.</div>')
     + '</div>'
     + '</div>';
-  try{ loadSmsAnalytics(); loadProbateFunnel(); }catch(e){ console.warn('dash analytics', e); }
+  try{ mgrInjectCSS(); mgrRenderBriefing(false); loadSmsAnalytics(); loadProbateFunnel(); }catch(e){ console.warn('dash analytics', e); }
 }
 // =================== end Dashboard ===================
 
@@ -4905,10 +4907,10 @@ function askRenderResults(g,s,q){
   return html;
 }
 function askWelcomeHTML(){
-  var ex=['show all DC buyers','lists due this week','overdue follow-ups','leads with no follow-up','probate sent last week','how many wholesaler lists','hot buyers','MD probate not sent'];
-  return '<div class="ask-welcome"><div class="ask-w-h">Try one of these</div>'
+  var ex=['How are things going?','Which lists should I touch up?','What needs my attention today?','Which leads are slipping?','show all DC buyers','overdue follow-ups','where do I find my probate leads?','how many wholesaler lists'];
+  return '<div class="ask-welcome"><div class="ask-w-h">Ask your Manager Agent</div>'
     + ex.map(function(e){return '<button class="ask-ex" onclick="askRun(this.textContent)">'+esc(e)+'</button>';}).join('')
-    + '<div class="ask-w-note">Searches Leads, Tasks, Lists, Probate, Buyers &amp; Deals \u2014 100% free, instant, and nothing leaves your browser.</div></div>';
+    + '<div class="ask-w-note">Your Manager reads the whole CRM and gives real answers &amp; advice. Matching records show below every answer so you can jump straight to them.</div></div>';
 }
 function askEnsureData(){
   var need=[];
@@ -4919,6 +4921,7 @@ function askEnsureData(){
   return need.length?Promise.all(need):Promise.resolve();
 }
 function askRun(pref){
+  mgrInjectCSS();
   var inp=document.getElementById('ask-input'); if(!inp) return;
   if(pref!=null) inp.value=pref;
   var q=(inp.value||'').trim();
@@ -4926,8 +4929,23 @@ function askRun(pref){
   if(!q){ res.innerHTML=askWelcomeHTML(); return; }
   res.innerHTML='<div class="ask-loading">\u2728 Thinking\u2026</div>';
   askEnsureData().then(function(){
-    try { var s=askParse(q); var g=askExec(s); res.innerHTML=askRenderResults(g,s,q); }
-    catch(e){ res.innerHTML='<div class="ask-empty">Something went wrong reading that. Try simpler words like <i>DC buyers</i> or <i>overdue follow-ups</i>.</div>'; }
+    // Instant local record matches (clickable) render immediately; Claude's real answer streams in above.
+    var localHTML='';
+    try { var s=askParse(q); var g=askExec(s); localHTML=askRenderResults(g,s,q); }
+    catch(e){ localHTML=''; }
+    res.innerHTML=''
+      + '<div class="mgr-ask-answer"><div class="mgr-ask-lbl">\ud83e\udde0 Manager</div>'
+        + '<div id="ask-mgr-body" class="mgr-answer"><span class="mgr-muted">Analyzing your CRM\u2026</span></div></div>'
+      + (localHTML? '<div style="margin-top:14px"><div class="mgr-ask-lbl" style="color:var(--text3,#6b7280)">\ud83d\udcc1 Matching records</div>'+localHTML+'</div>' : '');
+    // Ask Claude for the real answer.
+    mgrCall({mode:'ask', question:q, history:mgrChatHistory}).then(function(r){
+      var ans=(r&&r.answer)||'No answer came back.';
+      var b=document.getElementById('ask-mgr-body'); if(b) b.innerHTML=mgrMd(ans);
+      mgrChatHistory.push({role:'user',content:q},{role:'assistant',content:ans});
+      if(mgrChatHistory.length>8) mgrChatHistory=mgrChatHistory.slice(-8);
+    }).catch(function(){
+      var b=document.getElementById('ask-mgr-body'); if(b) b.innerHTML='<span class="mgr-muted">Couldn\u2019t reach the Manager Agent just now \u2014 the matching records above are still accurate.</span>';
+    });
   });
 }
 function askMount(){
@@ -4956,6 +4974,142 @@ function askOpen(kind,id){
   dashOpen(kind,id); // list / probate / task / lead
 }
 // =================== end Ask AI ===================
+
+// =================== Manager Agent (GPT-powered analysis + briefing) ===================
+// Sends a COMPACT digest of the whole CRM (aggregates + tiny samples, low PII) to the
+// `manager-agent` edge function, which calls the OpenAI API and returns a plain-English answer.
+// Powers: (1) real answers in Ask AI, (2) the proactive Dashboard briefing.
+var MANAGER_URL = SUPABASE_URL + '/functions/v1/manager-agent';
+var mgrBriefingCache = null;      // {answer, at} — briefing is cached per session to avoid re-spending
+var mgrChatHistory = [];          // rolling [{role,content}] for Ask AI follow-ups
+
+// Tiny, safe markdown -> HTML for Claude's answers (bold, bullets, headers, line breaks).
+function mgrMd(t){
+  var s=esc(String(t||''));
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+  var lines=s.split(/\n/), out=[], inUl=false;
+  for(var i=0;i<lines.length;i++){
+    var ln=lines[i];
+    if(/^\s*[-*]\s+/.test(ln)){ if(!inUl){out.push('<ul class="mgr-ul">');inUl=true;} out.push('<li>'+ln.replace(/^\s*[-*]\s+/,'')+'</li>'); continue; }
+    if(inUl){ out.push('</ul>'); inUl=false; }
+    if(/^\s*#{1,4}\s+/.test(ln)){ out.push('<div class="mgr-h">'+ln.replace(/^\s*#{1,4}\s+/,'')+'</div>'); continue; }
+    if(/^\s*\d+\.\s+/.test(ln)){ out.push('<div class="mgr-oli">'+ln.replace(/^\s*/,'')+'</div>'); continue; }
+    if(ln.trim()==='') out.push('<div class="mgr-sp"></div>');
+    else out.push('<div>'+ln+'</div>');
+  }
+  if(inUl) out.push('</ul>');
+  return out.join('');
+}
+function mgrInjectCSS(){
+  if(document.getElementById('mgr-css')) return;
+  var st=document.createElement('style'); st.id='mgr-css';
+  st.textContent=''
+   +'.mgr-answer{font-size:13.5px;line-height:1.5;color:var(--text1,#111)}'
+   +'.mgr-answer .mgr-h{font-weight:800;margin:10px 0 4px;font-size:13px}'
+   +'.mgr-answer .mgr-ul{margin:4px 0 4px 2px;padding-left:18px}'
+   +'.mgr-answer .mgr-ul li{margin:2px 0}'
+   +'.mgr-answer .mgr-oli{margin:3px 0}'
+   +'.mgr-answer .mgr-sp{height:6px}'
+   +'.mgr-card{background:linear-gradient(135deg,#f5f3ff,#eef2ff);border:1px solid #ddd6fe;border-radius:14px;padding:16px;margin-top:6px}'
+   +'@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .mgr-card{background:linear-gradient(135deg,#1e1b3a,#1a1f3a);border-color:#3b3170}}'
+   +'.mgr-card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}'
+   +'.mgr-card-t{font-size:15px;font-weight:800;color:var(--text1,#111)}'
+   +'.mgr-block{background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:12px 14px}'
+   +'.mgr-muted{color:var(--text3,#6b7280);font-size:12px}'
+   +'.mgr-btn{font-size:12px;font-weight:700;border:1px solid #c4b5fd;background:#fff;color:#6d28d9;border-radius:8px;padding:6px 12px;cursor:pointer}'
+   +'.mgr-btn:hover{background:#f5f3ff}'
+   +'.mgr-ask-answer{border-top:1px solid var(--border,#eee);margin-top:6px;padding-top:10px}'
+   +'.mgr-ask-lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#7c3aed;margin-bottom:6px}';
+  document.head.appendChild(st);
+}
+
+// Build a compact, aggregate-first digest of the whole CRM. Small samples (names allowed —
+// it's the operator's own data) keep token cost low. Runs on whatever is loaded in memory.
+function mgrBuildDigest(){
+  function daysSince(d){ if(!d) return null; var n=ltDaysUntil(d); return n===null?null:-n; }
+  var Ls=(leads||[]).filter(function(l){return !l.deleted;});
+  var Ts=(jvLeads||[]).filter(function(t){return !t.deleted;});
+  var Cl=(crmLists||[]), Pr=(crmProbate||[]), Bu=(crmBuyers||[]), Dp=(crmProps||[]);
+  function tally(arr,fn){ var m={}; arr.forEach(function(x){ var k=fn(x); if(k==null||k==='')return; k=String(k); m[k]=(m[k]||0)+1; }); return m; }
+  function stateTally(arr,fn){ var m={}; arr.forEach(function(x){ (askStateOf(fn(x))||[]).forEach(function(c){ m[c]=(m[c]||0)+1; }); }); return m; }
+
+  // Leads
+  var hot=Ls.filter(function(l){return String(l.score||'').toLowerCase()==='hot';});
+  var overdue=Ls.filter(function(l){var n=ltDaysUntil(l.followUpDate);return n!==null&&n<0;});
+  var dueToday=Ls.filter(function(l){return ltDaysUntil(l.followUpDate)===0;});
+  var due7=Ls.filter(function(l){var n=ltDaysUntil(l.followUpDate);return n!==null&&n>0&&n<=7;});
+  var noFu=Ls.filter(function(l){return !l.followUpDate;});
+  var sent=Ls.filter(function(l){return l.shared;});
+
+  // Lists: never-texted + stale (>21d) + due soon
+  function listSample(l){ var lt=ltLastTexted(l); return {name:l.name||('#'+l.id),category:l.category||'seller',region:l.region||'',records:l.amount||'',lastTexted:lt||'never',daysSinceTexted:daysSince(lt),due:l.dueDate||''}; }
+  var neverTexted=Cl.filter(function(l){return !ltLastTexted(l);});
+  var stale=Cl.filter(function(l){var d=daysSince(ltLastTexted(l));return d!==null&&d>=21;});
+  var listsDue=Cl.filter(function(l){var n=ltDaysUntil(l.dueDate);return n!==null&&n<=7;});
+
+  // Probate
+  var probSent=Pr.filter(function(p){return p.sentOn;}), probUnsent=Pr.filter(function(p){return !p.sentOn;});
+  var probOverdue=Pr.filter(function(p){var n=ltDaysUntil(p.followUpDate);return n!==null&&n<0;});
+
+  return {
+    generatedAt: today(),
+    leads: {
+      total: Ls.length, hot: hot.length, sent: sent.length, notSent: Ls.length-sent.length,
+      overdueFollowups: overdue.length, dueToday: dueToday.length, dueNext7: due7.length, noFollowupDate: noFu.length,
+      byState: stateTally(Ls,function(l){return l.location;}),
+      sampleHot: hot.slice(0,8).map(function(l){return {name:l.name||l.phone,location:l.location||'',jvStatus:l.jvStatus||'',followUp:l.followUpDate||'none'};}),
+      sampleOverdue: overdue.sort(function(a,b){return (a.followUpDate||'').localeCompare(b.followUpDate||'');}).slice(0,8).map(function(l){return {name:l.name||l.phone,location:l.location||'',followUp:l.followUpDate};})
+    },
+    tasks: { total: Ts.length, byStatus: tally(Ts,function(t){return t.jvStatus;}),
+      overdue: Ts.filter(function(t){var n=ltDaysUntil(t.followUpDate);return n!==null&&n<0;}).length },
+    lists: {
+      total: Cl.length,
+      byCategory: {realtor:ltCatCount('realtor'),wholesaler:ltCatCount('wholesaler'),seller:ltCatCount('seller'),buyer:ltCatCount('buyer')},
+      byRegion: tally(Cl,function(l){return (l.region||'').toUpperCase();}),
+      neverTexted: neverTexted.length, staleOver21d: stale.length, dueNext7: listsDue.length,
+      sampleNeverTexted: neverTexted.slice(0,8).map(listSample),
+      sampleStale: stale.sort(function(a,b){return (daysSince(ltLastTexted(b))||0)-(daysSince(ltLastTexted(a))||0);}).slice(0,8).map(listSample)
+    },
+    probate: {
+      total: Pr.length, sent: probSent.length, notSent: probUnsent.length, overdueFollowups: probOverdue.length,
+      byState: tally(Pr,function(p){return (p.state||'').toUpperCase();})
+    },
+    buyers: { total: Bu.length, hot: Bu.filter(function(b){return b.hot;}).length, byArea: tally(Bu,function(b){return b.area;}) },
+    deals: { total: Dp.length, byStatus: tally(Dp,function(p){return p.status;}) }
+  };
+}
+
+// Call the edge function. Ensures the same lazy tables the dashboard/Ask use are loaded first.
+function mgrCall(payload){
+  return askEnsureData().then(function(){
+    payload.digest = mgrBuildDigest();
+    return fetch(MANAGER_URL, {
+      method:'POST',
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY, 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function(r){ return r.json(); });
+  });
+}
+
+// ----- Dashboard proactive briefing -----
+function mgrRenderBriefing(force){
+  var host=document.getElementById('mgr-briefing-body'); if(!host) return;
+  if(mgrBriefingCache && !force){ host.innerHTML='<div class="mgr-answer">'+mgrMd(mgrBriefingCache.answer)+'</div><div class="mgr-muted" style="margin-top:8px">Briefing from '+esc(mgrBriefingCache.at)+' · <a href="#" onclick="mgrRenderBriefing(true);return false" style="color:#7c3aed">refresh</a></div>'; return; }
+  host.innerHTML='<div class="mgr-muted">✨ Reading your whole CRM and writing today’s briefing…</div>';
+  mgrCall({mode:'briefing'}).then(function(res){
+    var ans=(res&&res.answer)||'No briefing came back.';
+    mgrBriefingCache={answer:ans, at:new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})};
+    mgrRenderBriefing(false);
+  }).catch(function(){ host.innerHTML='<div class="mgr-muted">Couldn’t reach the Manager Agent. Check your connection and try refresh.</div>'; });
+}
+function mgrBriefingCardHTML(){
+  return '<div class="mgr-card">'
+    + '<div class="mgr-card-h"><div class="mgr-card-t">🧠 Manager Agent</div>'
+      + '<button class="mgr-btn" onclick="mgrRenderBriefing(true)">↻ New briefing</button></div>'
+    + '<div id="mgr-briefing-body" class="mgr-block"><div class="mgr-muted">Loading…</div></div>'
+  + '</div>';
+}
+// =================== end Manager Agent ===================
 
 function render(){
   // No active user: when auth is ON, always show the access-key login (never the legacy
