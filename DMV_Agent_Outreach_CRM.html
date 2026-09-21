@@ -6789,7 +6789,8 @@ function renderEditModal(){
           <div class="form-section"><div class="form-section-title">Contact Info</div>
             <div class="form-grid">
               <div class="form-field"><label class="form-label">Agent / Contact Name</label><input id="f-name" class="form-input" value="${esc(l.name)}" placeholder="Jane Smith"></div>
-              <div class="form-field"><label class="form-label">Phone / Email</label><input id="f-phone" class="form-input" value="${esc(l.phone)}" placeholder="(555) 555-5555"></div>
+              <div class="form-field"><label class="form-label">Phone</label><input id="f-phone" class="form-input" value="${esc(l.phone)}" placeholder="(555) 555-5555"></div>
+              <div class="form-field"><label class="form-label">Email</label><input id="f-email" type="email" class="form-input" value="${esc(l.contactEmail||l.lastEmailedTo||'')}" placeholder="seller-or-agent@email.com"><div class="field-hint">Auto-filled if an offer email was already sent.</div></div>
             </div>
           </div>
           <div class="form-section"><div class="form-section-title">Deal Numbers</div>
@@ -6988,6 +6989,7 @@ async function saveLead(){
   l.address=addr;l.name=document.getElementById('f-name').value.trim();
   var newPhone=document.getElementById('f-phone').value.trim();
   ghlClearIfPhoneChanged(l,newPhone); l.phone=newPhone;
+  var emEl=document.getElementById('f-email'); if(emEl) l.contactEmail=emEl.value.trim();
   l.offer=document.getElementById('f-offer').value.trim();l.arv=document.getElementById('f-arv').value.trim();
   l.marketingType=document.getElementById('f-mkt').value;l.status=document.getElementById('f-status').value;
   l.leadSource=document.getElementById('f-src').value;l.month=document.getElementById('f-month').value;
@@ -7750,6 +7752,7 @@ function openEditTask(id){
     +'<div class="form-section"><div class="form-section-title">Contact Info</div><div class="form-grid">'
     +'<div class="form-field"><label class="form-label">Name</label><input id="t-name" class="form-input" value="'+esc(l.name||'')+'" placeholder="Contact name"></div>'
     +'<div class="form-field"><label class="form-label">Phone</label><input id="t-phone" class="form-input" value="'+esc(l.phone||'')+'" placeholder="(555) 555-5555"></div>'
+    +'<div class="form-field"><label class="form-label">Email</label><input id="t-email" type="email" class="form-input" value="'+esc(l.contactEmail||l.lastEmailedTo||'')+'" placeholder="seller-or-agent@email.com"><div class="field-hint">Auto-filled if an offer email was already sent.</div></div>'
     +'</div></div>'
     +'<div class="form-section"><div class="form-section-title">Address &amp; Deal</div><div class="form-grid cols-3">'
     +'<div class="form-field"><label class="form-label">Address</label><input id="t-location" class="form-input" value="'+esc(l.location||'')+'" placeholder="123 Main St, City, ST 00000" oninput="checkJVDup(this.value,'+id+');toggleTaskZillowLink(this.value)"><div id="jv-dup-warn" class="dup-warning">Duplicate! Already exists: <span id="jv-dup-lnk" class="dup-link" onclick="openJVDup()"></span></div><div id="task-zillow-link-wrap" style="margin-top:6px;'+(l.location?'':'display:none;')+'"><a href="#" onclick="event.preventDefault();openTaskZillow('+id+');" style="color:var(--accent);font-weight:600;font-size:12px">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="#" onclick="event.preventDefault();openTaskRedfin('+id+');" style="color:var(--text3);font-size:12px">Try Redfin instead</a></div></div>'
@@ -7784,6 +7787,7 @@ async function saveEditTask(id){
   l.name = document.getElementById('t-name').value.trim();
   var newTPhone = document.getElementById('t-phone').value.trim();
   ghlClearIfPhoneChanged(l,newTPhone); l.phone = newTPhone;
+  var tEmailEl = document.getElementById('t-email'); if(tEmailEl) l.contactEmail = tEmailEl.value.trim();
   l.location = addr;
   l.askingPrice = document.getElementById('t-askingprice').value.trim();
   l.arv = document.getElementById('t-arv').value.trim();
@@ -7824,6 +7828,7 @@ function openAddTask(){
     +'<div class="form-section"><div class="form-section-title">Contact Info</div><div class="form-grid">'
     +'<div class="form-field"><label class="form-label">Name</label><input id="t-name" class="form-input" placeholder="Contact name"></div>'
     +'<div class="form-field"><label class="form-label">Phone</label><input id="t-phone" class="form-input" placeholder="(555) 555-5555"></div>'
+    +'<div class="form-field"><label class="form-label">Email</label><input id="t-email" type="email" class="form-input" placeholder="seller-or-agent@email.com"></div>'
     +'</div></div>'
     +'<div class="form-section"><div class="form-section-title">Address &amp; Deal</div><div class="form-grid cols-3">'
     +'<div class="form-field"><label class="form-label">Address</label><input id="t-location" class="form-input" placeholder="123 Main St, City, ST 00000" oninput="checkJVDup(this.value,null)"><div id="jv-dup-warn" class="dup-warning">Duplicate! Already exists: <span id="jv-dup-lnk" class="dup-link" onclick="openJVDup()"></span></div></div>'
@@ -7889,7 +7894,8 @@ function saveNewTask(){
   var phone = document.getElementById('t-phone').value.trim();
   var notes = document.getElementById('t-notes').value.trim();
   var location = document.getElementById('t-location').value.trim();
-  if(!name && !phone && !notes){showToast('Please fill in at least one field','error');return;}
+  var email = (document.getElementById('t-email')||{}).value ? document.getElementById('t-email').value.trim() : '';
+  if(!name && !phone && !notes && !email){showToast('Please fill in at least one field','error');return;}
   var dup = findJVDup(location, null);
   if(dup && !confirm('Duplicate address found:\n"'+dup.location+'"\n\nSave anyway?')) return;
   var maxId = jvLeads.length ? Math.max.apply(null, jvLeads.map(function(l){return l.id;})) : 0;
@@ -7897,6 +7903,7 @@ function saveNewTask(){
     id: ++maxId,
     name: name,
     phone: phone,
+    contactEmail: email,
     score: document.getElementById('t-score').value,
     notes: notes,
     fbLink: '',
