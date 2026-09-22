@@ -8578,17 +8578,23 @@ function sendEmailOffer(kind, id){
   if(!to){ showToast('Enter the contact’s email first', 'error'); var box=document.getElementById('email-contact-addr'); if(box) box.focus(); return; }
   var from = (document.getElementById('email-from-select')||{}).value||'';
   var subject = 'Offer regarding your listing' + (ctx.address?(' at '+ctx.address):'');
-  // mailto: opens the desktop mail app (Mail / Outlook), pre-filled. No browser tab.
-  var mailto = 'mailto:' + encodeURIComponent(to)
-    + '?subject=' + encodeURIComponent(subject)
+  // Open Gmail web compose (NOT a mailto: to the desktop app). Gmail auto-appends the
+  // account's saved signature to every new compose — so Micky's MESTATE signature shows up
+  // on the offer. A mailto: opens Apple Mail/Outlook, which don't have the Gmail signature,
+  // which is why it was missing before.
+  var url = 'https://mail.google.com/mail/'
+    + (from?('?authuser='+encodeURIComponent(from)+'&'):'?')
+    + 'view=cm&fs=1&tf=1'
+    + '&to=' + encodeURIComponent(to)
+    + '&su=' + encodeURIComponent(subject)
     + '&body=' + encodeURIComponent(buildOfferBody(ctx.address, ctx.price));
-  window.location.href = mailto;
-  // Record who sent it (from-account is record-only; the mail app controls the real sender).
+  window.open(url, '_blank');
+  // Record who sent it (from-account is record-only; Gmail controls the real sender).
   var rec = ctx.rec;
   if(!rec.activityLog) rec.activityLog=[];
   rec.activityLog.push({type:'Email Offer', by:from||((currentUser&&currentUser.name)||'Team'), at:new Date().toISOString(), note:'Offer emailed to '+to+(from?(' (from '+from+')'):'')});
   saveContactEmailOnRecord(ctx, to);
-  showToast('Offer opened in your mail app for '+to+' — email saved to contact', 'success');
+  showToast('Offer opened in Gmail for '+to+' — your signature is added automatically', 'success');
 }
 function followUpEmail(kind, id){
   var ctx = emailRecordFor(kind, id); if(!ctx) return;
