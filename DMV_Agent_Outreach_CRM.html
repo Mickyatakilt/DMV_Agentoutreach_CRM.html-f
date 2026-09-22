@@ -4800,8 +4800,18 @@ function askParse(q){
   for(var c in ASK_ST){ for(var i=0;i<ASK_ST[c].length;i++){ if(new RegExp('\\b'+ASK_ST[c][i].replace(/ /g,'\\s+')+'\\b').test(t)){ s.states.push(c); break; } } }
   // flags
   if(/\bhot\b/.test(t)||/\ud83d\udd25/.test(q)) s.hot=true;
-  if(/\bnot sent\b|\bunsent\b|\bhaven'?t sent\b|\bnever sent\b|\bnot yet sent\b|\bno sent\b/.test(t)) s.sent='no';
-  else if(/\bsent\b/.test(t)) s.sent='yes';
+  // "sent" == pushed/contacted. Treat texted/contacted/messaged/reached out as synonyms so
+  // "probate we haven't texted", "leads not contacted", etc. filter on the same sent/unsent flag.
+  // Skip for lists-only queries: there "texted" means last-texted date (handled by askRange), not a sent flag.
+  var listsOnly = s.sections && s.sections.length===1 && s.sections[0]==='lists';
+  if(listsOnly){
+    if(/\bnot sent\b|\bunsent\b|\bnever sent\b/.test(t)) s.sent='no';
+    else if(/\bsent\b/.test(t)) s.sent='yes';
+  } else {
+    var CONTACTED='(sent|texted|contacted|messaged|reached out|reached)';
+    if(new RegExp('\\bnot (yet )?'+CONTACTED+'\\b|\\bunsent\\b|\\bun-?texted\\b|\\bnever '+CONTACTED+'\\b|\\bhaven\'?t (been )?'+CONTACTED+'\\b|\\bhasn\'?t (been )?'+CONTACTED+'\\b|\\bno '+CONTACTED+'\\b|\\bwithout (being )?'+CONTACTED+'\\b').test(t)) s.sent='no';
+    else if(new RegExp('\\balready '+CONTACTED+'\\b|\\b'+CONTACTED+'\\b').test(t)) s.sent='yes';
+  }
   if(/\boverdue\b|\bpast due\b/.test(t)) s.due='overdue';
   else if(/\bdue today\b/.test(t)) s.due='today';
   else if((/\bthis week\b/.test(t)||/\bweek\b/.test(t))&&/\bdue\b/.test(t)) s.due='week';
@@ -4929,16 +4939,24 @@ function askRun(pref){
   if(!q){ res.innerHTML=askWelcomeHTML(); return; }
   res.innerHTML='<div class="ask-loading">\u2728 Thinking\u2026</div>';
   askEnsureData().then(function(){
-    // Instant local record matches (clickable) render immediately; Claude's real answer streams in above.
-    var localHTML='';
-    try { var s=askParse(q); var g=askExec(s); localHTML=askRenderResults(g,s,q); }
-    catch(e){ localHTML=''; }
+    // Instant local record matches (clickable) render immediately; the real answer streams in above.
+    // The SAME deterministic search results are sent to the model as GROUND TRUTH so its
+    // counts/lists exactly match what the CRM shows (no more guessing from a summary).
+    var localHTML='', matched=null;
+    try {
+      var s=askParse(q); var g=askExec(s); localHTML=askRenderResults(g,s,q);
+      var order=['leads','tasks','lists','probate','buyers','deals'], mt={};
+      order.forEach(function(k){ var arr=g[k]||[]; mt[k]={count:arr.length, items:arr.slice(0,25).map(function(r){return {title:r.title,detail:r.sub||'',date:r.date||''};})}; });
+      mt.totalMatches=order.reduce(function(a,k){return a+(g[k]?g[k].length:0);},0);
+      matched={query:q, results:mt};
+    }
+    catch(e){ localHTML=''; matched=null; }
     res.innerHTML=''
       + '<div class="mgr-ask-answer"><div class="mgr-ask-lbl">\ud83e\udde0 Manager</div>'
         + '<div id="ask-mgr-body" class="mgr-answer"><span class="mgr-muted">Analyzing your CRM\u2026</span></div></div>'
       + (localHTML? '<div style="margin-top:14px"><div class="mgr-ask-lbl" style="color:var(--text3,#6b7280)">\ud83d\udcc1 Matching records</div>'+localHTML+'</div>' : '');
-    // Ask Claude for the real answer.
-    mgrCall({mode:'ask', question:q, history:mgrChatHistory}).then(function(r){
+    // Ask the model for the real answer, grounded in the exact matched records.
+    mgrCall({mode:'ask', question:q, matched:matched, history:mgrChatHistory}).then(function(r){
       var ans=(r&&r.answer)||'No answer came back.';
       var b=document.getElementById('ask-mgr-body'); if(b) b.innerHTML=mgrMd(ans);
       mgrChatHistory.push({role:'user',content:q},{role:'assistant',content:ans});
@@ -5033,8 +5051,13 @@ function mgrBuildDigest(){
   function tally(arr,fn){ var m={}; arr.forEach(function(x){ var k=fn(x); if(k==null||k==='')return; k=String(k); m[k]=(m[k]||0)+1; }); return m; }
   function stateTally(arr,fn){ var m={}; arr.forEach(function(x){ (askStateOf(fn(x))||[]).forEach(function(c){ m[c]=(m[c]||0)+1; }); }); return m; }
 
-  // Leads
-  var hot=Ls.filter(function(l){return String(l.score||'').toLowerCase()==='hot';});
+  // Leads. NOTE: "hot" mirrors the CRM's own canonical count (line ~6259):
+  // hot leads in Outreach (excluding D4D Auto-Scan) PLUS hot Tasks (jvLeads).
+  var isHot=function(x){ return String(x.score||'').toLowerCase()==='hot'; };
+  var isD4D=function(l){ return l.leadSource==='D4D Auto-Scan'; };
+  var hotLeads=Ls.filter(function(l){ return isHot(l)&&!isD4D(l); });
+  var hotTasks=Ts.filter(function(t){ return isHot(t); });
+  var hot=hotLeads.concat(hotTasks);   // combined = the number Mike sees in the CRM
   var overdue=Ls.filter(function(l){var n=ltDaysUntil(l.followUpDate);return n!==null&&n<0;});
   var dueToday=Ls.filter(function(l){return ltDaysUntil(l.followUpDate)===0;});
   var due7=Ls.filter(function(l){var n=ltDaysUntil(l.followUpDate);return n!==null&&n>0&&n<=7;});
@@ -5054,13 +5077,15 @@ function mgrBuildDigest(){
   return {
     generatedAt: today(),
     leads: {
-      total: Ls.length, hot: hot.length, sent: sent.length, notSent: Ls.length-sent.length,
+      total: Ls.length,
+      hot: hot.length, hotInOutreach: hotLeads.length, hotInTasks: hotTasks.length,
+      sent: sent.length, notSent: Ls.length-sent.length,
       overdueFollowups: overdue.length, dueToday: dueToday.length, dueNext7: due7.length, noFollowupDate: noFu.length,
       byState: stateTally(Ls,function(l){return l.location;}),
-      sampleHot: hot.slice(0,8).map(function(l){return {name:l.name||l.phone,location:l.location||'',jvStatus:l.jvStatus||'',followUp:l.followUpDate||'none'};}),
+      sampleHot: hot.slice(0,15).map(function(l){return {name:l.name||l.phone,location:l.location||'',jvStatus:l.jvStatus||'',followUp:l.followUpDate||'none'};}),
       sampleOverdue: overdue.sort(function(a,b){return (a.followUpDate||'').localeCompare(b.followUpDate||'');}).slice(0,8).map(function(l){return {name:l.name||l.phone,location:l.location||'',followUp:l.followUpDate};})
     },
-    tasks: { total: Ts.length, byStatus: tally(Ts,function(t){return t.jvStatus;}),
+    tasks: { total: Ts.length, hot: hotTasks.length, byStatus: tally(Ts,function(t){return t.jvStatus;}),
       overdue: Ts.filter(function(t){var n=ltDaysUntil(t.followUpDate);return n!==null&&n<0;}).length },
     lists: {
       total: Cl.length,
@@ -5071,8 +5096,10 @@ function mgrBuildDigest(){
       sampleStale: stale.sort(function(a,b){return (daysSince(ltLastTexted(b))||0)-(daysSince(ltLastTexted(a))||0);}).slice(0,8).map(listSample)
     },
     probate: {
+      // "sent" (sentOn) = pushed/contacted via the GHL marketing tag. "notSent" = never contacted.
       total: Pr.length, sent: probSent.length, notSent: probUnsent.length, overdueFollowups: probOverdue.length,
-      byState: tally(Pr,function(p){return (p.state||'').toUpperCase();})
+      byState: tally(Pr,function(p){return (p.state||'').toUpperCase();}),
+      sampleNotSent: probUnsent.slice(0,10).map(function(p){return {name:p.decedentName||p.prName||('#'+p.id),address:p.propertyAddress||'',state:p.state||'',county:p.county||''};})
     },
     buyers: { total: Bu.length, hot: Bu.filter(function(b){return b.hot;}).length, byArea: tally(Bu,function(b){return b.area;}) },
     deals: { total: Dp.length, byStatus: tally(Dp,function(p){return p.status;}) }
