@@ -8540,7 +8540,7 @@ function emailOfferSectionHTML(l, kind){
     +   '</div>'
     +   '<div style="display:flex;gap:8px;flex-wrap:wrap">'
     +     '<button class="btn btn-primary btn-sm" onclick="sendEmailOffer(\''+kind+'\','+l.id+')">&#9993;&#65039; Send Email Offer</button>'
-    +     '<button class="btn btn-secondary btn-sm" onclick="followUpEmail(\''+kind+'\','+l.id+')">&#128269; Follow Up Email</button>'
+    +     '<button class="btn btn-secondary btn-sm" title="Searches your Gmail for the existing thread — by contact email if you have one, otherwise by the property address" onclick="followUpEmail(\''+kind+'\','+l.id+')">&#128269; Follow Up Email</button>'
     +   '</div>'
     +   (hasTeam?'':'<div style="font-size:11px;color:var(--text4)">Tip: add your teammates under &ldquo;Manage team&rdquo; so you can log who the offer was sent from.</div>')
     + '</div></div>';
@@ -8592,16 +8592,30 @@ function sendEmailOffer(kind, id){
 }
 function followUpEmail(kind, id){
   var ctx = emailRecordFor(kind, id); if(!ctx) return;
-  var to = (((document.getElementById('email-contact-addr')||{}).value||'')||ctx.rec.contactEmail||ctx.rec.lastEmailedTo||'').trim();
-  if(!to){ showToast('Enter the contact’s email to search your inbox', 'error'); var box=document.getElementById('email-contact-addr'); if(box) box.focus(); return; }
-  // Save it too, so a typed-in email is remembered even on a follow-up.
-  saveContactEmailOnRecord(ctx, to);
   var from = (document.getElementById('email-from-select')||{}).value||'';
+  var to = (((document.getElementById('email-contact-addr')||{}).value||'')||ctx.rec.contactEmail||ctx.rec.lastEmailedTo||'').trim();
+  // What we search Gmail for. Prefer the contact's email (exact thread), but when we don't
+  // have one, fall back to the property ADDRESS — every offer we send puts the address in
+  // the subject ("...listing at <address>") and body ("Address: <address>"), so an address
+  // search still surfaces the existing thread. Quoted so Gmail matches the phrase.
+  var query, note;
+  if(to){
+    saveContactEmailOnRecord(ctx, to); // remember a typed-in email even on a follow-up
+    query = to;
+    note = 'Opening Gmail search for '+to;
+  } else if((ctx.address||'').trim()){
+    query = '"'+ctx.address.trim()+'"';
+    note = 'No email on file — searching Gmail by address: '+ctx.address.trim();
+  } else {
+    showToast('Enter the contact’s email (or add an address) to search your inbox', 'error');
+    var box=document.getElementById('email-contact-addr'); if(box) box.focus();
+    return;
+  }
   var url = 'https://mail.google.com/mail/'
     + (from?('?authuser='+encodeURIComponent(from)):'')
-    + '#search/' + encodeURIComponent(to);
+    + '#search/' + encodeURIComponent(query);
   window.open(url, '_blank');
-  showToast('Opening Gmail search for '+to, 'success');
+  showToast(note, 'success');
 }
 // UPDATE 2: "Sent to <Name> by Email on <date>" indicator for the detail header.
 // Looks up the recipient's name from the saved team members by email; falls back to the email.
