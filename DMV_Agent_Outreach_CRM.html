@@ -804,6 +804,35 @@ function scheduleFromSms(kind, id){
   var draft = inp ? (inp.value||'').trim() : '';
   openScheduleSmsModal(kind, id, draft);
 }
+// Authenticated call to the ghl-conversation edge function that survives an expired session
+// token. The function has verify_jwt on, so a stale ~1h access_token makes the gateway reject
+// the request with {"message":"Invalid JWT"} before the function even runs. Mirror the other
+// authed helpers: proactively refresh a near-expiry token, and if it still comes back 401,
+// force-refresh once and retry. (Fixes "Invalid JWT" on every SMS message.)
+async function ghlConvoFetch(bodyObj){
+  if(AUTH_ENABLED && authSession){ try{ await authRefreshIfNeeded(); }catch(e){} }
+  function doFetch(){
+    return fetch(GHL_CONVO_URL, {
+      method:'POST',
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+      body: JSON.stringify(bodyObj)
+    });
+  }
+  var r = await doFetch();
+  if(r.status===401 && AUTH_ENABLED && authSession){
+    // Token was rejected by the gateway. Force one fresh token and retry.
+    if(await authForceRefresh()){
+      r = await doFetch();
+      // Still 401 after a brand-new token = the session itself is dead (refresh token
+      // revoked/expired). Nothing the SMS panel can do — send the user to re-login
+      // instead of ever surfacing a raw "Invalid JWT". This is the only unrecoverable case.
+      if(r.status===401) bounceToLogin();
+    } else {
+      bounceToLogin(); // couldn't even refresh — session is gone
+    }
+  }
+  return r;
+}
 async function sendGhlSms(contactId){
   var inp = document.getElementById('ghl-sms-input');
   var btn = document.getElementById('ghl-sms-send');
@@ -814,11 +843,7 @@ async function sendGhlSms(contactId){
   if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
   if(st){ st.style.color='var(--text4)'; st.textContent='Sending…'; }
   try {
-    var r = await fetch(GHL_CONVO_URL, {
-      method:'POST',
-      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
-      body: JSON.stringify({ action:'send', contactId: contactId, message: msg })
-    });
+    var r = await ghlConvoFetch({ action:'send', contactId: contactId, message: msg });
     var d = await r.json().catch(function(){ return {}; });
     if(d && d.ok){
       inp.value = '';
@@ -858,11 +883,7 @@ async function loadGhlSms(contactId){
   if(!body) return;
   body.innerHTML = '<div style="color:var(--text4);font-size:12px;padding:8px 0">Loading messages&hellip;</div>';
   try {
-    var r = await fetch(GHL_CONVO_URL, {
-      method:'POST',
-      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
-      body: JSON.stringify({ contactId: contactId })
-    });
+    var r = await ghlConvoFetch({ contactId: contactId });
     var d = await r.json().catch(function(){ return {}; });
     if(!d || !d.ok){
       var msg = (d && d.message) || (d && d.stage ? ('GHL '+d.stage+' error ('+d.status+')') : 'Could not load messages');
