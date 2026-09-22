@@ -4742,7 +4742,7 @@ var ASK_STOP={};
 ('show all me my the a an of for with without list lists tracking buyer buyers probate task tasks jv deal deals '
 +'property properties dispo listing listings lead leads seller sellers outreach contact contacts prospect prospects '
 +'how many much number count total hot sent unsent yet never due overdue past late today yesterday week weeks month '
-+'months this last next follow followup follow-up up date dates no none dc washington district columbia md maryland '
++'months this last next follow followup follow-up up ups date dates no none dc washington district columbia md maryland '
 +'va virginia nc north sc south carolina tx texas ga georgia ky kentucky wholesaler wholesalers wholesale realtor '
 +'realtors agent agents pulled scanned added imported texted and in on to from are is which what who whose that have '
 +'has had i we our us 7 30 days day new missing show all get find give any there do does did doing done have '
@@ -4812,9 +4812,12 @@ function askParse(q){
     if(new RegExp('\\bnot (yet )?'+CONTACTED+'\\b|\\bunsent\\b|\\bun-?texted\\b|\\bnever '+CONTACTED+'\\b|\\bhaven\'?t (been )?'+CONTACTED+'\\b|\\bhasn\'?t (been )?'+CONTACTED+'\\b|\\bno '+CONTACTED+'\\b|\\bwithout (being )?'+CONTACTED+'\\b').test(t)) s.sent='no';
     else if(new RegExp('\\balready '+CONTACTED+'\\b|\\b'+CONTACTED+'\\b').test(t)) s.sent='yes';
   }
+  // Follow-up context: "follow ups today", "anything today", "what's due" all mean the follow-up date.
+  // A bare "today"/"this week" counts as a due filter when the query is about follow-ups or asks how many.
+  var fuCtx=/\bfollow[- ]?ups?\b|\bfollowups?\b|\bdue\b/.test(t) || s.count;
   if(/\boverdue\b|\bpast due\b/.test(t)) s.due='overdue';
-  else if(/\bdue today\b/.test(t)) s.due='today';
-  else if((/\bthis week\b/.test(t)||/\bweek\b/.test(t))&&/\bdue\b/.test(t)) s.due='week';
+  else if(/\bdue today\b/.test(t) || (fuCtx&&/\btoday\b/.test(t))) s.due='today';
+  else if(/\bdue this week\b/.test(t) || (fuCtx&&/\bthis week\b/.test(t)) || (/\bweek\b/.test(t)&&/\bdue\b/.test(t))) s.due='week';
   else if(/\bfollow[- ]?up(s)? due\b|\bdue\b/.test(t)) s.due='due';
   if(/\bno follow[- ]?up\b|\bwithout (a )?follow[- ]?up\b|\bmissing (a )?follow[- ]?up\b|\bno (follow[- ]?up )?date\b|\bno date\b/.test(t)) s.noFollowup=true;
   s.range=askRange(t);

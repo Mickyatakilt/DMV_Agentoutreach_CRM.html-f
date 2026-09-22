@@ -2,7 +2,7 @@
    DATA SAFETY: Supabase (and any API) calls are NEVER cached — always live network.
    Only the static app shell (HTML + icons + manifest) is cached, cache-first.
    Bump VERSION on every deploy to bust the old shell cache. */
-const VERSION = 'mestate-crm-v7';
+const VERSION = 'mestate-crm-v8';
 const SHELL = [
   './DMV_Agent_Outreach_CRM.html',
   './manifest.webmanifest',
@@ -47,17 +47,15 @@ self.addEventListener('fetch', (e) => {
     return; // fall through to the network (default browser fetch)
   }
 
-  // App shell: cache-first, then network, and refresh the cache copy in the background.
+  // App shell: NETWORK-FIRST so a freshly deployed build always loads when online
+  // (updates land immediately — no more stale cached HTML). Falls back to cache offline.
   e.respondWith(
-    caches.match(req).then((cached) => {
-      const net = fetch(req).then((res) => {
-        if (res && res.status === 200 && res.type === 'basic') {
-          const copy = res.clone();
-          caches.open(VERSION).then((c) => c.put(req, copy));
-        }
-        return res;
-      }).catch(() => cached);
-      return cached || net;
-    })
+    fetch(req).then((res) => {
+      if (res && res.status === 200 && res.type === 'basic') {
+        const copy = res.clone();
+        caches.open(VERSION).then((c) => c.put(req, copy));
+      }
+      return res;
+    }).catch(() => caches.match(req))
   );
 });
