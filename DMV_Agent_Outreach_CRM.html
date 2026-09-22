@@ -4936,38 +4936,68 @@ function askRun(pref){
   if(pref!=null) inp.value=pref;
   var q=(inp.value||'').trim();
   var res=document.getElementById('ask-results'); if(!res) return;
-  if(!q){ res.innerHTML=askWelcomeHTML(); return; }
-  res.innerHTML='<div class="ask-loading">\u2728 Thinking\u2026</div>';
+  if(!q){ mgrRenderThread(); return; }
+  inp.value='';                                   // clear so the box is ready for a follow-up
+  mgrThread.push({role:'user', text:q});          // show the question in the thread
+  var aTurn={role:'assistant', state:'loading'};  // placeholder answer, filled when it returns
+  mgrThread.push(aTurn);
+  mgrRenderThread();
   askEnsureData().then(function(){
-    // Instant local record matches (clickable) render immediately; the real answer streams in above.
-    // The SAME deterministic search results are sent to the model as GROUND TRUTH so its
-    // counts/lists exactly match what the CRM shows (no more guessing from a summary).
-    var localHTML='', matched=null;
+    // The SAME deterministic local search feeds the model as GROUND TRUTH, so counts/lists
+    // match the CRM exactly. It also becomes the collapsible "matching records" under the answer.
+    var localHTML='', recCount=0, matched=null;
     try {
       var s=askParse(q); var g=askExec(s); localHTML=askRenderResults(g,s,q);
       var order=['leads','tasks','lists','probate','buyers','deals'], mt={};
       order.forEach(function(k){ var arr=g[k]||[]; mt[k]={count:arr.length, items:arr.slice(0,25).map(function(r){return {title:r.title,detail:r.sub||'',date:r.date||''};})}; });
       mt.totalMatches=order.reduce(function(a,k){return a+(g[k]?g[k].length:0);},0);
-      matched={query:q, results:mt};
+      recCount=mt.totalMatches; matched={query:q, results:mt};
     }
     catch(e){ localHTML=''; matched=null; }
-    res.innerHTML=''
-      + '<div class="mgr-ask-answer"><div class="mgr-ask-lbl">\ud83e\udde0 Manager</div>'
-        + '<div id="ask-mgr-body" class="mgr-answer"><span class="mgr-muted">Analyzing your CRM\u2026</span></div></div>'
-      + (localHTML? '<div style="margin-top:14px"><div class="mgr-ask-lbl" style="color:var(--text3,#6b7280)">\ud83d\udcc1 Matching records</div>'+localHTML+'</div>' : '');
-    // Ask the model for the real answer, grounded in the exact matched records.
+    // History carries the topic so follow-ups ("which of those are in MD?") stay in context.
     mgrCall({mode:'ask', question:q, matched:matched, history:mgrChatHistory}).then(function(r){
-      // If the agent is unsure, it returns a clarifying question with options + an Other box.
-      if(r && r.type==='clarify' && r.options && r.options.length){ mgrRenderClarify(r.question, r.options, q); return; }
+      if(r && r.type==='clarify' && r.options && r.options.length){
+        aTurn.state='clarify'; aTurn.question=r.question; aTurn.options=r.options; aTurn.origQ=q;
+        mgrRenderThread(); return;
+      }
       var ans=(r&&r.answer)||'No answer came back.';
-      var b=document.getElementById('ask-mgr-body'); if(b) b.innerHTML=mgrMd(ans);
+      aTurn.state='answer'; aTurn.html=mgrMd(ans); aTurn.recordsHTML=localHTML||''; aTurn.recCount=recCount;
+      mgrRenderThread();
       mgrChatHistory.push({role:'user',content:q},{role:'assistant',content:ans});
       if(mgrChatHistory.length>8) mgrChatHistory=mgrChatHistory.slice(-8);
     }).catch(function(){
-      var b=document.getElementById('ask-mgr-body'); if(b) b.innerHTML='<span class="mgr-muted">Couldn\u2019t reach the Manager Agent just now \u2014 the matching records above are still accurate.</span>';
+      aTurn.state='error'; aTurn.html='Couldn\u2019t reach the Manager Agent just now \u2014 try again.'; mgrRenderThread();
     });
   });
 }
+// Render the whole conversation. Only the LAST turn's clarify options are interactive.
+function mgrRenderThread(){
+  var res=document.getElementById('ask-results'); if(!res) return;
+  if(!mgrThread.length){ res.innerHTML=askWelcomeHTML(); return; }
+  var last=mgrThread.length-1;
+  res.innerHTML=mgrThread.map(function(t,idx){
+    if(t.role==='user') return '<div class="mgr-turn mgr-turn-u"><div class="mgr-bubble-u">'+esc(t.text)+'</div></div>';
+    var inner='';
+    if(t.state==='loading') inner='<span class="mgr-muted">Analyzing your CRM\u2026</span>';
+    else if(t.state==='error') inner='<span class="mgr-muted">'+esc(t.html||'')+'</span>';
+    else if(t.state==='clarify'){
+      if(idx===last){
+        var opts=(t.options||[]).map(function(o,i){return '<button class="mgr-opt" onclick="mgrClarifyPick('+i+')">'+esc(o)+'</button>';}).join('');
+        inner='<div class="mgr-clarify"><div class="mgr-clarify-q">\ud83e\udd14 '+esc(t.question||'Which did you mean?')+'</div>'
+          +'<div class="mgr-opts">'+opts+'</div>'
+          +'<div class="mgr-other"><input id="mgr-other-in" class="mgr-other-in" type="text" placeholder="Other\u2026 type what you\u2019re looking for" onkeydown="if(event.key===\'Enter\')mgrClarifyOther()"><button class="mgr-opt mgr-opt-go" onclick="mgrClarifyOther()">Find</button></div></div>';
+      } else {
+        inner='<div class="mgr-clarify-q" style="opacity:.7">\ud83e\udd14 '+esc(t.question||'')+'</div>';
+      }
+    } else {
+      inner=t.html||'';
+      if(t.recordsHTML) inner+='<details class="mgr-recs"><summary>\ud83d\udcc1 '+(t.recCount||0)+' matching record'+((t.recCount===1)?'':'s')+'</summary>'+t.recordsHTML+'</details>';
+    }
+    return '<div class="mgr-turn"><div class="mgr-ask-lbl">\ud83e\udde0 Manager</div><div class="mgr-answer">'+inner+'</div></div>';
+  }).join('');
+  res.scrollTop=res.scrollHeight;
+}
+function mgrNewTopic(){ mgrThread=[]; mgrChatHistory=[]; var inp=document.getElementById('ask-input'); if(inp){ inp.value=''; } mgrRenderThread(); if(inp) inp.focus(); }
 function askMount(){
   var root=document.getElementById('ask-root'); if(!root||root.getAttribute('data-mounted')==='1') return;
   root.setAttribute('data-mounted','1');
@@ -4975,15 +5005,16 @@ function askMount(){
     '<button id="ask-fab" class="ask-fab" onclick="askToggle(true)" title="Ask AI about your CRM"><span class="ask-fab-ic">\u2728</span><span class="ask-fab-tx">Ask AI</span></button>'
     +'<div id="ask-overlay" class="ask-overlay" onclick="askOverlayClick(event)">'
       +'<div class="ask-panel">'
-        +'<div class="ask-head"><span class="ask-title">\u2728 Ask AI <small>your CRM, in plain English</small></span><button class="ask-x" onclick="askToggle(false)">\u2715</button></div>'
-        +'<div class="ask-searchbar"><input id="ask-input" class="ask-input" type="text" placeholder="Ask anything\u2026 e.g. show all DC buyers" onkeydown="if(event.key===\'Enter\')askRun()"><button class="ask-go" onclick="askRun()">Ask</button></div>'
+        +'<div class="ask-head"><span class="ask-title">\u2728 Ask AI <small>your CRM, in plain English</small></span>'
+          +'<span style="display:flex;gap:8px;align-items:center"><button class="mgr-newtopic" onclick="mgrNewTopic()" title="Start a new conversation">\u21ba New topic</button><button class="ask-x" onclick="askToggle(false)">\u2715</button></span></div>'
+        +'<div class="ask-searchbar"><input id="ask-input" class="ask-input" type="text" placeholder="Ask anything\u2026 then ask follow-ups" onkeydown="if(event.key===\'Enter\')askRun()"><button class="ask-go" onclick="askRun()">Ask</button></div>'
         +'<div id="ask-results" class="ask-results"></div>'
       +'</div>'
     +'</div>';
 }
 function askToggle(open){
   var ov=document.getElementById('ask-overlay'); if(!ov) return;
-  if(open){ ov.classList.add('open'); var r=document.getElementById('ask-results'); if(r&&!r.innerHTML.trim()) r.innerHTML=askWelcomeHTML(); askEnsureData(); setTimeout(function(){ var i=document.getElementById('ask-input'); if(i) i.focus(); },50); }
+  if(open){ ov.classList.add('open'); mgrInjectCSS(); mgrRenderThread(); askEnsureData(); setTimeout(function(){ var i=document.getElementById('ask-input'); if(i) i.focus(); },50); }
   else ov.classList.remove('open');
 }
 function askOverlayClick(e){ if(e.target&&e.target.id==='ask-overlay') askToggle(false); }
@@ -5001,7 +5032,8 @@ function askOpen(kind,id){
 // Powers: (1) real answers in Ask AI, (2) the proactive Dashboard briefing.
 var MANAGER_URL = SUPABASE_URL + '/functions/v1/manager-agent';
 var mgrBriefingCache = null;      // {answer, at} — briefing is cached per session to avoid re-spending
-var mgrChatHistory = [];          // rolling [{role,content}] for Ask AI follow-ups
+var mgrChatHistory = [];          // rolling [{role,content}] sent to the model for context
+var mgrThread = [];               // visible conversation: [{role:'user',text} | {role:'assistant',state,...}]
 
 // Tiny, safe markdown -> HTML for Claude's answers (bold, bullets, headers, line breaks).
 function mgrMd(t){
@@ -5048,7 +5080,16 @@ function mgrInjectCSS(){
    +'.mgr-other-in{flex:1;font-size:16px;border:1px solid var(--border,#d1d5db);border-radius:10px;padding:10px 12px;background:var(--card,#fff);color:var(--text1,#111)}'
    +'.mgr-opt-go{width:auto;white-space:nowrap;background:#7c3aed;color:#fff;border-color:#7c3aed}'
    +'.mgr-opt-go:hover{background:#6d28d9}'
-   +'@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .mgr-opt{background:#1e1b3a;color:#ddd6fe;border-color:#4c3f7a}:root:not([data-theme="light"]) .mgr-opt:hover{background:#2a2450}}';
+   +'@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .mgr-opt{background:#1e1b3a;color:#ddd6fe;border-color:#4c3f7a}:root:not([data-theme="light"]) .mgr-opt:hover{background:#2a2450}}'
+   +'.mgr-turn{margin:0 0 16px}'
+   +'.mgr-turn-u{display:flex;justify-content:flex-end}'
+   +'.mgr-bubble-u{display:inline-block;max-width:88%;background:#7c3aed;color:#fff;border-radius:14px 14px 4px 14px;padding:8px 13px;font-size:13.5px;font-weight:600;line-height:1.4}'
+   +'.mgr-recs{margin-top:10px;border-top:1px dashed var(--border,#e5e7eb);padding-top:8px}'
+   +'.mgr-recs>summary{cursor:pointer;font-size:12px;font-weight:700;color:#7c3aed;list-style:none;outline:none}'
+   +'.mgr-recs>summary::-webkit-details-marker{display:none}'
+   +'.mgr-recs[open]>summary{margin-bottom:8px}'
+   +'.mgr-newtopic{font-size:12px;font-weight:700;border:1px solid var(--border,#d8b4fe);background:transparent;color:#7c3aed;border-radius:8px;padding:4px 9px;cursor:pointer}'
+   +'.mgr-newtopic:hover{background:#f5f3ff}';
   document.head.appendChild(st);
 }
 
@@ -5129,22 +5170,10 @@ function mgrCall(payload){
   });
 }
 
-// ----- Clarify flow: when the agent is unsure, show a multiple-choice question + an "Other" box -----
-var mgrClarifyCtx=null;
-function mgrRenderClarify(question, options, origQ){
-  mgrClarifyCtx={q:origQ, options:(options||[]).slice(0,4)};
-  var b=document.getElementById('ask-mgr-body'); if(!b) return;
-  var opts=mgrClarifyCtx.options.map(function(o,i){ return '<button class="mgr-opt" onclick="mgrClarifyPick('+i+')">'+esc(o)+'</button>'; }).join('');
-  b.innerHTML='<div class="mgr-clarify">'
-    +'<div class="mgr-clarify-q">🤔 '+esc(question||'Which did you mean?')+'</div>'
-    +'<div class="mgr-opts">'+opts+'</div>'
-    +'<div class="mgr-other"><input id="mgr-other-in" class="mgr-other-in" type="text" placeholder="Other… type what you’re looking for" onkeydown="if(event.key===\'Enter\')mgrClarifyOther()"><button class="mgr-opt mgr-opt-go" onclick="mgrClarifyOther()">Find</button></div>'
-  +'</div>';
-  var oi=document.getElementById('mgr-other-in'); // don't steal focus on mobile, but ready on desktop
-  if(oi && window.matchMedia && window.matchMedia('(min-width:768px)').matches){ /* leave unfocused so option buttons read first */ }
-}
-function mgrClarifyPick(i){ var c=mgrClarifyCtx; if(!c||!c.options[i]) return; askRun(c.q+' — '+c.options[i]); }
-function mgrClarifyOther(){ var el=document.getElementById('mgr-other-in'); var v=el&&el.value.trim(); if(!v) return; var c=mgrClarifyCtx; askRun((c&&c.q?c.q+' — ':'')+v); }
+// ----- Clarify flow: the last assistant turn holds the question/options; picking re-asks -----
+function mgrLastClarify(){ var t=mgrThread[mgrThread.length-1]; return (t&&t.role==='assistant'&&t.state==='clarify')?t:null; }
+function mgrClarifyPick(i){ var t=mgrLastClarify(); if(!t) return; var o=(t.options||[])[i]; if(o==null) return; askRun(t.origQ+' — '+o); }
+function mgrClarifyOther(){ var el=document.getElementById('mgr-other-in'); var v=el&&el.value.trim(); if(!v) return; var t=mgrLastClarify(); askRun((t&&t.origQ?t.origQ+' — ':'')+v); }
 
 // ----- Dashboard proactive briefing -----
 function mgrRenderBriefing(force){
