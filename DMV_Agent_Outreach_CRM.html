@@ -8546,6 +8546,18 @@ function emailOfferSectionHTML(l, kind){
     + '</div></div>';
 }
 function rememberEmailFrom(v){ if(v) localStorage.setItem('crm_email_from', v); }
+// Plain-text MESTATE signature baked into the mailto body (the desktop mail app doesn't have
+// the Gmail signature, and a mailto: body is plain text so the logo image can't be embedded).
+function buildEmailSignature(){
+  return '--\n'
+    + 'Micky Atakilt\n'
+    + 'Managing Partner\n'
+    + 'Mestate Investment Group\n'
+    + '202-509-5722\n'
+    + '2300 Wilson Blvd, Arlington VA 22201\n'
+    + 'contact@mestate.info\n'
+    + 'https://www.mestate.info/\n';
+}
 function buildOfferBody(addr, price){
   return 'Hello,\n\n'
     + 'Hope all is well. We are making an offer regarding your listing. A summary of the general terms are below. If the seller is interested in our offer, we will submit a formal offer for your review.\n\n'
@@ -8556,7 +8568,8 @@ function buildOfferBody(addr, price){
     + 'Earnest Money Deposit: $\n'
     + 'Settlement Date: 30 days Or Less\n'
     + 'Financing Type: Cash/Hard Money Lending\n'
-    + 'Contingencies: 5 day inspection\n';
+    + 'Contingencies: 5 day inspection\n\n'
+    + buildEmailSignature();
 }
 // Save the entered email onto the record (as its Email/contact field) + persist,
 // so it shows in the contact info next time — for DMV, Nationwide, and Tasks.
@@ -8578,23 +8591,19 @@ function sendEmailOffer(kind, id){
   if(!to){ showToast('Enter the contact’s email first', 'error'); var box=document.getElementById('email-contact-addr'); if(box) box.focus(); return; }
   var from = (document.getElementById('email-from-select')||{}).value||'';
   var subject = 'Offer regarding your listing' + (ctx.address?(' at '+ctx.address):'');
-  // Open Gmail web compose (NOT a mailto: to the desktop app). Gmail auto-appends the
-  // account's saved signature to every new compose — so Micky's MESTATE signature shows up
-  // on the offer. A mailto: opens Apple Mail/Outlook, which don't have the Gmail signature,
-  // which is why it was missing before.
-  var url = 'https://mail.google.com/mail/'
-    + (from?('?authuser='+encodeURIComponent(from)+'&'):'?')
-    + 'view=cm&fs=1&tf=1'
-    + '&to=' + encodeURIComponent(to)
-    + '&su=' + encodeURIComponent(subject)
+  // mailto: opens the desktop mail app (Mail / Outlook), pre-filled. The signature is baked
+  // into the body (a mailto: body is plain text, so the logo can't be embedded) because the
+  // desktop app doesn't have the Gmail signature.
+  var mailto = 'mailto:' + encodeURIComponent(to)
+    + '?subject=' + encodeURIComponent(subject)
     + '&body=' + encodeURIComponent(buildOfferBody(ctx.address, ctx.price));
-  window.open(url, '_blank');
-  // Record who sent it (from-account is record-only; Gmail controls the real sender).
+  window.location.href = mailto;
+  // Record who sent it (from-account is record-only; the mail app controls the real sender).
   var rec = ctx.rec;
   if(!rec.activityLog) rec.activityLog=[];
   rec.activityLog.push({type:'Email Offer', by:from||((currentUser&&currentUser.name)||'Team'), at:new Date().toISOString(), note:'Offer emailed to '+to+(from?(' (from '+from+')'):'')});
   saveContactEmailOnRecord(ctx, to);
-  showToast('Offer opened in Gmail for '+to+' — your signature is added automatically', 'success');
+  showToast('Offer opened in your mail app for '+to+' — email saved to contact', 'success');
 }
 function followUpEmail(kind, id){
   var ctx = emailRecordFor(kind, id); if(!ctx) return;
