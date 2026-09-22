@@ -5704,6 +5704,7 @@ function fbBatchDownload(id){
 // ============================================================================
 var fbGroups = null;        // cached group list (null = not loaded)
 var fbFiles = null;         // cached fb_scrape_files (the daily CSV "files" shown in this tab)
+var fbLastReq = null;       // most recent fb_scan_requests row (for failure detection)
 var fbWorker = null;        // {last_seen,host} heartbeat row
 var fbLeadCounts = {};      // {group_link_id: total leads found} for the group manager
 var fbScan = { running:false };
@@ -5731,13 +5732,15 @@ async function fbLoadState(){
       sbFetch('fb_group_links?select=id,name,url,rating,last_used,notes&order=last_used.asc.nullsfirst,id.asc'),
       sbFetch('fb_worker_status?select=last_seen,host&id=eq.1'),
       sbFetch('rpc/fb_group_lead_counts','POST',{}).catch(function(){ return []; }),
-      sbFetch('fb_scrape_files?select=*&deleted=eq.false&order=date_scraped.desc,id.desc&limit=300').catch(function(){ return []; })
+      sbFetch('fb_scrape_files?select=*&deleted=eq.false&order=date_scraped.desc,id.desc&limit=300').catch(function(){ return []; }),
+      sbFetch('fb_scan_requests?select=status,error,requested_at,finished_at&order=requested_at.desc&limit=1').catch(function(){ return []; })
     ]);
     fbGroups = res[0] || [];
     fbWorker = (res[1] && res[1][0]) || null;
     fbLeadCounts = {};
     (res[2]||[]).forEach(function(r){ fbLeadCounts[r.group_link_id] = r.leads; });
     fbFiles = res[3] || [];
+    fbLastReq = (res[4] && res[4][0]) || null;
   } catch(e){ fbGroups = fbGroups||[]; fbFiles = fbFiles||[]; }
 }
 function fbStatusPillHTML(){
@@ -5780,12 +5783,15 @@ function renderFBSection(){
     +'<div class="lt-head"><div><h2>&#128241; Facebook Scraper</h2>'
     +'<p>Pulls fresh <b>Name + Phone</b> seller/investor leads from your Facebook groups. Your Mac scrapes <b>public &amp; private</b> groups when it&#8217;s on; the cloud covers public groups when it&#8217;s off. It rotates <b>5&ndash;7 groups a day</b> automatically, and each run lands below as a dated row with <b>Download CSV</b> (the same row also shows in the &#128269; Review queue).</p></div>'
     +'<div class="lt-actions" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+fbStatusPillHTML()+'<div>'+fbScanBtnHTML()+'</div></div></div>'
+    +fbSystemBanner()
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
       +fbStatCard('Groups saved', groupsN, usable+' usable')
       +fbStatCard('Groups / day', '5&ndash;7', 'rotating')
       +fbStatCard('Last run', lastRun?esc(lastRun):'&mdash;', files.length+' scrape files')
     +'</div>'
+    +'<div style="font-size:12px;color:var(--text3);margin-bottom:6px">&#128336; Next automatic run: <b>~6:00 AM</b> (your Mac&#8217;s time), daily</div>'
     +(nextUp?'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Next up: '+nextUp+'&hellip;</div>':'')
+    +fbFilesToolbar(files)
     +batchesTable
     +'</div>';
 }
@@ -5816,9 +5822,12 @@ function fbFileCardHTML(f){
   var accent = texted ? '#22c55e' : '#1877f2';
   return '<div class="fb-file" style="background:var(--bg1,#fff);border:1px solid var(--border,#e2e8f0);border-left:4px solid '+accent+';border-radius:12px;padding:12px 14px">'
     +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">'
-      +'<div>'
-        +'<div style="font-weight:800;font-size:15px;color:var(--text1)">&#128197; '+esc(fbPrettyDate(f.date_scraped))+'</div>'
-        +'<div style="font-size:12px;color:var(--text3)">'+(f.lead_count||0)+' number'+((f.lead_count||0)===1?'':'s')+' &middot; '+groups.length+' group'+(groups.length===1?'':'s')+' scraped</div>'
+      +'<div style="display:flex;align-items:center;gap:11px">'
+        +'<input type="checkbox" class="fb-file-cb" value="'+f.id+'" onchange="fbUpdateSelCount()" style="width:17px;height:17px;cursor:pointer;flex:none">'
+        +'<div>'
+          +'<div style="font-weight:800;font-size:15px;color:var(--text1)">&#128197; '+esc(fbPrettyDate(f.date_scraped))+'</div>'
+          +'<div style="font-size:12px;color:var(--text3)">'+(f.lead_count||0)+' number'+((f.lead_count||0)===1?'':'s')+' &middot; '+groups.length+' group'+(groups.length===1?'':'s')+' scraped</div>'
+        +'</div>'
       +'</div>'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
         +'<span style="font-size:12px;color:var(--text3);font-weight:700">Texted</span>'
@@ -5860,6 +5869,72 @@ function fbFileDownloadCsv(id){
   a.download='facebook-scrape-'+(f.date_scraped||'file')+'.csv';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(function(){ try{URL.revokeObjectURL(a.href);}catch(e){} },1500);
+}
+
+// ---- Health check: bold red banner when the scrape system isn't working ----
+function fbDaysAgo(iso){
+  if(!iso) return 9999;
+  var d=new Date(iso+'T00:00:00'); if(isNaN(d.getTime())) return 9999;
+  var now=new Date(); now.setHours(0,0,0,0);
+  return Math.round((now.getTime()-d.getTime())/86400000);
+}
+function fbSystemFailure(){   // returns a reason string if failed, else null
+  if(fbLastReq && fbLastReq.status==='error'){
+    return 'Last scrape failed'+(fbLastReq.error?(': '+String(fbLastReq.error).slice(0,120)):'')+'.';
+  }
+  var files=fbFiles||[];
+  var newest = files.length ? fbDaysAgo(files[0].date_scraped) : 9999;
+  if(newest>=2){
+    return (files.length ? ('No successful scrape in '+newest+' days.') : 'No scrapes have run yet.')
+      +' The daily run may not be firing (is your Mac on at 6 AM?).';
+  }
+  return null;
+}
+function fbSystemBanner(){
+  var fail=fbSystemFailure();
+  if(fail){
+    return '<div style="background:#fef2f2;border:2px solid #ef4444;border-radius:10px;padding:11px 14px;margin-bottom:14px;display:flex;align-items:center;gap:11px">'
+      +'<span style="font-size:22px">&#128308;</span>'
+      +'<div><div style="font-weight:900;color:#b91c1c;font-size:16px;letter-spacing:.03em">SYSTEM FAILED</div>'
+      +'<div style="font-size:12.5px;color:#7f1d1d">'+esc(fail)+' Click <b>&#9889; Scrape now</b> above to run it manually.</div></div></div>';
+  }
+  return '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:8px 12px;margin-bottom:14px;font-size:12.5px;color:#166534;font-weight:700;display:flex;align-items:center;gap:8px">'
+    +'<span style="width:9px;height:9px;border-radius:50%;background:#22c55e;display:inline-block"></span>System healthy &middot; last scrape '
+    +((fbFiles&&fbFiles.length)?esc(fbPrettyDate(fbFiles[0].date_scraped)):'&mdash;')+'</div>';
+}
+
+// ---- Select one / many files and delete the selected ----
+function fbFilesToolbar(files){
+  if(!files || !files.length) return '';
+  return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">'
+    +'<label style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer">'
+      +'<input type="checkbox" id="fb-sel-all" onchange="fbToggleAllFiles(this.checked)" style="width:16px;height:16px;cursor:pointer"> Select all</label>'
+    +'<button class="btn btn-danger btn-sm" onclick="fbDeleteSelectedFiles()" style="font-weight:700">&#128465; Delete selected (<span id="fb-sel-count">0</span>)</button>'
+  +'</div>';
+}
+function fbCheckedFileIds(){
+  return Array.prototype.slice.call(document.querySelectorAll('.fb-file-cb:checked')).map(function(c){ return +c.value; });
+}
+function fbUpdateSelCount(){
+  var n=fbCheckedFileIds().length;
+  var e=document.getElementById('fb-sel-count'); if(e) e.textContent=n;
+  var all=document.getElementById('fb-sel-all'); var boxes=document.querySelectorAll('.fb-file-cb');
+  if(all) all.checked = (boxes.length>0 && n===boxes.length);
+}
+function fbToggleAllFiles(checked){
+  Array.prototype.slice.call(document.querySelectorAll('.fb-file-cb')).forEach(function(c){ c.checked=checked; });
+  fbUpdateSelCount();
+}
+async function fbDeleteSelectedFiles(){
+  var ids=fbCheckedFileIds();
+  if(!ids.length){ showToast('No files selected','error'); return; }
+  if(!confirm('Remove '+ids.length+' selected file'+(ids.length===1?'':'s')+' from the tab?\n\nThe phone numbers stay de-duplicated — they will NOT come back in future scrapes.')) return;
+  try {
+    await sbFetch('fb_scrape_files?id=in.('+ids.join(',')+')','PATCH',{deleted:true});
+    fbFiles=(fbFiles||[]).filter(function(x){ return ids.indexOf(+x.id)<0; });
+    showToast('Removed '+ids.length+' file'+(ids.length===1?'':'s'),'success');
+  } catch(e){ showToast('Could not delete selected files','error'); }
+  if(activeSection==='fb') renderFBSection();
 }
 
 // ⚡ Scrape now: local when the Mac is online, cloud fallback when it's off.
