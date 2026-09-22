@@ -160,6 +160,39 @@
   .modal-body{padding:18px 22px;flex:1;}
   .modal-footer{padding:12px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:var(--surface2);border-radius:0 0 16px 16px;position:sticky;bottom:0;}
 
+  /* ---- Comment thread panel (right-side, docked in the lead detail modal) ---- */
+  .modal-lead-wide{max-width:1180px;}
+  .modal-body-split{display:flex;padding:0 !important;align-items:stretch;min-height:0;}
+  .modal-body-split .modal-main-col{flex:1;min-width:0;padding:18px 22px;}
+  .modal-body-split .cmt-col{width:340px;flex-shrink:0;border-left:1px solid var(--border);background:var(--surface2);display:flex;flex-direction:column;}
+  @media (max-width:900px){ .modal-body-split{flex-direction:column;} .modal-body-split .cmt-col{width:100%;border-left:none;border-top:1px solid var(--border);} }
+  .cmt-head{padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .cmt-head-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text2);display:flex;align-items:center;gap:6px;}
+  .cmt-thread{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:12px;max-height:60vh;}
+  .cmt-empty{font-size:12px;color:var(--text4);text-align:center;padding:20px 8px;}
+  .cmt-item{display:flex;flex-direction:column;gap:3px;}
+  .cmt-item.is-reply{margin-left:20px;padding-left:10px;border-left:2px solid var(--border);}
+  .cmt-item-head{display:flex;align-items:center;gap:6px;font-size:11.5px;}
+  .cmt-avatar{width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .cmt-author{font-weight:700;color:var(--text);}
+  .cmt-role{font-size:9.5px;color:var(--text4);text-transform:uppercase;letter-spacing:0.4px;}
+  .cmt-time{color:var(--text4);margin-left:auto;font-size:10.5px;white-space:nowrap;}
+  .cmt-body{font-size:12.5px;color:var(--text2);white-space:pre-wrap;line-height:1.45;}
+  .cmt-body .cmt-mention{color:var(--accent);font-weight:600;background:var(--accent-light);border-radius:4px;padding:0 3px;}
+  .cmt-reply-btn{font-size:10.5px;color:var(--text4);background:none;border:none;cursor:pointer;padding:0;text-align:left;width:fit-content;}
+  .cmt-reply-btn:hover{color:var(--accent);text-decoration:underline;}
+  .cmt-compose{border-top:1px solid var(--border);padding:10px 14px 14px;position:relative;}
+  .cmt-reply-banner{font-size:11px;color:var(--text3);background:var(--surface3);border-radius:6px;padding:5px 8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:6px;}
+  .cmt-input{width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:inherit;resize:vertical;min-height:56px;background:var(--surface);color:var(--text);box-sizing:border-box;}
+  .cmt-send-row{display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;}
+  .cmt-hint{font-size:10.5px;color:var(--text4);}
+  .cmt-mention-pop{position:absolute;bottom:100%;left:14px;right:14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-lg);max-height:160px;overflow-y:auto;z-index:20;margin-bottom:4px;}
+  .cmt-mention-opt{padding:7px 10px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;}
+  .cmt-mention-opt:hover,.cmt-mention-opt.active{background:var(--surface2);}
+  .cmt-mention-opt .cmt-role{margin-left:auto;}
+  .cmt-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0;}
+  .cmt-row-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red);margin-left:5px;vertical-align:middle;}
+
   .form-section{margin-bottom:18px;}
   .form-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--accent);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
   .form-section-title::after{content:'';flex:1;height:1px;background:var(--accent-light);}
@@ -259,6 +292,10 @@
   .crm-soon-ico{font-size:52px;line-height:1;margin-bottom:14px;}
   .crm-soon-h{font-size:22px;font-weight:800;color:var(--text);margin-bottom:8px;}
   .crm-soon-p{font-size:14px;color:var(--text3);line-height:1.55;}
+  .da-comp{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 28px;gap:8px;align-items:end;padding:8px 0;border-bottom:1px solid var(--border);}
+  .da-comp .form-input{width:100%;min-width:0;}
+  .da-c-x{border:0;background:none;color:var(--red);font-size:20px;cursor:pointer;height:36px;}
+  @media (max-width:600px){.da-comp{grid-template-columns:minmax(0,1fr) minmax(0,1.35fr) 24px;gap:6px;}.da-comp .da-c-addr{grid-column:1/-1;}.da-comp input[type=date]{padding-left:8px;padding-right:6px;}}
   .crm-soon-badge{display:inline-block;margin-top:18px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--accent);background:var(--accent-light);border-radius:20px;padding:6px 14px;}
   /* ===== List Tracking (Phase 2) ===== */
   .lt-wrap{padding:18px 24px 40px;}
@@ -4499,6 +4536,212 @@ function nciDelete(entityType, entityId, itemId){
 }
 // =================== end Checklist Notes ===================
 
+// =================== Comment threads (right-side panel, per-lead) ===================
+// One shared thread per lead. Admin/Team always participate; a signed-in recipient-portal
+// user only ever reaches this panel when the lead is within their own scope — the server
+// (lead-agreement edge fn, action comments_list/comments_add/comments_unread) re-checks that
+// on every call using the exact same scope rule portal_save already enforces, so nothing here
+// trusts the client for who can see or post what. Anonymous emailed-link viewers never get
+// this panel at all (see renderSharedLeadView's cmtWide gate).
+var cmtCache = {};            // 'lead:123' -> {comments, mentionable, me, loaded, error}
+var cmtUnreadSet = new Set(); // 'lead:123' entries with an unread @mention (from cmtFetchUnread)
+var cmtReplyTo = null;        // {key, id, authorName} while composing a reply, else null
+var cmtMentionUI = null;      // {key, start, query} while the @ picker is open, else null
+
+function cmtKey(kind,id){ return kind+':'+id; }
+
+function cmtPanelHTML(kind, id){
+  var key = cmtKey(kind,id);
+  var hadUnread = cmtUnreadSet.has(key);
+  return '<div class="cmt-col">'
+    + '<div class="cmt-head"><div class="cmt-head-title">'+(hadUnread?'<span class="cmt-dot"></span>':'')+'&#128172; Comments</div></div>'
+    + '<div id="cmt-thread-'+kind+'-'+id+'" class="cmt-thread"><div class="cmt-empty">Loading&hellip;</div></div>'
+    + '<div class="cmt-compose">'
+    +   '<div id="cmt-reply-'+kind+'-'+id+'"></div>'
+    +   '<textarea id="cmt-input-'+kind+'-'+id+'" class="cmt-input" placeholder="Comment, or type @ to mention someone&hellip;" oninput="cmtOnInput(\''+kind+'\','+id+')" onkeydown="cmtOnKeydown(event,\''+kind+'\','+id+')"></textarea>'
+    +   '<div id="cmt-mention-pop-'+kind+'-'+id+'"></div>'
+    +   '<div class="cmt-send-row"><span class="cmt-hint">@ to mention &middot; Enter to send</span><button type="button" class="btn btn-primary btn-sm" onclick="cmtSubmit(\''+kind+'\','+id+')">Send</button></div>'
+    + '</div>'
+  + '</div>';
+}
+
+async function cmtMount(kind, id){
+  await cmtLoad(kind, id);
+  cmtRender(kind, id);
+}
+
+async function cmtLoad(kind, id){
+  var key = cmtKey(kind,id);
+  try {
+    var r = await fetch(AGREEMENT_FN_URL, {
+      method:'POST',
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+      body: JSON.stringify({ action:'comments_list', kind:kind, leadId:id })
+    });
+    var data = await r.json().catch(function(){ return {}; });
+    if(!r.ok || data.error) throw new Error(data.error || ('HTTP '+r.status));
+    cmtCache[key] = { comments:data.comments||[], mentionable:data.mentionable||[], me:data.me||null, loaded:true };
+    cmtUnreadSet.delete(key); // the server just marked this thread read for us
+  } catch(e){
+    cmtCache[key] = { comments:[], mentionable:[], me:null, loaded:false, error:(e&&e.message)||'Could not load comments' };
+  }
+}
+
+function cmtInitials(name){
+  return (name||'?').trim().split(/\s+/).map(function(w){ return w[0]||''; }).slice(0,2).join('').toUpperCase() || '?';
+}
+
+function cmtRender(kind, id){
+  var key = cmtKey(kind,id);
+  var state = cmtCache[key] || {comments:[],mentionable:[],me:null};
+  var container = document.getElementById('cmt-thread-'+kind+'-'+id);
+  if(!container) return; // modal already closed before the load resolved
+  if(state.error){ container.innerHTML = '<div class="cmt-empty">'+esc(state.error)+'</div>'; return; }
+
+  var top = state.comments.filter(function(c){ return !c.parent_id; });
+  if(top.length===0){ container.innerHTML = '<div class="cmt-empty">No comments yet. Start the conversation below.</div>'; return; }
+  var byParent = {};
+  state.comments.forEach(function(c){ if(c.parent_id){ (byParent[c.parent_id]=byParent[c.parent_id]||[]).push(c); } });
+  var nameMap = {}; (state.mentionable||[]).forEach(function(u){ nameMap[u.id]=u.name; });
+
+  function renderOne(c, isReply){
+    var when = c.created_at ? new Date(c.created_at).toLocaleString() : '';
+    var bodyHtml = esc(c.body);
+    (c.mentions||[]).forEach(function(uid){
+      var nm = nameMap[uid]; if(!nm) return;
+      var re = new RegExp('@'+nm.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'g');
+      bodyHtml = bodyHtml.replace(re, '<span class="cmt-mention">@'+esc(nm)+'</span>');
+    });
+    return '<div class="cmt-item'+(isReply?' is-reply':'')+'">'
+      + '<div class="cmt-item-head"><div class="cmt-avatar">'+cmtInitials(c.author_name)+'</div><span class="cmt-author">'+esc(c.author_name)+'</span><span class="cmt-role">'+esc(c.author_role)+'</span><span class="cmt-time">'+when+'</span></div>'
+      + '<div class="cmt-body">'+bodyHtml+'</div>'
+      + (isReply?'':'<button type="button" class="cmt-reply-btn" onclick="cmtStartReply(\''+kind+'\','+id+','+c.id+')">Reply</button>')
+    + '</div>';
+  }
+  var html='';
+  top.forEach(function(c){
+    html += renderOne(c,false);
+    (byParent[c.id]||[]).forEach(function(r){ html += renderOne(r,true); });
+  });
+  container.innerHTML = html;
+  container.scrollTop = container.scrollHeight;
+}
+
+function cmtRenderReplyBanner(kind, id){
+  var el = document.getElementById('cmt-reply-'+kind+'-'+id); if(!el) return;
+  var key = cmtKey(kind,id);
+  if(cmtReplyTo && cmtReplyTo.key===key){
+    el.innerHTML = '<div class="cmt-reply-banner"><span>Replying to <b>'+esc(cmtReplyTo.authorName)+'</b></span><button type="button" class="cmt-reply-btn" onclick="cmtCancelReply(\''+kind+'\','+id+')">Cancel</button></div>';
+  } else { el.innerHTML=''; }
+}
+function cmtStartReply(kind, id, commentId){
+  var key = cmtKey(kind,id);
+  var state = cmtCache[key]; if(!state) return;
+  var c = state.comments.find(function(x){ return x.id===commentId; }); if(!c) return;
+  cmtReplyTo = { key:key, id:commentId, authorName:c.author_name };
+  cmtRenderReplyBanner(kind,id);
+  var ta = document.getElementById('cmt-input-'+kind+'-'+id); if(ta) ta.focus();
+}
+function cmtCancelReply(kind, id){ cmtReplyTo=null; cmtRenderReplyBanner(kind,id); }
+
+// @-mention picker: triggers on an "@word" run right before the caret with no space in it yet.
+function cmtOnInput(kind, id){
+  var key = cmtKey(kind,id);
+  var ta = document.getElementById('cmt-input-'+kind+'-'+id); if(!ta) return;
+  var pos = ta.selectionStart;
+  var upto = ta.value.slice(0,pos);
+  var m = upto.match(/(?:^|\s)@([a-zA-Z0-9 ]{0,30})$/);
+  cmtMentionUI = m ? { key:key, start:pos-m[1].length-1, query:m[1].toLowerCase() } : null;
+  cmtRenderMentionPicker(kind,id);
+}
+function cmtRenderMentionPicker(kind, id){
+  var key = cmtKey(kind,id);
+  var pop = document.getElementById('cmt-mention-pop-'+kind+'-'+id); if(!pop) return;
+  if(!cmtMentionUI || cmtMentionUI.key!==key){ pop.innerHTML=''; return; }
+  var state = cmtCache[key] || {mentionable:[]};
+  var q = cmtMentionUI.query;
+  var opts = (state.mentionable||[]).filter(function(u){ return !q || u.name.toLowerCase().indexOf(q)>=0; }).slice(0,8);
+  if(opts.length===0){ pop.innerHTML=''; return; }
+  pop.innerHTML = '<div class="cmt-mention-pop">'+opts.map(function(u){
+    return '<div class="cmt-mention-opt" onmousedown="event.preventDefault();cmtPickMention(\''+kind+'\','+id+',\''+u.id+'\')">'
+      + '<div class="cmt-avatar" style="width:18px;height:18px;font-size:8px">'+cmtInitials(u.name)+'</div>'
+      + '<span>'+esc(u.name)+'</span><span class="cmt-role">'+esc(u.role)+'</span></div>';
+  }).join('')+'</div>';
+}
+function cmtPickMention(kind, id, userId){
+  var key = cmtKey(kind,id);
+  var state = cmtCache[key]; if(!state || !cmtMentionUI) return;
+  var u = (state.mentionable||[]).find(function(x){ return x.id===userId; }); if(!u) return;
+  var ta = document.getElementById('cmt-input-'+kind+'-'+id); if(!ta) return;
+  var before = ta.value.slice(0, cmtMentionUI.start);
+  var after = ta.value.slice(ta.selectionStart);
+  var insert = '@'+u.name+' ';
+  ta.value = before+insert+after;
+  var newPos = (before+insert).length;
+  ta.focus(); ta.setSelectionRange(newPos,newPos);
+  cmtMentionUI = null;
+  cmtRenderMentionPicker(kind,id);
+}
+function cmtOnKeydown(ev, kind, id){
+  if(cmtMentionUI && ev.key==='Escape'){ cmtMentionUI=null; cmtRenderMentionPicker(kind,id); return; }
+  if(ev.key==='Enter' && !ev.shiftKey && !cmtMentionUI){ ev.preventDefault(); cmtSubmit(kind,id); }
+}
+// Re-derive who got @mentioned from the literal "@Full Name" text in the body, rather than
+// trusting picker click-state — covers manual typing and text edited after picking a name.
+function cmtDetectMentions(text, mentionable){
+  var ids = [];
+  (mentionable||[]).forEach(function(u){ if(text.indexOf('@'+u.name)>=0) ids.push(u.id); });
+  return ids;
+}
+
+async function cmtSubmit(kind, id){
+  var key = cmtKey(kind,id);
+  var ta = document.getElementById('cmt-input-'+kind+'-'+id); if(!ta) return;
+  var body = ta.value.trim(); if(!body) return;
+  var state = cmtCache[key] || {mentionable:[]};
+  var mentions = cmtDetectMentions(body, state.mentionable);
+  var parentId = (cmtReplyTo && cmtReplyTo.key===key) ? cmtReplyTo.id : null;
+  var btn = ta.parentElement ? ta.parentElement.querySelector('.btn-primary') : null;
+  if(btn) btn.disabled = true;
+  try {
+    var r = await fetch(AGREEMENT_FN_URL, {
+      method:'POST',
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+      body: JSON.stringify({ action:'comments_add', kind:kind, leadId:id, body:body, parentId:parentId, mentions:mentions })
+    });
+    var data = await r.json().catch(function(){ return {}; });
+    if(!r.ok || data.error) throw new Error(data.error || ('HTTP '+r.status));
+    if(!cmtCache[key]) cmtCache[key] = { comments:[], mentionable:state.mentionable, me:state.me, loaded:true };
+    cmtCache[key].comments.push(data.comment);
+    ta.value='';
+    cmtReplyTo=null; cmtRenderReplyBanner(kind,id);
+    cmtMentionUI=null; cmtRenderMentionPicker(kind,id);
+    cmtRender(kind,id);
+  } catch(e){
+    showToast('Could not post comment — '+((e&&e.message)||'try again'),'error');
+  } finally {
+    if(btn) btn.disabled = false;
+  }
+}
+
+// Every {kind,leadId} where the signed-in caller has an unread @mention, across every lead
+// they can see — powers the red dot on list rows and on an unopened lead's comment tab.
+async function cmtFetchUnread(){
+  try {
+    var r = await fetch(AGREEMENT_FN_URL, {
+      method:'POST',
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+      body: JSON.stringify({ action:'comments_unread' })
+    });
+    var data = await r.json().catch(function(){ return {}; });
+    if(r.ok && Array.isArray(data.unread)) cmtUnreadSet = new Set(data.unread);
+  } catch(e){ /* the unread dot is a nice-to-have — never block the app on it */ }
+}
+function cmtRowDot(kind, id){
+  return cmtUnreadSet.has(cmtKey(kind,id)) ? ' <span class="cmt-row-dot" title="New @mention"></span>' : '';
+}
+// =================== end Comment threads ===================
+
 // =================== Dashboard (KPIs + Follow-up Hub) ===================
 function ltCatCount(cat){ return (crmLists||[]).filter(function(l){ return (l.category||'seller')===cat; }).length; }
 
@@ -6555,7 +6798,7 @@ function renderTable(data,start,end){
   const rows=data.slice(start,end).map(l=>`
     <tr style="${selectedLeads.has(l.id)?'background:#eff6ff;':''}">
       <td onclick="event.stopPropagation()"><input type="checkbox" ${selectedLeads.has(l.id)?'checked':''} onchange="toggleSelect(${l.id},this.checked)" style="width:15px;height:15px;cursor:pointer"></td>
-      <td onclick="openDetail(${l.id})"><div class="address-cell">${esc(l.address)||''}</div></td>
+      <td onclick="openDetail(${l.id})"><div class="address-cell">${esc(l.address)||''}${cmtRowDot('lead',l.id)}</div></td>
       <td onclick="openDetail(${l.id})"><div class="phone-cell">${l.phone?`<a href="#" data-phone="${l.phone.split('/')[0].trim()}" data-cid="${l.ghlContactId||''}" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-weight:600" title="${l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel'}">${esc(l.phone.split('/')[0].trim())} &#8599;</a>`:''}</div></td>
       <td onclick="openDetail(${l.id})"><span class="money-val">${formatMoney(l.offer)}</span></td>
       <td onclick="openDetail(${l.id})"><span class="arv-val">${formatMoney(l.arv)}</span></td>
@@ -6752,7 +6995,7 @@ function renderCards(data,start,end){
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
           <input type="checkbox" ${selectedLeads.has(l.id)?'checked':''} onchange="toggleSelect(${l.id},this.checked)" style="width:15px;height:15px;cursor:pointer" onclick="event.stopPropagation()">
           <div style="flex:1;cursor:pointer" onclick="openDetail(${l.id})">
-            <div class="card-address">${esc(l.address)||''}</div>
+            <div class="card-address">${esc(l.address)||''}${cmtRowDot('lead',l.id)}</div>
             <div class="card-phone">${l.phone?'&#128222; '+esc(l.phone.split('/')[0].trim()):''}</div>
           </div>
           <div onclick="openDetail(${l.id})" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${statusBadge(l.status)}${l.score?leadScoreBadgeHTML(l.score):''}</div>
@@ -6937,7 +7180,7 @@ function openAdd(){
   modalLead={id:getNextId(),month:curMonth||dd.months[0]||'',name:'',status:'',phone:'',marketingType:'',reachedBy:'',address:'',offer:'',arv:'',comps:'',notes:'',date:today(),leadSource:dd.sources[0]||'',webLink:'',followUpDate:'',nationwide:(activeTab==='nationwide'?'Yes':''),needsReview:false};
   editMode=true;isNew=true;renderEditModal();
 }
-function closeModal(){document.getElementById('modal-container').innerHTML='';modalLead=null;}
+function closeModal(){document.getElementById('modal-container').innerHTML='';modalLead=null;cmtReplyTo=null;cmtMentionUI=null;}
 
 function renderDetailModal(){
   const l=modalLead;
@@ -6946,12 +7189,12 @@ function renderDetailModal(){
   const fuBanner=fuStatus?'<div class="followup-banner '+fuStatus+'">'+fuMsgs[fuStatus]+'</div>':'';
   document.getElementById('modal-container').innerHTML=`
     <div class="modal-overlay" onclick="overlayClick(event)">
-      <div class="modal">
+      <div class="modal modal-lead-wide">
         <div class="modal-header">
           <div><div class="modal-title">${esc(l.address)||'No Address'}</div><div class="modal-subtitle"><span>Lead #${l.id}</span>${l.date?'<span>&middot; '+l.date+'</span>':''}<span>&middot; ${l.month}</span>${l.updatedBy?'<span style="color:var(--teal)">&middot; Edited by '+l.updatedBy+'</span>':''}${sentIndicatorHTML(l)}</div>${l.address?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.address)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.address)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}</div>
           <button class="modal-close-btn" onclick="closeModal()">&#10005;</button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body modal-body-split"><div class="modal-main-col">
           ${fuBanner}
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${statusBadge(l.status)}${l.score?leadScoreBadgeHTML(l.score):''}<span class="month-tag">${l.month}</span>${l.leadSource?'<span style="background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;border:1px solid #7dd3fc">'+l.leadSource+'</span>':''}</div>
           <div class="detail-section"><div class="detail-section-title">Property &amp; Contact</div>
@@ -6985,7 +7228,7 @@ function renderDetailModal(){
           ${emailOfferSectionHTML(l)}
           ${agreementSectionHTML(l.id,'lead',l.agreementStatus,l.agreementAcceptedAt)}
           ${renderActivityLog('lead', l.id, l.activityLog)}
-        </div>
+        </div>${cmtPanelHTML('lead', l.id)}</div>
         <div class="modal-footer">
           <button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>
           <button class="btn btn-secondary btn-sm" onclick="sendToReview('lead',${l.id})">&#128203; Review</button>
@@ -6999,6 +7242,7 @@ function renderDetailModal(){
     </div>`;
   nciMount('lead', l.id);
   mountGhlSms('lead', l.id);
+  cmtMount('lead', l.id);
 }
 function switchToEdit(){editMode=true;renderEditModal();}
 
@@ -8520,35 +8764,51 @@ function daStatsHTML(e){
     +'<div style="'+DA_STAT+'"><div class="detail-label">Ask % of ARV</div><div style="font-weight:700;font-size:15px">'+s.pct+'</div></div></div>';
 }
 // Read-only card (used by the recipient after saving, and by admin for each recipient).
+// Subject property address (so a comp typed as just "123 Main St" still finds the right city on Zillow).
+var daSubjectAddr = '';
+function daCompZillow(addr){
+  addr=String(addr||'').trim(); if(!addr) return '';
+  var subj=String(daSubjectAddr||''), cut=subj.indexOf(',');
+  if(addr.indexOf(',')<0 && cut>0) addr += subj.slice(cut);
+  return buildZillowUrl(addr);
+}
 function daReadHTML(e){
   var comps=e.comps||[];
   return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">'
-    +'<div style="'+DA_STAT+'"><div class="detail-label">ARV</div><div style="font-weight:700;font-size:15px">'+daMoney(e.arv)+'</div></div>'
-    +'<div style="'+DA_STAT+'"><div class="detail-label">'+esc(e.askingBy||'Seller')+' Asking</div><div style="font-weight:700;font-size:15px;color:var(--accent)">'+daMoney(e.askingPrice)+'</div></div></div>'
+    +'<div style="'+DA_STAT+'"><div class="detail-label">'+esc(e.askingBy||'Seller')+' Asking</div><div style="font-weight:700;font-size:15px;color:var(--accent)">'+daMoney(e.askingPrice)+'</div></div>'
+    +'<div style="'+DA_STAT+'"><div class="detail-label">ARV</div><div style="font-weight:700;font-size:15px">'+daMoney(e.arv)+'</div></div></div>'
     +'<div style="margin-top:10px;font-size:13px"><span class="detail-label">Photos</span>&nbsp; '
     +(e.photosLink&&/^https?:\/\//i.test(e.photosLink)?'<a href="'+esc(e.photosLink)+'" target="_blank" rel="noopener" class="detail-link" style="word-break:break-all">&#128247; Open photos &#8599;</a>':(e.photosLink?esc(e.photosLink):'<span style="color:var(--text4)">No link</span>'))+'</div>'
     +'<div class="detail-label" style="margin-top:10px">Comps ('+comps.length+')</div>'
-    +(comps.length?'<div class="table-wrap" style="margin-top:4px"><table style="width:100%;font-size:13px"><thead><tr><th>Address</th><th>Sold For</th><th>Sold Date</th></tr></thead><tbody>'
-      +comps.map(function(c){ return '<tr><td>'+(esc(c.address)||'&#8212;')+'</td><td style="font-weight:700">'+daMoney(c.soldPrice)+'</td><td>'+daDate(c.soldDate)+'</td></tr>'; }).join('')
-      +'</tbody></table></div>':'<div style="color:var(--text4);font-size:12px">No comps added</div>')
+    +(comps.length?'<div style="margin-top:4px;border:1px solid var(--border);border-radius:8px;overflow:hidden">'
+      +comps.map(function(c,i){
+        var z=daCompZillow(c.address);
+        var addr=c.address?(z?'<a href="'+esc(z)+'" target="_blank" rel="noopener" class="detail-link" title="Open on Zillow">'+esc(c.address)+' &#8599;</a>':esc(c.address)):'<span style="color:var(--text4)">&#8212;</span>';
+        return '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px 12px;padding:8px 10px;font-size:13px;'+(i?'border-top:1px solid var(--border)':'')+'">'
+          +'<div style="min-width:0;flex:1 1 180px;word-break:break-word">'+addr+'</div>'
+          +'<div style="white-space:nowrap"><b>'+daMoney(c.soldPrice)+'</b> <span style="color:var(--text3)">&middot; '+daDate(c.soldDate)+'</span></div></div>';
+      }).join('')+'</div>'
+      :'<div style="color:var(--text4);font-size:12px">No comps added</div>')
     +daStatsHTML(e);
 }
 // Editable form. prefix keeps the recipient form and the admin editor ids apart.
+// Comp rows are a grid (no table) so everything fits on screen without sideways scrolling.
 function daFormHTML(prefix, e, comps){
   var cRows = comps.map(function(c,i){
-    return '<tr><td><input class="form-input" value="'+esc(c.address)+'" placeholder="123 Main St" oninput="daComp(\''+prefix+'\','+i+',\'address\',this.value)"></td>'
-      +'<td><input class="form-input" inputmode="numeric" value="'+esc(c.soldPrice)+'" placeholder="$410,000" oninput="daComp(\''+prefix+'\','+i+',\'soldPrice\',this.value)"></td>'
-      +'<td><input class="form-input" type="date" value="'+esc(c.soldDate)+'" oninput="daComp(\''+prefix+'\','+i+',\'soldDate\',this.value)"></td>'
-      +'<td style="width:30px"><button type="button" onclick="daRemoveComp(\''+prefix+'\','+i+')" title="Remove" style="border:0;background:none;color:var(--red);font-size:18px;cursor:pointer">&times;</button></td></tr>';
+    return '<div class="da-comp">'
+      +'<div class="da-c-addr"><label class="form-label">Address</label><input class="form-input" value="'+esc(c.address)+'" placeholder="123 Main St" oninput="daComp(\''+prefix+'\','+i+',\'address\',this.value)"></div>'
+      +'<div><label class="form-label">Sold For</label><input class="form-input" inputmode="numeric" value="'+esc(c.soldPrice)+'" placeholder="$410,000" oninput="daComp(\''+prefix+'\','+i+',\'soldPrice\',this.value)"></div>'
+      +'<div><label class="form-label">Sold Date</label><input class="form-input" type="date" value="'+esc(c.soldDate)+'" oninput="daComp(\''+prefix+'\','+i+',\'soldDate\',this.value)"></div>'
+      +'<button type="button" class="da-c-x" onclick="daRemoveComp(\''+prefix+'\','+i+')" title="Remove comp">&times;</button></div>';
   }).join('');
   return '<div class="form-grid">'
+    +'<div class="form-field"><label class="form-label">Asking Price</label><div style="display:flex;gap:6px"><select id="'+prefix+'-askby" class="form-select" style="width:100px;flex-shrink:0"><option '+(e.askingBy!=='Agent'?'selected':'')+'>Seller</option><option '+(e.askingBy==='Agent'?'selected':'')+'>Agent</option></select><input id="'+prefix+'-ask" class="form-input" style="min-width:0" inputmode="numeric" value="'+esc(e.askingPrice||'')+'" placeholder="$240,000"></div></div>'
     +'<div class="form-field"><label class="form-label">Property ARV</label><input id="'+prefix+'-arv" class="form-input" inputmode="numeric" value="'+esc(e.arv||'')+'" placeholder="$425,000"></div>'
-    +'<div class="form-field"><label class="form-label">Asking Price</label><div style="display:flex;gap:6px"><select id="'+prefix+'-askby" class="form-select" style="width:105px;flex-shrink:0"><option '+(e.askingBy!=='Agent'?'selected':'')+'>Seller</option><option '+(e.askingBy==='Agent'?'selected':'')+'>Agent</option></select><input id="'+prefix+'-ask" class="form-input" inputmode="numeric" value="'+esc(e.askingPrice||'')+'" placeholder="$240,000"></div></div>'
     +'<div class="form-field" style="grid-column:1/-1"><label class="form-label">Property Photos Link</label><input id="'+prefix+'-photos" class="form-input" value="'+esc(e.photosLink||'')+'" placeholder="Paste a Google Drive / Dropbox / Zillow link"></div>'
     +'</div>'
     +'<div class="form-label" style="margin-top:12px">&#127960;&#65039; Comps</div>'
-    +'<div class="table-wrap"><table style="width:100%"><thead><tr><th>Property Address</th><th style="width:130px">Sold For</th><th style="width:150px">Sold Date</th><th></th></tr></thead><tbody>'+cRows+'</tbody></table></div>'
-    +'<button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="daAddComp(\''+prefix+'\')">&#10133; Add Comp</button>';
+    +cRows
+    +'<button type="button" class="btn btn-secondary btn-sm" style="margin-top:4px" onclick="daAddComp(\''+prefix+'\')">&#10133; Add Comp</button>';
 }
 // Admin editor state lives here, keyed by prefix; the recipient form uses daState.
 var daAdminEdit = {};
@@ -8573,6 +8833,7 @@ function daBlankComps(e){ var c=((e&&e.comps)||[]).map(function(x){ return {addr
 function renderDealAnalysisSection(kind, l){
   var key=daMyKey(l);
   var entry=(l.dealAnalyses||{})[key]||null;
+  daSubjectAddr = (kind==='task'?l.location:l.address)||'';
   daState={ kind:kind, id:l.id, key:key, entry:entry, editing:!entry, comps:daBlankComps(entry), draft:null };
   return '<div class="form-section" id="da-shared-wrap"></div>';
 }
@@ -8618,6 +8879,7 @@ function dealAnalysesAdminHTML(kind, l){
   return '<div class="detail-section" id="da-admin-'+kind+'-'+l.id+'">'+daAdminInner(kind,l)+'</div>';
 }
 function daAdminInner(kind, l){
+  daSubjectAddr = (kind==='task'?l.location:l.address)||'';
   var list=daEntries(l).sort(function(a,b){ return String(b.e.savedAt||'').localeCompare(String(a.e.savedAt||'')); });
   var h='<div class="detail-section-title">&#128202; Deal Analysis from Team</div>';
   if(!list.length) return h+'<div style="color:var(--text4);font-size:12px">'+(l.shared?'&#9203; Waiting — nobody has submitted a deal analysis yet.':'No deal analysis yet. It appears here after you send this lead and the recipient fills it in.')+'</div>';
@@ -9209,6 +9471,7 @@ async function initFullApp() {
   }
   computePendingActivity();
   render();
+  cmtFetchUnread(); // fire-and-forget: populates the @mention dot on list rows once it resolves
 
   // Step 2: Sync with cloud
   var synced = await loadFromSupabase();
@@ -9455,12 +9718,15 @@ function renderSharedLeadView(l) {
   sharedActivityId = l.id;
   sharedActivityLog = l.activityLog || [];
   sharedRecipientNotes = l.recipientNotes || [];
+  // Comment thread only for a signed-in portal recipient — an anonymous emailed-link viewer
+  // has no stable identity to post or be @mentioned under, so they stay read-only here.
+  var cmtWide = sharedViewMode==='portal';
   document.getElementById('app').innerHTML = `
     ${sharedDetailHeader()}
-    <div style="max-width:640px;margin:24px auto;padding:0 16px">
+    <div style="max-width:${cmtWide?'1040px':'640px'};margin:24px auto;padding:0 16px">
       <div class="modal" style="position:static;box-shadow:var(--shadow-md)">
         <div class="modal-header"><div><div class="modal-title">${esc(l.address)||'No Address'}</div><div class="modal-subtitle">Lead #${l.id}${l.date?' &middot; '+l.date:''}</div>${l.address?'<div style="margin-top:4px;font-size:12px"><a href="'+zillowUrl+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+redfinUrl+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}</div></div>
-        <div class="modal-body">
+        <div class="modal-body${cmtWide?' modal-body-split':''}">${cmtWide?'<div class="modal-main-col">':''}
           <div class="detail-section"><div class="detail-section-title">Property &amp; Contact</div>
             <div class="detail-grid">
               <div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">${esc(l.phone)||''}</span></div>
@@ -9493,11 +9759,12 @@ function renderSharedLeadView(l) {
           ${renderNeedReviewSection(l)}
           <div id="shared-save-status" style="font-size:12px;color:var(--green);margin-bottom:8px"></div>
           <div id="shared-activity-section">${renderSharedActivityLog()}</div>
-        </div>
+        </div>${cmtWide?(cmtPanelHTML('lead', l.id)+'</div>'):''}
         <div class="modal-footer"><button class="btn btn-primary" onclick="saveSharedLead(${l.id})">&#128190; Save Update</button></div>
       </div>
     </div>`;
   daRenderShared();
+  if(cmtWide) cmtMount('lead', l.id);
 }
 async function saveSharedLead(id) {
   // NOTE: original `notes` is intentionally NOT written here — recipients edit their own
@@ -9677,6 +9944,7 @@ async function initRecipientPortal(){
     jvLeads = (jvRows||[]).map(fromJVRow);
   } catch(e){ jvLeads = []; }
   renderRecipientPortal();
+  cmtFetchUnread(); // fire-and-forget: populates the @mention dot for the portal recipient
   // gentle auto-refresh
   if(!window.__recipPoll){
     window.__recipPoll = setInterval(async function(){
