@@ -1798,9 +1798,9 @@ const SB_ITEMS = [
   {k:'outreach',  ic:'&#128227;', lb:'CRM Outreach',  sl:'Outreach',  soon:false},
   {k:'lists',     ic:'&#128199;', lb:'List Tracking', sl:'Lists',     soon:false},
   {k:'probate',   ic:'&#9878;&#65039;', lb:'Probate', sl:'Probate',   soon:false},
+  {k:'fb',        ic:'&#128241;', lb:'Facebook Scrape', sl:'FB Scrape', soon:false},
   {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  sl:'Dispo',    soon:false},
   {k:'d4d',       ic:'&#128663;', lb:'D4D', sl:'D4D',  soon:false},
-  {k:'fb',        ic:'&#128241;', lb:'FB Scraper', sl:'FB', soon:false},
   {k:'jv',        ic:'&#9997;&#65039;', lb:'JV Agreements', sl:'JV',  soon:false}
 ];
 function sidebarHTML(){
@@ -5703,6 +5703,7 @@ function fbBatchDownload(id){
 // exactly like the daily run. Auto-run = rotate 5-7 groups once a day (worker).
 // ============================================================================
 var fbGroups = null;        // cached group list (null = not loaded)
+var fbFiles = null;         // cached fb_scrape_files (the daily CSV "files" shown in this tab)
 var fbWorker = null;        // {last_seen,host} heartbeat row
 var fbLeadCounts = {};      // {group_link_id: total leads found} for the group manager
 var fbScan = { running:false };
@@ -5729,13 +5730,15 @@ async function fbLoadState(){
     var res = await Promise.all([
       sbFetch('fb_group_links?select=id,name,url,rating,last_used,notes&order=last_used.asc.nullsfirst,id.asc'),
       sbFetch('fb_worker_status?select=last_seen,host&id=eq.1'),
-      sbFetch('rpc/fb_group_lead_counts','POST',{}).catch(function(){ return []; })
+      sbFetch('rpc/fb_group_lead_counts','POST',{}).catch(function(){ return []; }),
+      sbFetch('fb_scrape_files?select=*&deleted=eq.false&order=date_scraped.desc,id.desc&limit=300').catch(function(){ return []; })
     ]);
     fbGroups = res[0] || [];
     fbWorker = (res[1] && res[1][0]) || null;
     fbLeadCounts = {};
     (res[2]||[]).forEach(function(r){ fbLeadCounts[r.group_link_id] = r.leads; });
-  } catch(e){ fbGroups = fbGroups||[]; }
+    fbFiles = res[3] || [];
+  } catch(e){ fbGroups = fbGroups||[]; fbFiles = fbFiles||[]; }
 }
 function fbStatusPillHTML(){
   var on = fbWorkerOnline();
@@ -5766,28 +5769,12 @@ function renderFBSection(){
   // Next-up rotation preview (least-recently-used, skipping bad links).
   var nextUp = (fbGroups||[]).filter(function(g){ return !/bad link|not good/i.test(g.notes||''); }).slice(0,6)
     .map(function(g){ return esc(g.name||fbGroupSlug(g.url)); }).join(', ');
-  var batches = fbBatches();
-  var lastRun = batches.length ? (batches[0].date || (batches[0].reviewSentAt||'').split('T')[0]) : null;
-
-  var batchRows = batches.slice(0,60).map(function(l){
-    var hasCsv = (l.notes||'').indexOf(',')>-1;
-    var dl = hasCsv ? '<button class="btn btn-primary btn-sm" onclick="fbBatchDownload('+l.id+')" style="font-weight:700">&#11015; Download CSV</button> ' : '';
-    return '<tr id="fb-batch-'+l.id+'">'
-      +'<td style="white-space:nowrap;font-size:12px;color:var(--text3)">'+esc(l.date||'')+'</td>'
-      +'<td style="font-weight:600">'+esc(l.name||'')+'</td>'
-      +'<td style="font-size:12px;color:var(--text2);max-width:380px">'+esc(l.reviewNote||'')+'</td>'
-      +'<td style="text-align:right;white-space:nowrap">'+dl
-        +'<button class="btn btn-danger btn-sm" onclick="fbDeleteBatch('+l.id+')" title="Delete this scrape">&#128465;</button>'
-      +'</td>'
-    +'</tr>';
-  }).join('');
-  var clearBtn = batches.length>1
-    ? '<button class="btn btn-secondary btn-sm" onclick="fbDeleteOldBatches()" title="Delete every scrape except the most recent" style="font-weight:700">&#128465; Delete all older scrapes</button>'
-    : '';
-  var batchesTable = batches.length
-    ? '<div style="display:flex;justify-content:flex-end;margin-bottom:8px">'+clearBtn+'</div>'
-      +'<div class="table-container"><div class="table-wrap"><table><thead><tr><th>Date</th><th>Scrape</th><th>Summary</th><th style="text-align:right">Actions</th></tr></thead><tbody>'+batchRows+'</tbody></table></div></div>'
-    : '<div class="empty"><div class="empty-icon">&#128241;</div><h3>No scrapes yet &mdash; click &#9889; Scrape now</h3></div>';
+  var files = (fbFiles||[]);
+  var lastRun = files.length ? files[0].date_scraped : null;
+  var fileCards = files.slice(0,150).map(fbFileCardHTML).join('');
+  var batchesTable = files.length
+    ? '<div style="display:flex;flex-direction:column;gap:10px">'+fileCards+'</div>'
+    : '<div class="empty"><div class="empty-icon">&#128241;</div><h3>No scrape files yet &mdash; the daily run drops a CSV here automatically</h3></div>';
 
   host.innerHTML = '<div class="lt-wrap">'
     +'<div class="lt-head"><div><h2>&#128241; Facebook Scraper</h2>'
@@ -5796,7 +5783,7 @@ function renderFBSection(){
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
       +fbStatCard('Groups saved', groupsN, usable+' usable')
       +fbStatCard('Groups / day', '5&ndash;7', 'rotating')
-      +fbStatCard('Last run', lastRun?esc(lastRun):'&mdash;', batches.length+' total runs')
+      +fbStatCard('Last run', lastRun?esc(lastRun):'&mdash;', files.length+' scrape files')
     +'</div>'
     +(nextUp?'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Next up: '+nextUp+'&hellip;</div>':'')
     +batchesTable
@@ -5807,6 +5794,72 @@ function fbStatCard(label,val,sub){
     +'<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.03em">'+label+'</div>'
     +'<div style="font-size:22px;font-weight:800;color:var(--text1);margin-top:2px">'+val+'</div>'
     +'<div style="font-size:11px;color:var(--text4)">'+sub+'</div></div>';
+}
+
+// ---- Daily scrape "file" card: date, count, Texted toggle, CSV, groups used, delete ----
+function fbPrettyDate(iso){
+  if(!iso) return '';
+  var p=String(iso).split('-'); if(p.length!==3) return iso;
+  var mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][(+p[1])-1]||'';
+  return mon+' '+(+p[2])+', '+p[0];
+}
+function fbFileById(id){ return (fbFiles||[]).find(function(x){ return +x.id===+id; }); }
+function fbFileCardHTML(f){
+  var texted=!!f.texted;
+  var groups=f.groups_used||[];
+  var groupRows=groups.map(function(g){
+    var link=g&&g.url ? '<a href="'+esc(g.url)+'" target="_blank" rel="noopener" style="color:#1877f2;text-decoration:none;font-weight:600">open group &#8599;</a>' : '';
+    return '<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid var(--border,#eef1f5);font-size:12.5px">'
+      +'<span style="color:var(--text1)">'+esc((g&&g.name)||'(group)')+'</span>'
+      +'<span style="color:var(--text3);white-space:nowrap">'+esc((g&&g.state)||'')+' &nbsp; '+link+'</span></div>';
+  }).join('');
+  var accent = texted ? '#22c55e' : '#1877f2';
+  return '<div class="fb-file" style="background:var(--bg1,#fff);border:1px solid var(--border,#e2e8f0);border-left:4px solid '+accent+';border-radius:12px;padding:12px 14px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+      +'<div>'
+        +'<div style="font-weight:800;font-size:15px;color:var(--text1)">&#128197; '+esc(fbPrettyDate(f.date_scraped))+'</div>'
+        +'<div style="font-size:12px;color:var(--text3)">'+(f.lead_count||0)+' number'+((f.lead_count||0)===1?'':'s')+' &middot; '+groups.length+' group'+(groups.length===1?'':'s')+' scraped</div>'
+      +'</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        +'<span style="font-size:12px;color:var(--text3);font-weight:700">Texted</span>'
+        +'<select onchange="fbFileToggleTexted('+f.id+',this.value)" style="font-size:12.5px;font-weight:700;padding:5px 9px;border-radius:8px;border:1px solid var(--border,#cbd5e1);background:'+(texted?'#dcfce7':'#fff')+';color:'+(texted?'#166534':'var(--text1)')+'">'
+          +'<option value="No"'+(!texted?' selected':'')+'>No</option>'
+          +'<option value="Yes"'+(texted?' selected':'')+'>Yes</option>'
+        +'</select>'
+        +'<button class="btn btn-primary btn-sm" onclick="fbFileDownloadCsv('+f.id+')" style="font-weight:700">&#11015; CSV</button>'
+        +'<button class="btn btn-secondary btn-sm" onclick="fbFileToggleGroups('+f.id+')" style="font-weight:700" title="Show which groups/states were scraped">&#128193; Groups &#9662;</button>'
+        +'<button class="btn btn-danger btn-sm" onclick="fbFileDelete('+f.id+')" title="Remove this file">&#128465;</button>'
+      +'</div>'
+    +'</div>'
+    +'<div id="fb-file-groups-'+f.id+'" style="display:none;margin-top:8px">'
+      +(groupRows||'<div style="font-size:12px;color:var(--text3)">No group info saved for this file.</div>')
+    +'</div>'
+  +'</div>';
+}
+function fbFileToggleGroups(id){
+  var el=document.getElementById('fb-file-groups-'+id); if(el) el.style.display=(el.style.display==='none'?'block':'none');
+}
+async function fbFileToggleTexted(id,val){
+  var t=(val==='Yes'); var f=fbFileById(id); if(f) f.texted=t;
+  try { await sbFetch('fb_scrape_files?id=eq.'+id,'PATCH',{texted:t}); }
+  catch(e){ showToast('Could not save Texted status','error'); }
+  if(activeSection==='fb') renderFBSection();
+}
+async function fbFileDelete(id){
+  if(!confirm('Remove this scrape file from the tab?\n\nThe phone numbers stay de-duplicated — they will NOT come back in future scrapes.')) return;
+  try { await sbFetch('fb_scrape_files?id=eq.'+id,'PATCH',{deleted:true});
+        fbFiles=(fbFiles||[]).filter(function(x){ return +x.id!==+id; });
+        showToast('File removed','success'); }
+  catch(e){ showToast('Could not remove file','error'); }
+  if(activeSection==='fb') renderFBSection();
+}
+function fbFileDownloadCsv(id){
+  var f=fbFileById(id); if(!f) return;
+  var blob=new Blob([f.csv||'Name,Phone'],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='facebook-scrape-'+(f.date_scraped||'file')+'.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ try{URL.revokeObjectURL(a.href);}catch(e){} },1500);
 }
 
 // ⚡ Scrape now: local when the Mac is online, cloud fallback when it's off.
@@ -5863,6 +5916,7 @@ async function fbPollRequest(reqId, baseline, tries){
   if(done){
     fbScan.running=false;
     try { await loadFromSupabase(); } catch(e){}
+    try { await fbLoadState(); } catch(e){}   // refresh the scrape-files list so the new file card shows
     if(err){ showToast('Scrape hit an error: '+String(err).slice(0,140),'error'); }
     else {
       var added = fbBatches().length - baseline;
