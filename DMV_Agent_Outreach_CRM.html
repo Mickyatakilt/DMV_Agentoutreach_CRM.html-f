@@ -4957,6 +4957,8 @@ function askRun(pref){
       + (localHTML? '<div style="margin-top:14px"><div class="mgr-ask-lbl" style="color:var(--text3,#6b7280)">\ud83d\udcc1 Matching records</div>'+localHTML+'</div>' : '');
     // Ask the model for the real answer, grounded in the exact matched records.
     mgrCall({mode:'ask', question:q, matched:matched, history:mgrChatHistory}).then(function(r){
+      // If the agent is unsure, it returns a clarifying question with options + an Other box.
+      if(r && r.type==='clarify' && r.options && r.options.length){ mgrRenderClarify(r.question, r.options, q); return; }
       var ans=(r&&r.answer)||'No answer came back.';
       var b=document.getElementById('ask-mgr-body'); if(b) b.innerHTML=mgrMd(ans);
       mgrChatHistory.push({role:'user',content:q},{role:'assistant',content:ans});
@@ -5037,7 +5039,16 @@ function mgrInjectCSS(){
    +'.mgr-btn{font-size:12px;font-weight:700;border:1px solid #c4b5fd;background:#fff;color:#6d28d9;border-radius:8px;padding:6px 12px;cursor:pointer}'
    +'.mgr-btn:hover{background:#f5f3ff}'
    +'.mgr-ask-answer{border-top:1px solid var(--border,#eee);margin-top:6px;padding-top:10px}'
-   +'.mgr-ask-lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#7c3aed;margin-bottom:6px}';
+   +'.mgr-ask-lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#7c3aed;margin-bottom:6px}'
+   +'.mgr-clarify-q{font-size:13.5px;font-weight:700;color:var(--text1,#111);margin-bottom:10px}'
+   +'.mgr-opts{display:flex;flex-direction:column;gap:8px}'
+   +'.mgr-opt{display:block;width:100%;text-align:left;font-size:13px;font-weight:600;border:1px solid #c4b5fd;background:#fff;color:#4c1d95;border-radius:10px;padding:10px 12px;cursor:pointer}'
+   +'.mgr-opt:hover{background:#f5f3ff;border-color:#a78bfa}'
+   +'.mgr-other{display:flex;gap:8px;margin-top:10px}'
+   +'.mgr-other-in{flex:1;font-size:16px;border:1px solid var(--border,#d1d5db);border-radius:10px;padding:10px 12px;background:var(--card,#fff);color:var(--text1,#111)}'
+   +'.mgr-opt-go{width:auto;white-space:nowrap;background:#7c3aed;color:#fff;border-color:#7c3aed}'
+   +'.mgr-opt-go:hover{background:#6d28d9}'
+   +'@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .mgr-opt{background:#1e1b3a;color:#ddd6fe;border-color:#4c3f7a}:root:not([data-theme="light"]) .mgr-opt:hover{background:#2a2450}}';
   document.head.appendChild(st);
 }
 
@@ -5117,6 +5128,23 @@ function mgrCall(payload){
     }).then(function(r){ return r.json(); });
   });
 }
+
+// ----- Clarify flow: when the agent is unsure, show a multiple-choice question + an "Other" box -----
+var mgrClarifyCtx=null;
+function mgrRenderClarify(question, options, origQ){
+  mgrClarifyCtx={q:origQ, options:(options||[]).slice(0,4)};
+  var b=document.getElementById('ask-mgr-body'); if(!b) return;
+  var opts=mgrClarifyCtx.options.map(function(o,i){ return '<button class="mgr-opt" onclick="mgrClarifyPick('+i+')">'+esc(o)+'</button>'; }).join('');
+  b.innerHTML='<div class="mgr-clarify">'
+    +'<div class="mgr-clarify-q">🤔 '+esc(question||'Which did you mean?')+'</div>'
+    +'<div class="mgr-opts">'+opts+'</div>'
+    +'<div class="mgr-other"><input id="mgr-other-in" class="mgr-other-in" type="text" placeholder="Other… type what you’re looking for" onkeydown="if(event.key===\'Enter\')mgrClarifyOther()"><button class="mgr-opt mgr-opt-go" onclick="mgrClarifyOther()">Find</button></div>'
+  +'</div>';
+  var oi=document.getElementById('mgr-other-in'); // don't steal focus on mobile, but ready on desktop
+  if(oi && window.matchMedia && window.matchMedia('(min-width:768px)').matches){ /* leave unfocused so option buttons read first */ }
+}
+function mgrClarifyPick(i){ var c=mgrClarifyCtx; if(!c||!c.options[i]) return; askRun(c.q+' — '+c.options[i]); }
+function mgrClarifyOther(){ var el=document.getElementById('mgr-other-in'); var v=el&&el.value.trim(); if(!v) return; var c=mgrClarifyCtx; askRun((c&&c.q?c.q+' — ':'')+v); }
 
 // ----- Dashboard proactive briefing -----
 function mgrRenderBriefing(force){
