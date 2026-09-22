@@ -1306,6 +1306,7 @@ function fromRow(r) {
     ghlContactId: r.ghl_contact_id||'',
     score: r.score||'', activityLog: r.activity_log||[],
     recipientNotes: r.recipient_notes||[],
+    dealAnalyses: r.deal_analyses||{}, dealAnalysisKey: r.deal_analysis_key||'',
     beds: r.beds||'', baths: r.baths||'', sqft: r.sqft||'',
     reviewSentBy: r.review_sent_by||'', reviewSentAt: r.review_sent_at||'', reviewNote: r.review_note||'',
     d4dHot: r.d4d_hot||false, d4dStatus: r.d4d_status||'',
@@ -1415,6 +1416,7 @@ function fromJVRow(r) {
     ghlContactId: r.ghl_contact_id||'',
     jvStatus: r.jv_status||'', dateAdded: r.date_added||'',
     activityLog: r.activity_log||[], recipientNotes: r.recipient_notes||[],
+    dealAnalyses: r.deal_analyses||{}, dealAnalysisKey: r.deal_analysis_key||'',
     beds: r.beds||'', baths: r.baths||'', sqft: r.sqft||'',
     reviewSentBy: r.review_sent_by||'', reviewSentAt: r.review_sent_at||'', reviewNote: r.review_note||'',
     shared: r.shared||false,
@@ -6904,7 +6906,7 @@ function renderPagination(total){
   return '<div class="pagination"><span>'+(((currentPage-1)*PAGE_SIZE)+1)+'&#8211;'+Math.min(currentPage*PAGE_SIZE,total)+' of '+total+'</span><div class="page-btns"><button class="page-btn" onclick="goPage(1)" '+(currentPage===1?'disabled':'')+'>&#171;</button><button class="page-btn" onclick="goPage('+(currentPage-1)+')" '+(currentPage===1?'disabled':'')+'>&#8249;</button>'+pages.join('')+'<button class="page-btn" onclick="goPage('+(currentPage+1)+')" '+(currentPage===tp?'disabled':'')+'>&#8250;</button><button class="page-btn" onclick="goPage('+tp+')" '+(currentPage===tp?'disabled':'')+'>&#187;</button></div></div>';
 }
 
-function openDetail(id){modalLead=leads.find(l=>l.id===id);editMode=false;isNew=false;renderDetailModal();}
+function openDetail(id){daAdminEdit={};modalLead=leads.find(l=>l.id===id);editMode=false;isNew=false;renderDetailModal();}
 function monthNameFromDate(dateStr){
   if(!dateStr) return '';
   var names=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -6968,6 +6970,7 @@ function renderDetailModal(){
             </div>
           </div>
           <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>'}${noteChecklistHTML('lead',l.id)}</div>
+          ${dealAnalysesAdminHTML('lead', l)}
           ${(l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':''}
           <div class="detail-section"><div class="detail-section-title">Links</div>
             <div style="display:flex;flex-direction:column;gap:6px">
@@ -7408,7 +7411,7 @@ function renderSentOutTab(){
     : '<div class="table-container"><div class="table-wrap"><table>'
       +'<thead><tr>'
       +'<th style="width:34px;text-align:center"><input type="checkbox" '+(allSelected?'checked':'')+' onclick="sentOutToggleSelectAll(this.checked)" title="Select all"></th>'
-      +'<th>Type</th><th>Property</th><th>Phone</th><th>Offer</th><th>Status</th><th>Score</th><th>Sent To</th><th>Signed By</th><th>Sent On</th><th>Team Follow-Up</th><th>Recipient Follow-Up</th><th style="text-align:center">Delete</th>'
+      +'<th>Type</th><th>Property</th><th>Phone</th><th>Offer</th><th>Status</th><th>Score</th><th>Sent To</th><th>Deal Analysis</th><th>Signed By</th><th>Sent On</th><th>Team Follow-Up</th><th>Recipient Follow-Up</th><th style="text-align:center">Delete</th>'
       +'</tr></thead><tbody>'
       + combined.map(l=>`
         <tr onclick="${l.kind==='task'?'openJVDetail('+l.id+')':'openDetail('+l.id+')'}">
@@ -7420,6 +7423,7 @@ function renderSentOutTab(){
           <td>${l.kind==='task'?statusBadge(l.jvStatus):statusBadge(l.status)}</td>
           <td>${leadScoreBadgeHTML(l.score)}</td>
           <td style="font-size:12px;color:var(--text2)">${esc(l.sharedWith)||''}</td>
+          <td>${daSentOutBadge(l)}</td>
           <td id="signer-${l.kind}-${l.id}" style="font-size:12px">${String(l.agreementStatus||'').toLowerCase()==='accepted'?'<span style="color:#1a7f43;font-weight:600">Signed</span>':'<span style="color:var(--text4)">Awaiting signature</span>'}</td>
           <td style="font-size:12px;color:var(--text3)">${l.sharedAt?new Date(l.sharedAt).toLocaleDateString():''}</td>
           <td>${l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
@@ -7813,6 +7817,7 @@ function updateJVStatusColor(status,prop,value){
 }
 
 function openJVDetail(id){
+  daAdminEdit={};
   var l=jvLeads.find(function(x){return x.id===id;});
   if(!l) return;
   var statuses=getJVStatuses();
@@ -7836,6 +7841,7 @@ function openJVDetail(id){
     +'<button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="saveJVDetail('+l.id+')">&#128190; Save Changes</button>'
     +'</div>'
     +'<div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>'+(l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>')+noteChecklistHTML('task',l.id)+'</div>'
+    +dealAnalysesAdminHTML('task', l)
     +((l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':'')
     +agreementSectionHTML(l.id,'task',l.agreementStatus,l.agreementAcceptedAt)
     +ghlSmsSlotHTML('task',l.id)
@@ -8486,6 +8492,181 @@ function setSharedName(n){ if(n && n.trim()) localStorage.setItem('crm_shared_na
 // Kept completely separate from the original lead Notes so the original is never overwritten.
 // Each entry is stamped with who wrote it + date + time. Reusable read-only renderer used on
 // both the shared link page and the main CRM detail views. =====
+// ===== DEAL ANALYSIS (per-recipient ARV / asking price / photos link / comps) =====
+// Stored per recipient in deal_analyses jsonb ({ key: entry }). The edge fn decides the key
+// from who is saving (signer name or portal login), so recipients only ever see/write their own.
+// Admin sees every recipient's entry in the lead detail and can edit any of them.
+var daState = null; // { kind, id, key, entry, editing, comps:[...] } for the open shared view
+function daNum(v){ return Number(String(v||'').replace(/[^0-9.]/g,''))||0; }
+function daMoney(v){ var n=daNum(v); return n?'$'+Math.round(n).toLocaleString():'&#8212;'; }
+function daDate(d){ if(!d) return '&#8212;'; var x=new Date(d+'T00:00'); return isNaN(x)?esc(d):x.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+function daStats(e){
+  var ps=(e.comps||[]).map(function(c){return daNum(c.soldPrice);}).filter(Boolean);
+  var arv=daNum(e.arv), ask=daNum(e.askingPrice);
+  return { avg: ps.length?ps.reduce(function(a,b){return a+b;},0)/ps.length:0,
+           spread: (arv&&ask)?arv-ask:0, pct: (arv&&ask)?Math.round(ask/arv*100)+'%':'&#8212;' };
+}
+function daEntries(l){ var m=(l&&l.dealAnalyses)||{}; return Object.keys(m).map(function(k){ return {key:k, e:m[k]||{}}; }); }
+function daMyKey(l){
+  if(sharedViewMode==='portal' && typeof authProfile!=='undefined' && authProfile) return 'e:'+String(authProfile.email||'').trim().toLowerCase();
+  return (l && l.dealAnalysisKey) || '';
+}
+var DA_STAT = 'background:var(--surface2,#f8fafc);border:1px solid var(--border);border-radius:8px;padding:8px 10px';
+function daStatsHTML(e){
+  var s=daStats(e);
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:10px">'
+    +'<div style="'+DA_STAT+'"><div class="detail-label">Avg comp sold</div><div style="font-weight:700;font-size:15px">'+daMoney(s.avg)+'</div></div>'
+    +'<div style="'+DA_STAT+'"><div class="detail-label">Spread (ARV &#8722; Ask)</div><div style="font-weight:700;font-size:15px;color:var(--green)">'+daMoney(s.spread)+'</div></div>'
+    +'<div style="'+DA_STAT+'"><div class="detail-label">Ask % of ARV</div><div style="font-weight:700;font-size:15px">'+s.pct+'</div></div></div>';
+}
+// Read-only card (used by the recipient after saving, and by admin for each recipient).
+function daReadHTML(e){
+  var comps=e.comps||[];
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">'
+    +'<div style="'+DA_STAT+'"><div class="detail-label">ARV</div><div style="font-weight:700;font-size:15px">'+daMoney(e.arv)+'</div></div>'
+    +'<div style="'+DA_STAT+'"><div class="detail-label">'+esc(e.askingBy||'Seller')+' Asking</div><div style="font-weight:700;font-size:15px;color:var(--accent)">'+daMoney(e.askingPrice)+'</div></div></div>'
+    +'<div style="margin-top:10px;font-size:13px"><span class="detail-label">Photos</span>&nbsp; '
+    +(e.photosLink&&/^https?:\/\//i.test(e.photosLink)?'<a href="'+esc(e.photosLink)+'" target="_blank" rel="noopener" class="detail-link" style="word-break:break-all">&#128247; Open photos &#8599;</a>':(e.photosLink?esc(e.photosLink):'<span style="color:var(--text4)">No link</span>'))+'</div>'
+    +'<div class="detail-label" style="margin-top:10px">Comps ('+comps.length+')</div>'
+    +(comps.length?'<div class="table-wrap" style="margin-top:4px"><table style="width:100%;font-size:13px"><thead><tr><th>Address</th><th>Sold For</th><th>Sold Date</th></tr></thead><tbody>'
+      +comps.map(function(c){ return '<tr><td>'+(esc(c.address)||'&#8212;')+'</td><td style="font-weight:700">'+daMoney(c.soldPrice)+'</td><td>'+daDate(c.soldDate)+'</td></tr>'; }).join('')
+      +'</tbody></table></div>':'<div style="color:var(--text4);font-size:12px">No comps added</div>')
+    +daStatsHTML(e);
+}
+// Editable form. prefix keeps the recipient form and the admin editor ids apart.
+function daFormHTML(prefix, e, comps){
+  var cRows = comps.map(function(c,i){
+    return '<tr><td><input class="form-input" value="'+esc(c.address)+'" placeholder="123 Main St" oninput="daComp(\''+prefix+'\','+i+',\'address\',this.value)"></td>'
+      +'<td><input class="form-input" inputmode="numeric" value="'+esc(c.soldPrice)+'" placeholder="$410,000" oninput="daComp(\''+prefix+'\','+i+',\'soldPrice\',this.value)"></td>'
+      +'<td><input class="form-input" type="date" value="'+esc(c.soldDate)+'" oninput="daComp(\''+prefix+'\','+i+',\'soldDate\',this.value)"></td>'
+      +'<td style="width:30px"><button type="button" onclick="daRemoveComp(\''+prefix+'\','+i+')" title="Remove" style="border:0;background:none;color:var(--red);font-size:18px;cursor:pointer">&times;</button></td></tr>';
+  }).join('');
+  return '<div class="form-grid">'
+    +'<div class="form-field"><label class="form-label">Property ARV</label><input id="'+prefix+'-arv" class="form-input" inputmode="numeric" value="'+esc(e.arv||'')+'" placeholder="$425,000"></div>'
+    +'<div class="form-field"><label class="form-label">Asking Price</label><div style="display:flex;gap:6px"><select id="'+prefix+'-askby" class="form-select" style="width:105px;flex-shrink:0"><option '+(e.askingBy!=='Agent'?'selected':'')+'>Seller</option><option '+(e.askingBy==='Agent'?'selected':'')+'>Agent</option></select><input id="'+prefix+'-ask" class="form-input" inputmode="numeric" value="'+esc(e.askingPrice||'')+'" placeholder="$240,000"></div></div>'
+    +'<div class="form-field" style="grid-column:1/-1"><label class="form-label">Property Photos Link</label><input id="'+prefix+'-photos" class="form-input" value="'+esc(e.photosLink||'')+'" placeholder="Paste a Google Drive / Dropbox / Zillow link"></div>'
+    +'</div>'
+    +'<div class="form-label" style="margin-top:12px">&#127960;&#65039; Comps</div>'
+    +'<div class="table-wrap"><table style="width:100%"><thead><tr><th>Property Address</th><th style="width:130px">Sold For</th><th style="width:150px">Sold Date</th><th></th></tr></thead><tbody>'+cRows+'</tbody></table></div>'
+    +'<button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="daAddComp(\''+prefix+'\')">&#10133; Add Comp</button>';
+}
+// Admin editor state lives here, keyed by prefix; the recipient form uses daState.
+var daAdminEdit = {};
+function daCompsFor(prefix){ return prefix==='da-me' ? (daState&&daState.comps) : (daAdminEdit[prefix]&&daAdminEdit[prefix].comps); }
+function daReadForm(prefix){
+  var g=function(s){ return ((document.getElementById(prefix+'-'+s)||{}).value||'').trim(); };
+  return { arv:g('arv'), askingPrice:g('ask'), askingBy:g('askby')||'Seller', photosLink:g('photos'),
+    comps:(daCompsFor(prefix)||[]).filter(function(c){ return c.address||c.soldPrice||c.soldDate; }) };
+}
+function daComp(prefix,i,f,v){ var c=daCompsFor(prefix); if(c&&c[i]) c[i][f]=v; }
+function daRerender(prefix){
+  // Keep typed-but-unsaved top fields when the comp rows change.
+  var cur=daReadForm(prefix);
+  if(prefix==='da-me'){ daState.draft=cur; daRenderShared(); }
+  else { daAdminEdit[prefix].draft=cur; daRenderAdmin(daAdminEdit[prefix].kind, daAdminEdit[prefix].id); }
+}
+function daAddComp(prefix){ var c=daCompsFor(prefix); if(!c) return; c.push({address:'',soldPrice:'',soldDate:''}); daRerender(prefix); }
+function daRemoveComp(prefix,i){ var c=daCompsFor(prefix); if(!c) return; c.splice(i,1); if(!c.length) c.push({address:'',soldPrice:'',soldDate:''}); daRerender(prefix); }
+function daBlankComps(e){ var c=((e&&e.comps)||[]).map(function(x){ return {address:x.address||'',soldPrice:x.soldPrice||'',soldDate:x.soldDate||''}; }); if(!c.length) c.push({address:'',soldPrice:'',soldDate:''}); return c; }
+
+// ---- Recipient side (shared link + portal) ----
+function renderDealAnalysisSection(kind, l){
+  var key=daMyKey(l);
+  var entry=(l.dealAnalyses||{})[key]||null;
+  daState={ kind:kind, id:l.id, key:key, entry:entry, editing:!entry, comps:daBlankComps(entry), draft:null };
+  return '<div class="form-section" id="da-shared-wrap"></div>';
+}
+function daRenderShared(){
+  var w=document.getElementById('da-shared-wrap'); if(!w||!daState) return;
+  var e=daState.entry, head='<div class="form-section-title">&#128202; Deal Analysis</div>';
+  if(!daState.editing && e){
+    w.innerHTML=head
+      +'<div style="font-size:12px;color:var(--green);margin-bottom:8px">&#10003; Saved '+(e.savedAt?new Date(e.savedAt).toLocaleString():'')+' &middot; the M-Estate team can see this</div>'
+      +daReadHTML(e)
+      +'<div style="text-align:right;margin-top:10px"><button class="btn btn-secondary" onclick="daState.editing=true;daState.comps=daBlankComps(daState.entry);daState.draft=null;daRenderShared()">&#9999;&#65039; Edit</button></div>';
+    return;
+  }
+  var src=daState.draft||e||{};
+  w.innerHTML=head
+    +'<div style="font-size:12px;color:var(--text3);margin-bottom:10px">Add your numbers for this property. Only you and the M-Estate team can see them.</div>'
+    +daFormHTML('da-me', src, daState.comps)
+    +'<div id="da-me-status" style="font-size:12px;margin-top:8px"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">'
+    +(e?'<button class="btn btn-secondary" onclick="daState.editing=false;daRenderShared()">Cancel</button>':'')
+    +'<button class="btn btn-primary" id="da-me-save" onclick="daSaveShared()">&#128190; Save Deal Analysis</button></div>';
+}
+async function daSaveShared(){
+  if(!daState) return;
+  var data=daReadForm('da-me'), st=document.getElementById('da-me-status'), btn=document.getElementById('da-me-save');
+  if(!data.arv && !data.askingPrice && !data.photosLink && !data.comps.length){ if(st){st.style.color='var(--red)';st.textContent='Add at least one field before saving.';} return; }
+  if(btn) btn.disabled=true; if(st){st.style.color='var(--text3)';st.textContent='Saving…';}
+  try{
+    var res=await recipientEdgeSave(daState.kind, daState.id, { deal_analysis:data });
+    var saved=(res&&res.analysis)||Object.assign({savedAt:new Date().toISOString()},data);
+    daState.entry=saved; daState.editing=false; daState.draft=null;
+    var arr=daState.kind==='task'?jvLeads:leads, l=arr.find(function(x){return x.id===daState.id;});
+    if(l){ l.dealAnalyses=Object.assign({}, l.dealAnalyses||{}); l.dealAnalyses[daState.key||'me']=saved; }
+    daRenderShared();
+  }catch(err){
+    if(btn) btn.disabled=false;
+    if(st){ st.style.color='var(--red)'; st.textContent='Could not save — '+((err&&err.message)||'please try again.'); }
+  }
+}
+
+// ---- Admin side (lead + task detail modals) ----
+function dealAnalysesAdminHTML(kind, l){
+  return '<div class="detail-section" id="da-admin-'+kind+'-'+l.id+'">'+daAdminInner(kind,l)+'</div>';
+}
+function daAdminInner(kind, l){
+  var list=daEntries(l).sort(function(a,b){ return String(b.e.savedAt||'').localeCompare(String(a.e.savedAt||'')); });
+  var h='<div class="detail-section-title">&#128202; Deal Analysis from Team</div>';
+  if(!list.length) return h+'<div style="color:var(--text4);font-size:12px">'+(l.shared?'&#9203; Waiting — nobody has submitted a deal analysis yet.':'No deal analysis yet. It appears here after you send this lead and the recipient fills it in.')+'</div>';
+  return h+list.map(function(x,i){
+    var prefix='da-ad-'+kind+'-'+l.id+'-'+i, ed=daAdminEdit[prefix];
+    var top='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px"><b style="font-size:14px">'+esc(x.e.by||'Recipient')+'</b>'
+      +'<span style="font-size:11px;font-weight:700;color:#15803d;background:#dcfce7;border-radius:20px;padding:3px 9px">&#10003; Submitted '+(x.e.savedAt?new Date(x.e.savedAt).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'')+'</span></div>';
+    var body = ed
+      ? daFormHTML(prefix, ed.draft||x.e, ed.comps)
+        +'<div id="'+prefix+'-status" style="font-size:12px;margin-top:6px"></div>'
+        +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="delete daAdminEdit[\''+prefix+'\'];daRenderAdmin(\''+kind+'\','+l.id+')">Cancel</button><button class="btn btn-primary btn-sm" onclick="daAdminSave(\''+prefix+'\')">&#128190; Save</button></div>'
+      : daReadHTML(x.e)+'<div style="text-align:right;margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="daAdminStartEdit(\''+kind+'\','+l.id+','+i+')">&#9999;&#65039; Edit</button></div>';
+    return '<div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;background:#fff">'+top+body+'</div>';
+  }).join('');
+}
+function daFindLead(kind,id){ var arr=kind==='task'?jvLeads:leads; return arr.find(function(x){return x.id===id;}); }
+function daRenderAdmin(kind,id){ var w=document.getElementById('da-admin-'+kind+'-'+id), l=daFindLead(kind,id); if(w&&l) w.innerHTML=daAdminInner(kind,l); }
+function daAdminStartEdit(kind,id,i){
+  var l=daFindLead(kind,id); if(!l) return;
+  var list=daEntries(l).sort(function(a,b){ return String(b.e.savedAt||'').localeCompare(String(a.e.savedAt||'')); });
+  var x=list[i]; if(!x) return;
+  daAdminEdit['da-ad-'+kind+'-'+id+'-'+i]={ kind:kind, id:id, key:x.key, comps:daBlankComps(x.e), draft:null };
+  daRenderAdmin(kind,id);
+}
+async function daAdminSave(prefix){
+  var ed=daAdminEdit[prefix]; if(!ed) return;
+  var data=daReadForm(prefix), st=document.getElementById(prefix+'-status');
+  if(st){ st.style.color='var(--text3)'; st.textContent='Saving…'; }
+  try{
+    await authRefreshIfNeeded();
+    var r=await fetch(AGREEMENT_FN_URL,{ method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+(sbAuthToken()||SUPABASE_KEY), 'Content-Type':'application/json' },
+      body:JSON.stringify({ action:'portal_save', kind:ed.kind, leadId:ed.id, analysisKey:ed.key, patch:{ deal_analysis:data } }) });
+    var out=await r.json().catch(function(){return {};});
+    if(!r.ok||out.error) throw new Error(out.error||('HTTP '+r.status));
+    var l=daFindLead(ed.kind,ed.id);
+    if(l){ l.dealAnalyses=Object.assign({}, l.dealAnalyses||{}); l.dealAnalyses[ed.key]=out.analysis||data; }
+    delete daAdminEdit[prefix];
+    daRenderAdmin(ed.kind,ed.id);
+    showToast('Deal analysis updated','success');
+    if(activeTab==='sentout') renderSentOutTab();
+  }catch(err){ if(st){ st.style.color='var(--red)'; st.textContent='Could not save — '+((err&&err.message)||'try again'); } }
+}
+// Sent Out list badge.
+function daSentOutBadge(l){
+  var n=daEntries(l).length;
+  if(n) return '<span style="font-size:11px;font-weight:700;color:#15803d;background:#dcfce7;border-radius:20px;padding:3px 9px;white-space:nowrap">&#10003; '+n+' received</span>';
+  return '<span style="font-size:11px;font-weight:700;color:#b45309;background:#fef3c7;border-radius:20px;padding:3px 9px;white-space:nowrap">&#9203; Waiting</span>';
+}
+
 function recipientNotesListHTML(entries){
   entries = entries || [];
   if(entries.length===0) return '<div style="font-size:12px;color:var(--text3);padding:6px 0">No recipient notes yet.</div>';
@@ -9306,6 +9487,7 @@ function renderSharedLeadView(l) {
               <div class="form-field"><label class="form-label">Sqft</label><input id="shared-sqft" class="form-input" value="${esc(l.sqft||'')}" placeholder="1500"></div>
             </div>
           </div>
+          ${renderDealAnalysisSection('lead', l)}
           <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
           ${renderSharedRecipientNotes()}
           ${renderNeedReviewSection(l)}
@@ -9315,6 +9497,7 @@ function renderSharedLeadView(l) {
         <div class="modal-footer"><button class="btn btn-primary" onclick="saveSharedLead(${l.id})">&#128190; Save Update</button></div>
       </div>
     </div>`;
+  daRenderShared();
 }
 async function saveSharedLead(id) {
   // NOTE: original `notes` is intentionally NOT written here — recipients edit their own
@@ -9383,6 +9566,7 @@ function renderSharedTaskView(l) {
               <div class="form-field"><label class="form-label">Sqft</label><input id="shared-jv-sqft" class="form-input" value="${esc(l.sqft||'')}" placeholder="1500"></div>
             </div>
           </div>
+          ${renderDealAnalysisSection('task', l)}
           <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
           ${renderSharedRecipientNotes()}
           ${renderNeedReviewSection(l)}
@@ -9392,6 +9576,7 @@ function renderSharedTaskView(l) {
         <div class="modal-footer"><button class="btn btn-primary" onclick="saveSharedTask(${l.id})">&#128190; Save Update</button></div>
       </div>
     </div>`;
+  daRenderShared();
 }
 async function saveSharedTask(id) {
   // original `notes` intentionally NOT written — recipient uses their own Recipient Notes.
