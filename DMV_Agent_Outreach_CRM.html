@@ -160,33 +160,33 @@
   .modal-body{padding:18px 22px;flex:1;}
   .modal-footer{padding:12px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:var(--surface2);border-radius:0 0 16px 16px;position:sticky;bottom:0;}
 
-  /* ---- Comment thread panel (right-side, docked in the lead detail modal) ---- */
-  .modal-lead-wide{max-width:1180px;}
+  /* ---- Comment thread panel (small box, right-side, docked in the lead detail modal) ---- */
+  .modal-lead-wide{max-width:980px;}
   .modal-body-split{display:flex;padding:0 !important;align-items:stretch;min-height:0;}
   .modal-body-split .modal-main-col{flex:1;min-width:0;padding:18px 22px;}
-  .modal-body-split .cmt-col{width:340px;flex-shrink:0;border-left:1px solid var(--border);background:var(--surface2);display:flex;flex-direction:column;}
-  @media (max-width:900px){ .modal-body-split{flex-direction:column;} .modal-body-split .cmt-col{width:100%;border-left:none;border-top:1px solid var(--border);} }
-  .cmt-head{padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;}
-  .cmt-head-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text2);display:flex;align-items:center;gap:6px;}
-  .cmt-thread{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:12px;max-height:60vh;}
-  .cmt-empty{font-size:12px;color:var(--text4);text-align:center;padding:20px 8px;}
-  .cmt-item{display:flex;flex-direction:column;gap:3px;}
-  .cmt-item.is-reply{margin-left:20px;padding-left:10px;border-left:2px solid var(--border);}
-  .cmt-item-head{display:flex;align-items:center;gap:6px;font-size:11.5px;}
-  .cmt-avatar{width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .modal-body-split .cmt-col{width:230px;flex-shrink:0;border-left:1px solid var(--border);background:var(--surface2);display:flex;flex-direction:column;}
+  @media (max-width:820px){ .modal-body-split{flex-direction:column;} .modal-body-split .cmt-col{width:100%;border-left:none;border-top:1px solid var(--border);} }
+  .cmt-head{padding:10px 12px 8px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .cmt-head-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text2);display:flex;align-items:center;gap:6px;}
+  .cmt-thread{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:10px;max-height:50vh;}
+  .cmt-empty{font-size:11.5px;color:var(--text4);text-align:center;padding:16px 6px;}
+  .cmt-item{display:flex;flex-direction:column;gap:2px;}
+  .cmt-item.is-reply{margin-left:14px;padding-left:8px;border-left:2px solid var(--border);}
+  .cmt-item-head{display:flex;align-items:center;flex-wrap:wrap;gap:5px;font-size:11px;}
+  .cmt-avatar{width:17px;height:17px;border-radius:50%;background:var(--accent);color:#fff;font-size:8px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .cmt-author{font-weight:700;color:var(--text);}
-  .cmt-role{font-size:9.5px;color:var(--text4);text-transform:uppercase;letter-spacing:0.4px;}
-  .cmt-time{color:var(--text4);margin-left:auto;font-size:10.5px;white-space:nowrap;}
-  .cmt-body{font-size:12.5px;color:var(--text2);white-space:pre-wrap;line-height:1.45;}
+  .cmt-role{font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:0.3px;}
+  .cmt-time{color:var(--text4);margin-left:auto;font-size:10px;white-space:nowrap;}
+  .cmt-body{font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.4;}
   .cmt-body .cmt-mention{color:var(--accent);font-weight:600;background:var(--accent-light);border-radius:4px;padding:0 3px;}
-  .cmt-reply-btn{font-size:10.5px;color:var(--text4);background:none;border:none;cursor:pointer;padding:0;text-align:left;width:fit-content;}
+  .cmt-reply-btn{font-size:10px;color:var(--text4);background:none;border:none;cursor:pointer;padding:0;text-align:left;width:fit-content;}
   .cmt-reply-btn:hover{color:var(--accent);text-decoration:underline;}
-  .cmt-compose{border-top:1px solid var(--border);padding:10px 14px 14px;position:relative;}
-  .cmt-reply-banner{font-size:11px;color:var(--text3);background:var(--surface3);border-radius:6px;padding:5px 8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:6px;}
-  .cmt-input{width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:inherit;resize:vertical;min-height:56px;background:var(--surface);color:var(--text);box-sizing:border-box;}
-  .cmt-send-row{display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;}
-  .cmt-hint{font-size:10.5px;color:var(--text4);}
-  .cmt-mention-pop{position:absolute;bottom:100%;left:14px;right:14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-lg);max-height:160px;overflow-y:auto;z-index:20;margin-bottom:4px;}
+  .cmt-compose{border-top:1px solid var(--border);padding:8px 10px 10px;position:relative;}
+  .cmt-reply-banner{font-size:10.5px;color:var(--text3);background:var(--surface3);border-radius:6px;padding:4px 7px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:6px;}
+  .cmt-input{width:100%;border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-size:12px;font-family:inherit;resize:vertical;min-height:48px;background:var(--surface);color:var(--text);box-sizing:border-box;}
+  .cmt-send-row{display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:6px;}
+  .cmt-hint{font-size:9.5px;color:var(--text4);}
+  .cmt-mention-pop{position:absolute;bottom:100%;left:10px;right:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-lg);max-height:160px;overflow-y:auto;z-index:20;margin-bottom:4px;}
   .cmt-mention-opt{padding:7px 10px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;}
   .cmt-mention-opt:hover,.cmt-mention-opt.active{background:var(--surface2);}
   .cmt-mention-opt .cmt-role{margin-left:auto;}
@@ -4541,11 +4541,13 @@ function nciDelete(entityType, entityId, itemId){
 
 // =================== Comment threads (right-side panel, per-lead) ===================
 // One shared thread per lead. Admin/Team always participate; a signed-in recipient-portal
-// user only ever reaches this panel when the lead is within their own scope — the server
-// (lead-agreement edge fn, action comments_list/comments_add/comments_unread) re-checks that
-// on every call using the exact same scope rule portal_save already enforces, so nothing here
-// trusts the client for who can see or post what. Anonymous emailed-link viewers never get
-// this panel at all (see renderSharedLeadView's cmtWide gate).
+// user only ever reaches this panel when the lead is within their own scope, and an anonymous
+// emailed-link recipient reaches it once they've passed the agreement gate, posting under
+// whatever name they typed there. The server (lead-agreement edge fn, action comments_list/
+// comments_add/comments_unread) re-checks identity and scope on every call — via JWT for
+// staff/portal, via the per-lead acceptance token for an anonymous link — so nothing here
+// trusts the client for who can see or post what. Only identified (JWT) callers get the
+// unread/@mention badge; an anonymous link has no durable session to track that against.
 var cmtCache = {};            // 'lead:123' -> {comments, mentionable, me, loaded, error}
 var cmtUnreadSet = new Set(); // 'lead:123' entries with an unread @mention (from cmtFetchUnread)
 var cmtReplyTo = null;        // {key, id, authorName} while composing a reply, else null
@@ -4579,7 +4581,7 @@ async function cmtLoad(kind, id){
     var r = await fetch(AGREEMENT_FN_URL, {
       method:'POST',
       headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
-      body: JSON.stringify({ action:'comments_list', kind:kind, leadId:id })
+      body: JSON.stringify({ action:'comments_list', kind:kind, leadId:id, token:agreementToken(kind,id) })
     });
     var data = await r.json().catch(function(){ return {}; });
     if(!r.ok || data.error) throw new Error(data.error || ('HTTP '+r.status));
@@ -4592,6 +4594,18 @@ async function cmtLoad(kind, id){
 
 function cmtInitials(name){
   return (name||'?').trim().split(/\s+/).map(function(w){ return w[0]||''; }).slice(0,2).join('').toUpperCase() || '?';
+}
+// Short relative time ("2h", "3d") — keeps the compact comment box from wrapping on a full
+// date/time string. Falls back to a short date once it's more than a week old.
+function cmtTimeAgo(iso){
+  if(!iso) return '';
+  var d = new Date(iso); var diffMs = Date.now()-d.getTime();
+  var m = Math.floor(diffMs/60000);
+  if(m<1) return 'now';
+  if(m<60) return m+'m';
+  var h = Math.floor(m/60); if(h<24) return h+'h';
+  var days = Math.floor(h/24); if(days<7) return days+'d';
+  return (d.getMonth()+1)+'/'+d.getDate();
 }
 
 function cmtRender(kind, id){
@@ -4608,7 +4622,7 @@ function cmtRender(kind, id){
   var nameMap = {}; (state.mentionable||[]).forEach(function(u){ nameMap[u.id]=u.name; });
 
   function renderOne(c, isReply){
-    var when = c.created_at ? new Date(c.created_at).toLocaleString() : '';
+    var when = cmtTimeAgo(c.created_at);
     var bodyHtml = esc(c.body);
     (c.mentions||[]).forEach(function(uid){
       var nm = nameMap[uid]; if(!nm) return;
@@ -4710,7 +4724,7 @@ async function cmtSubmit(kind, id){
     var r = await fetch(AGREEMENT_FN_URL, {
       method:'POST',
       headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
-      body: JSON.stringify({ action:'comments_add', kind:kind, leadId:id, body:body, parentId:parentId, mentions:mentions })
+      body: JSON.stringify({ action:'comments_add', kind:kind, leadId:id, body:body, parentId:parentId, mentions:mentions, token:agreementToken(kind,id) })
     });
     var data = await r.json().catch(function(){ return {}; });
     if(!r.ok || data.error) throw new Error(data.error || ('HTTP '+r.status));
@@ -7957,7 +7971,7 @@ function renderJVLeadsTab(){
       + filtered.map(function(l){
           return '<tr onclick="openJVDetail('+l.id+')" style="'+(jvSelectedLeads.has(l.id)?'background:#eff6ff;':'')+'">'
             + '<td onclick="event.stopPropagation()"><input type="checkbox" '+(jvSelectedLeads.has(l.id)?'checked':'')+' onchange="jvToggleSelect('+l.id+',this.checked)" style="width:15px;height:15px;cursor:pointer"></td>'
-            + '<td style="font-weight:600">'+esc(l.name||'')+'</td>'
+            + '<td style="font-weight:600">'+esc(l.name||'')+cmtRowDot('task',l.id)+'</td>'
             + '<td style="font-size:12px">'+esc(l.location||l.address||'')+(l.location?'<br><a href="'+buildZillowUrl(l.location)+'" target="_blank" onclick="event.stopPropagation()" class="detail-link" style="font-size:11px">&#127968; Zillow &#8599;</a>':'')+'</td>'
             + '<td>'+(l.phone&&l.phone!=='No phone -- DM only'?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':esc(l.phone||''))+'</td>'
             + '<td>'+scoreBadgeHTML(l.score)+'</td>'
@@ -8075,7 +8089,7 @@ function openJVDetail(id){
   if(!l) return;
   var statuses=getJVStatuses();
   var statusOpts=statuses.map(function(s){return '<option value="'+s+'" '+(l.jvStatus===s?'selected':'')+'>'+s+'</option>';}).join('');
-  document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px"><div class="modal-header"><div><div class="modal-title">'+esc(l.name||'JV Lead')+'</div><div class="modal-subtitle">'+scoreBadgeHTML(l.score)+' &middot; '+esc(l.location||l.address||'')+sentIndicatorHTML(l)+'</div>'+(l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body">'
+  document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal modal-lead-wide"><div class="modal-header"><div><div class="modal-title">'+esc(l.name||'JV Lead')+'</div><div class="modal-subtitle">'+scoreBadgeHTML(l.score)+' &middot; '+esc(l.location||l.address||'')+sentIndicatorHTML(l)+'</div>'+(l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body modal-body-split"><div class="modal-main-col">'
     +'<div class="form-section"><div class="detail-grid">'
     +'<div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">'+(l.phone?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':esc(l.phone||''))+(l.location?' <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="crmFindNumber('+l.id+')" title="Find the first wireless number for this address (needs US VPN)">&#128269; Find #</button>':'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Email</span><span class="detail-val">'+(l.contactEmail?'<a href="mailto:'+esc(l.contactEmail)+'" class="detail-link">'+esc(l.contactEmail)+'</a>':'<span style="color:var(--text4)">&#8212;</span>')+'</span></div>'
@@ -8101,9 +8115,10 @@ function openJVDetail(id){
     +emailOfferSectionHTML(l,'task')
     +renderAttachmentsSection('task', l.id)
     +renderActivityLog('task', l.id, l.activityLog)
-    +'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
+    +'</div>'+cmtPanelHTML('task', l.id)+'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
   nciMount('task', l.id);
   mountGhlSms('task', l.id);
+  cmtMount('task', l.id);
 }
 // ---- Find # (skip trace via the "CRM Find Number" browser extension) --------
 function crmFindNumber(id){
@@ -9727,12 +9742,14 @@ function renderSharedLeadView(l) {
   sharedActivityId = l.id;
   sharedActivityLog = l.activityLog || [];
   sharedRecipientNotes = l.recipientNotes || [];
-  // Comment thread only for a signed-in portal recipient — an anonymous emailed-link viewer
-  // has no stable identity to post or be @mentioned under, so they stay read-only here.
-  var cmtWide = sharedViewMode==='portal';
+  // Comments show for every recipient here, signed-in portal or the plain emailed link —
+  // an anonymous link viewer posts under whatever name they typed at the agreement gate
+  // (same identity the rest of this page already trusts them with). They just can't be
+  // @mentioned themselves, since there's no durable account behind that name.
+  var cmtWide = true;
   document.getElementById('app').innerHTML = `
     ${sharedDetailHeader()}
-    <div style="max-width:${cmtWide?'1040px':'640px'};margin:24px auto;padding:0 16px">
+    <div style="max-width:${cmtWide?'900px':'640px'};margin:24px auto;padding:0 16px">
       <div class="modal" style="position:static;box-shadow:var(--shadow-md)">
         <div class="modal-header"><div><div class="modal-title">${esc(l.address)||'No Address'}</div><div class="modal-subtitle">Lead #${l.id}${l.date?' &middot; '+l.date:''}</div>${l.address?'<div style="margin-top:4px;font-size:12px"><a href="'+zillowUrl+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+redfinUrl+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}</div></div>
         <div class="modal-body${cmtWide?' modal-body-split':''}">${cmtWide?'<div class="modal-main-col">':''}
