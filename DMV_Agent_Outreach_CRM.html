@@ -6029,7 +6029,7 @@ function renderFBSection(){
 
   host.innerHTML = '<div class="lt-wrap">'
     +'<div class="lt-head"><div><h2>&#128241; Facebook Scraper</h2>'
-    +'<p>Pulls fresh <b>Name + Phone</b> seller/investor leads from your Facebook groups. Your Mac scrapes <b>public &amp; private</b> groups when it&#8217;s on; the cloud covers public groups when it&#8217;s off. It rotates <b>5&ndash;7 groups a day</b> automatically, and each run lands below as a dated row with <b>Download CSV</b> (the same row also shows in the &#128269; Review queue).</p></div>'
+    +'<p>Pulls fresh <b>Name + Phone</b> seller/investor leads from your Facebook groups. Your Mac scrapes <b>public &amp; private</b> groups when it&#8217;s on; the cloud covers public groups when it&#8217;s off. It rotates <b>5&ndash;7 groups a day</b> automatically, and each run lands below as a dated file with <b>Download CSV</b>. Files from the free Apify cloud backup are marked <b>&#9729;&#65039; Apify</b>.</p></div>'
     +'<div class="lt-actions" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+fbStatusPillHTML()+'<div>'+fbScanBtnHTML()+'</div></div></div>'
     +fbSystemBanner()
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
@@ -6058,6 +6058,12 @@ function fbPrettyDate(iso){
   return mon+' '+(+p[2])+', '+p[0];
 }
 function fbFileById(id){ return (fbFiles||[]).find(function(x){ return +x.id===+id; }); }
+// Where a scrape file came from: your Mac (default) or the free Apify cloud backup.
+function fbSourceBadge(f){
+  if(String(f.source||'mac')==='apify')
+    return '<span title="Scraped by the free Apify cloud backup (public groups only)" style="font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:10px;background:#ffedd5;color:#c2410c;border:1px solid #fdba74;vertical-align:middle">&#9729;&#65039; Apify</span>';
+  return '<span title="Scraped by your Mac (public + private groups)" style="font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:10px;background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;vertical-align:middle">&#128187; Mac</span>';
+}
 function fbFileCardHTML(f){
   var texted=!!f.texted;
   var groups=f.groups_used||[];
@@ -6073,7 +6079,7 @@ function fbFileCardHTML(f){
       +'<div style="display:flex;align-items:center;gap:11px">'
         +'<input type="checkbox" class="fb-file-cb" value="'+f.id+'" onchange="fbUpdateSelCount()" style="width:17px;height:17px;cursor:pointer;flex:none">'
         +'<div>'
-          +'<div style="font-weight:800;font-size:15px;color:var(--text1)">&#128197; '+esc(fbPrettyDate(f.date_scraped))+'</div>'
+          +'<div style="font-weight:800;font-size:15px;color:var(--text1)">&#128197; '+esc(fbPrettyDate(f.date_scraped))+' '+fbSourceBadge(f)+'</div>'
           +'<div style="font-size:12px;color:var(--text3)">'+(f.lead_count||0)+' number'+((f.lead_count||0)===1?'':'s')+' &middot; '+groups.length+' group'+(groups.length===1?'':'s')+' scraped</div>'
         +'</div>'
       +'</div>'
@@ -6202,7 +6208,7 @@ async function fbScrapeNow(){
       fbSetMsg('Running on your Mac&hellip; keep working, results appear automatically.');
       fbPollRequest(reqId, baseline, 0);
     } else {
-      showToast('Your Mac is off &mdash; running the cloud backup (public groups).','success');
+      showToast('Your Mac is off &mdash; running the Apify cloud backup (public groups).','success');
       fbSetMsg('Running cloud backup&hellip;');
       var r = await fetch(FB_SCRAPE_NOW_FN, { method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:JSON.stringify({}) });
       var out = await r.json().catch(function(){ return {}; });
@@ -6210,7 +6216,7 @@ async function fbScrapeNow(){
       if(out && out.ok){
         try { await loadFromSupabase(); } catch(e){}
         var added = (out.new_after_dedupe!=null)?out.new_after_dedupe:'';
-        showToast('Cloud scrape done'+(added!==''?(' &mdash; '+added+' new lead'+(added==1?'':'s')):'')+'.','success');
+        showToast('Apify cloud scrape done'+(added!==''?(' &mdash; '+added+' new lead'+(added==1?'':'s')):'')+'.','success');
         fbSetMsg('');
       } else {
         var m = (out&&out.error) ? ('Cloud scrape failed: '+(out.detail?JSON.stringify(out.detail).slice(0,120):out.error)) : 'Cloud scrape failed.';
