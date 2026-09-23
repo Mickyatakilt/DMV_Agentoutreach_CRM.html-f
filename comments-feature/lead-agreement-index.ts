@@ -258,7 +258,7 @@ Deno.serve(async (req) => {
     // above) — that last one is the normal way a lead reaches someone by email in this CRM, so
     // they get a name-only identity built from whatever first/last name they typed at the
     // agreement gate. Nothing here trusts the client for who's allowed to see or post what. ----
-    if (action === 'comments_list' || action === 'comments_add') {
+    if (action === 'comments_list' || action === 'comments_add' || action === 'comments_edit') {
       const { data: lead } = await withRetry(() => supa.from(table).select('*').eq('id', leadId).maybeSingle());
       if (!lead || lead.deleted) return json({ error: 'Lead not found' }, 404);
 
@@ -331,6 +331,26 @@ Deno.serve(async (req) => {
         }
 
         return json({ comments: rows || [], mentionable, me: { id: me.id, name: me.name, role: me.role } });
+      }
+
+      // comments_edit — only the comment's own author can change its text.
+      if (action === 'comments_edit') {
+        const commentId = parseInt(payload.commentId, 10);
+        const body = String(payload.body || '').trim().slice(0, 4000);
+        if (!commentId) return json({ error: 'Missing commentId' }, 400);
+        if (!body) return json({ error: 'Comment is empty' }, 400);
+        const { data: c } = await withRetry(() => supa.from('lead_comments').select('*')
+          .eq('id', commentId).eq('kind', kind).eq('lead_id', leadId).eq('deleted', false).maybeSingle());
+        if (!c) return json({ error: 'Comment not found' }, 404);
+        const isAuthor = me.id ? c.author_id === me.id : (!c.author_id && c.author_name === me.name);
+        if (!isAuthor) return json({ error: 'You can only edit your own comments' }, 403);
+        const rawMentions = Array.isArray(payload.mentions) ? payload.mentions : [];
+        const mentions = rawMentions.filter((id: string) => validIds.has(id)).slice(0, 20);
+        const { data: updated, error } = await withRetry(() => supa.from('lead_comments')
+          .update({ body, mentions, edited_at: new Date().toISOString() })
+          .eq('id', commentId).select('*').maybeSingle());
+        if (error) return json({ error: 'Could not save: ' + (error as any).message }, 500);
+        return json({ comment: updated });
       }
 
       // comments_add
