@@ -1935,7 +1935,7 @@ var ltExpanded=new Set();   // list ids currently expanded inline
 function ltcFromDb(r){ return {id:r.id,listId:r.list_id,name:r.name||'',phone:r.phone||'',email:r.email||'',extra:(r.extra&&typeof r.extra==='object')?r.extra:{}}; }
 function ltcToDb(c,listId){ return {list_id:+listId,name:c.name||'',phone:c.phone||'',email:c.email||'',extra:c.extra||{}}; }
 async function crmListContactsFetch(listId){
-  try{ var rows=await sbFetch(LTC_PATH+'?list_id=eq.'+(+listId)+'&select=*&order=id.asc&limit=50000'); ltcCache[listId]=(rows||[]).map(ltcFromDb); }
+  try{ var rows=await sbFetchAll(LTC_PATH+'?list_id=eq.'+(+listId)+'&select=*&order=id.asc'); ltcCache[listId]=(rows||[]).map(ltcFromDb); }
   catch(e){ ltcCache[listId]=[]; }
   return ltcCache[listId];
 }
@@ -2473,7 +2473,19 @@ async function doListImport(){
   var tag=(document.getElementById('lt-imp-tag').value||'').trim();
   var link=(document.getElementById('lt-imp-link').value||'').trim();
   var due=document.getElementById('lt-imp-due').value||'';
-  var btn=document.getElementById('lt-imp-btn'); if(btn){ btn.disabled=true; btn.textContent='Importing '+contacts.length+'…'; }
+  var btn=document.getElementById('lt-imp-btn');
+  // Duplicate-phone check (vs every existing list + repeats inside this file) before anything is saved.
+  if(btn){ btn.disabled=true; btn.textContent='Checking duplicates…'; }
+  var dup;
+  try { dup=await ltFindPhoneDups(contacts); }
+  catch(e){ if(btn){ btn.disabled=false; btn.textContent='Import List'; } showToast('Could not check for duplicates — try again','error'); return; }
+  if(dup.dupCount){
+    var choice=await ltAskDupChoice(dup,contacts.length);
+    if(choice==='cancel'){ if(btn){ btn.disabled=false; btn.textContent='Import List'; } return; }
+    if(choice==='skip') contacts=dup.unique;
+    if(!contacts.length){ if(btn){ btn.disabled=false; btn.textContent='Import List'; } showToast('Every contact is a duplicate — nothing to add','warning'); return; }
+  }
+  if(btn){ btn.disabled=true; btn.textContent='Importing '+contacts.length+'…'; }
   var listRow;
   try {
     listRow=await crmListInsert({name:name,amount:String(contacts.length),link:link,ghlLink:'',ghlTag:tag,
@@ -2492,6 +2504,54 @@ async function doListImport(){
   closeModal();
   showToast('Imported "'+name+'" — '+contacts.length+' contact'+(contacts.length!==1?'s':''),'success');
   renderLists();
+}
+// Phone key for duplicate matching: last 10 digits, so "(571) 351-3234", "571.351.3234" and
+// "+1 571 351 3234" all match. Numbers with <10 digits get no key (never flagged).
+function ltPhoneKey(p){ var d=String(p||'').replace(/\D/g,''); return d.length>=10?d.slice(-10):''; }
+// Split incoming contacts into unique vs duplicate by phone — duplicates are phones already in
+// any List Tracking file, or repeated earlier in this same file.
+async function ltFindPhoneDups(contacts){
+  var rows=await sbFetchAll(LTC_PATH+'?select=phone,list_id&order=id.asc');
+  var existing={};
+  rows.forEach(function(r){ var k=ltPhoneKey(r.phone); if(k){ (existing[k]=existing[k]||{})[r.list_id]=1; } });
+  var seen={}, unique=[], inLists=0, inFile=0, byList={};
+  contacts.forEach(function(c){
+    var k=ltPhoneKey(c.phone);
+    if(k && existing[k]){ inLists++; Object.keys(existing[k]).forEach(function(id){ byList[id]=(byList[id]||0)+1; }); return; }
+    if(k && seen[k]){ inFile++; return; }
+    if(k) seen[k]=1;
+    unique.push(c);
+  });
+  return {unique:unique, inLists:inLists, inFile:inFile, dupCount:inLists+inFile, byList:byList};
+}
+// Ask what to do with duplicates. Resolves 'skip' | 'all' | 'cancel'. Stacks above the import modal.
+function ltAskDupChoice(dup,total){
+  return new Promise(function(resolve){
+    var listLines=Object.keys(dup.byList).sort(function(a,b){ return dup.byList[b]-dup.byList[a]; }).map(function(id){
+      var l=crmListById(id); return '<li>'+esc(l?l.name:'List #'+id)+' &mdash; <b>'+dup.byList[id].toLocaleString()+'</b></li>'; }).join('');
+    var wrap=document.createElement('div');
+    wrap.innerHTML='<div class="modal-overlay" style="z-index:300"><div class="modal" style="max-width:460px">'
+      + '<div class="modal-header"><div class="modal-title">&#9888;&#65039; '+dup.dupCount.toLocaleString()+' duplicate phone'+(dup.dupCount!==1?'s':'')+' found</div></div>'
+      + '<div class="modal-body" style="font-size:13px;line-height:1.55">'
+        + '<p style="margin-bottom:8px">Out of <b>'+total.toLocaleString()+'</b> contacts in this file:</p>'
+        + '<ul style="margin:0 0 10px 18px">'
+          + '<li><b>'+dup.unique.length.toLocaleString()+'</b> are new</li>'
+          + (dup.inLists?'<li><b>'+dup.inLists.toLocaleString()+'</b> already in List Tracking</li>':'')
+          + (dup.inFile?'<li><b>'+dup.inFile.toLocaleString()+'</b> repeated inside this file</li>':'')
+        + '</ul>'
+        + (listLines?'<div class="lt-lbl" style="margin-bottom:4px">Already in these lists</div><ul style="margin:0 0 4px 18px;font-size:12.5px;color:var(--text2)">'+listLines+'</ul>':'')
+      + '</div>'
+      + '<div class="modal-footer" style="flex-wrap:wrap">'
+        + '<button class="btn btn-secondary btn-sm" data-c="cancel" style="margin-right:auto">Cancel</button>'
+        + '<button class="btn btn-secondary btn-sm" data-c="all">Add all '+total.toLocaleString()+' (keep duplicates)</button>'
+        + '<button class="btn btn-primary btn-sm" data-c="skip"'+(dup.unique.length?'':' disabled')+'>Skip duplicates &mdash; add '+dup.unique.length.toLocaleString()+'</button>'
+      + '</div></div></div>';
+    wrap.addEventListener('click',function(e){
+      var b=e.target.closest('[data-c]'); if(!b) return;
+      document.body.removeChild(wrap); resolve(b.getAttribute('data-c'));
+    });
+    document.body.appendChild(wrap);
+  });
 }
 function exportListsCSV(){
   var header=['Name','Type','Amount','Link','GHL Tag','GHL Link','Region','Month','Date Added','Last Texted','Next Due','Touches','Notes'];
