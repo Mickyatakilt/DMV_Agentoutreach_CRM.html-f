@@ -1770,6 +1770,8 @@ function getFiltered(){
     // D4D auto-scan leads live ONLY in the Review queue — never in the DMV Leads list.
     // They enter the working pipeline only when the user clicks "Send to Task" (→ Tasks tab).
     if(l.leadSource==='D4D Auto-Scan') return false;
+    // FB scrape batches live ONLY in the Facebook Scrape section — never in DMV Leads.
+    if(isFbBatchLead(l)) return false;
     // When searching, include nationwide leads too
     if(l.nationwide==='Yes' && !filters.search) return false;
     const q=filters.search.toLowerCase();
@@ -1800,7 +1802,8 @@ function getFiltered(){
   });
   return data;
 }
-function getStats(){const activeLeads=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan');return {total:activeLeads.length,...Object.fromEntries(getDropdowns().statuses.map(s=>[s,activeLeads.filter(l=>l.status===s).length]))};}
+function isFbBatchLead(l){ return l.leadSource==='FB Scrape Batch' || l.leadSource==='FB Group Scrape'; }
+function getStats(){const activeLeads=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan'&&!isFbBatchLead(l));return {total:activeLeads.length,...Object.fromEntries(getDropdowns().statuses.map(s=>[s,activeLeads.filter(l=>l.status===s).length]))};}
 
 async function syncLeadToSheet(lead){
   if(!APPS_SCRIPT_URL) return;
@@ -5520,7 +5523,7 @@ function renderOutreach(){
       <div class="tab ${activeTab==='jvleads'?'active':''}" onclick="setTab('jvleads')">&#9989; Tasks <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${jvLeads.length}</span></div>
       <div class="tab ${activeTab==='nationwide'?'active':''}" onclick="setTab('nationwide')" style="${activeTab==='nationwide'?'':''}">&#127758; Nationwide <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.nationwide==='Yes').length}</span></div>
       <div class="tab ${activeTab==='sentout'?'active':''}" onclick="setTab('sentout')">&#128231; Sent Out <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.shared).length + jvLeads.filter(l=>!l.deleted&&l.shared).length}</span>${(function(){var n=recipientFUAlertCount();return n>0?' <span title="Recipient follow-ups overdue or due today" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">&#10071;'+n+'</span>':'';})()}</div>
-      <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&!isD4DLead(l)).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
+      <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&!isD4DLead(l)&&!isFbBatchLead(l)).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
       <div class="tab ${activeTab==='scheduledsms'?'active':''}" onclick="setTab('scheduledsms')">&#128197; Scheduled</div>
     </div>
     <div id="tab-content"></div>`;
@@ -5887,7 +5890,7 @@ function rvBulkBarHTML(items){
 }
 function renderReviewTab(){
   // Review = team/recipient-flagged leads + Tasks. D4D auto-scan leads live in the D4D tab now.
-  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && !isD4DLead(l); }).map(function(l){ return {kind:'lead', l:l}; })
+  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && !isD4DLead(l) && !isFbBatchLead(l); }).map(function(l){ return {kind:'lead', l:l}; })
     .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview; }).map(function(t){ return {kind:'task', l:t}; }))
     .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
     // Note: Hot rows stay in place (turn red where they are) — no reordering, so clicks never shift the list under you.
