@@ -2113,7 +2113,10 @@ function ltContactsSubRow(l,colspan){
       + '<tbody>'+body+'</tbody></table></div>'
       + '<div style="padding:6px 14px 10px;font-size:11px;color:var(--text4)">'+cs.length+' contact'+(cs.length!==1?'s':'')+' in this file</div></div>';
   }
-  return '<tr class="lt-sub-row"><td colspan="'+colspan+'" style="padding:0;background:#f8fafc">'+inner+'</td></tr>';
+  var bar='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px 4px">'
+    + '<button class="btn btn-secondary btn-sm" onclick="ltDownloadContacts(['+l.id+'])"'+(cs&&cs.length?'':' disabled')+'>&#8681; Download contacts</button>'
+    + '<button class="btn btn-primary btn-sm" onclick="openListAddNumbers('+l.id+')">&#43; Add numbers</button></div>';
+  return '<tr class="lt-sub-row"><td colspan="'+colspan+'" style="padding:0;background:#f8fafc">'+bar+inner+'</td></tr>';
 }
 function ltRenderListArea(){
   var area=document.getElementById('lt-list-area'); if(!area) return;
@@ -2156,7 +2159,7 @@ function ltRenderListArea(){
   var allSel=rows.length && rows.every(function(l){ return ltSel.has(+l.id); });
   var gids=JSON.stringify(rows.map(function(l){return +l.id;}));
   var totalRecs=rows.reduce(function(s,l){ var n=parseInt(String(l.amount||'').replace(/[^0-9]/g,''),10); return s+(isNaN(n)?0:n); },0);
-  area.innerHTML=bulkBar(ltSel.size,'ltClearSel()','ltDeleteSelected()')
+  area.innerHTML=bulkBar(ltSel.size,'ltClearSel()','ltDeleteSelected()','<button class="btn btn-primary btn-sm" onclick="ltDownloadContacts([...ltSel])">&#8681; Download contacts</button>')
     + '<div class="lt-group"><div class="lt-group-h">&#128199; '+rows.length+' file'+(rows.length!==1?'s':'')+' <span class="rec">'+totalRecs.toLocaleString()+' contacts total</span></div>'
     + '<div class="table-container"><div class="table-wrap"><table>'
     + '<thead><tr><th style="width:34px"><input type="checkbox" '+(allSel?'checked':'')+' onchange=\'ltToggleGroup('+gids+',this.checked)\' style="width:15px;height:15px;cursor:pointer"></th><th>List Name</th><th style="text-align:center">Contacts</th><th>Import Date</th><th>Tag</th><th>MLS / Link</th><th>Follow-Up</th><th></th></tr></thead>'
@@ -2569,6 +2572,80 @@ function exportListsCSV(){
   a.href=url; a.download='list-tracking-'+today()+'.csv'; document.body.appendChild(a); a.click();
   setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
   showToast('Exported '+(crmLists||[]).length+' lists','success');
+}
+// ---- Download the people inside one or more lists (Name, Phone, Email, List) ----
+async function ltDownloadContacts(ids){
+  ids=(ids||[]).map(Number); if(!ids.length) return;
+  showToast('Preparing download…','info');
+  var q=function(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  var lines=['Name,Phone,Email,List'], n=0;
+  try {
+    for(var i=0;i<ids.length;i++){
+      var id=ids[i], l=crmListById(id);
+      var cs=ltcCache[id]; if(cs===undefined || (cs.length && !cs[0].id)) cs=await crmListContactsFetch(id);
+      cs.forEach(function(c){ lines.push([c.name,c.phone,c.email,l?l.name:''].map(q).join(',')); n++; });
+    }
+  } catch(e){ showToast('Download failed — try again','error'); return; }
+  if(!n){ showToast('No contacts stored in '+(ids.length>1?'those lists':'this list'),'warning'); return; }
+  var one=ids.length===1?crmListById(ids[0]):null;
+  var fname=(one?String(one.name||'list').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-'):'lists-'+ids.length)+'-'+today()+'.csv';
+  var blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  var url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download=fname; document.body.appendChild(a); a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); },100);
+  showToast('Downloaded '+n.toLocaleString()+' contact'+(n!==1?'s':''),'success');
+}
+// ---- Add more numbers into an existing list (name + phone only; phone duplicates always skipped) ----
+function openListAddNumbers(id){
+  var l=crmListById(id); if(!l){ showToast('List not found','error'); return; }
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px">'
+    + '<div class="modal-header"><div><div class="modal-title">&#43; Add numbers</div><div class="modal-subtitle" style="margin-top:4px">into <b>'+esc(l.name)+'</b></div></div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px">Only the <b>name</b> and <b>phone</b> are saved. Any phone already in List Tracking (or repeated in this file) is <b>skipped automatically</b>. Rows with no phone are skipped.</p>'
+      + '<div class="form-field"><label class="form-label">Upload .csv</label><input type="file" accept=".csv,text/csv" class="form-input" onchange="ltAddCsvFile(event)"></div>'
+      + '<div class="form-field"><label class="form-label">&hellip; or paste rows</label><textarea id="lt-add-text" class="form-input" rows="6" placeholder="Name,Phone\nJohn Smith,(571) 351-3234" oninput="ltAddPreview()"></textarea></div>'
+      + '<div id="lt-add-count" style="font-size:12px;color:var(--text3)"></div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary" id="lt-add-btn" onclick="doListAddNumbers('+l.id+')">Add numbers</button>'
+    + '</div></div></div>';
+}
+function ltAddCsvFile(ev){
+  var f=ev.target.files&&ev.target.files[0]; if(!f) return;
+  var r=new FileReader(); r.onload=function(){ document.getElementById('lt-add-text').value=r.result; ltAddPreview(); }; r.readAsText(f);
+}
+function ltAddParse(){
+  var text=(document.getElementById('lt-add-text').value||'').trim(); if(!text) return [];
+  return ltBuildContacts(ltParseCSV(text))
+    .filter(function(c){ return ltPhoneKey(c.phone); })
+    .map(function(c){ return {name:c.name,phone:c.phone,email:'',extra:{}}; });
+}
+function ltAddPreview(){
+  var el=document.getElementById('lt-add-count'); if(!el) return;
+  var n; try{ n=ltAddParse().length; }catch(e){ n=0; }
+  el.innerHTML=n?('&#9989; '+n.toLocaleString()+' number'+(n!==1?'s':'')+' detected (duplicates checked when you click Add)'):'';
+}
+async function doListAddNumbers(id){
+  var l=crmListById(id); if(!l) return;
+  var contacts=ltAddParse();
+  if(!contacts.length){ showToast('No phone numbers detected — check the columns','error'); return; }
+  var btn=document.getElementById('lt-add-btn'), reset=function(){ if(btn){ btn.disabled=false; btn.textContent='Add numbers'; } };
+  if(btn){ btn.disabled=true; btn.textContent='Checking duplicates…'; }
+  var dup; try{ dup=await ltFindPhoneDups(contacts); }catch(e){ reset(); showToast('Could not check for duplicates — try again','error'); return; }
+  var add=dup.unique;
+  if(!add.length){ reset(); showToast('All '+contacts.length+' are duplicates — nothing added','warning'); return; }
+  if(btn) btn.textContent='Adding '+add.length+'…';
+  try { await crmListContactsInsertMany(id,add); }
+  catch(e){ reset(); showToast('Could not save the numbers — try again','error'); return; }
+  var cs=await crmListContactsFetch(id);
+  l.amount=String(cs.length);
+  try { await crmListUpdate(l); } catch(e){}
+  closeModal();
+  ltExpanded.add(+id);
+  showToast('Added '+add.length.toLocaleString()+' number'+(add.length!==1?'s':'')+(dup.dupCount?' — skipped '+dup.dupCount.toLocaleString()+' duplicate'+(dup.dupCount!==1?'s':''):''),'success');
+  renderLists();
 }
 // =================== end List Tracking ===================
 
