@@ -7464,12 +7464,12 @@ function renderEditModal(){
   const compLink=l.comps&&l.comps.startsWith('http')?l.comps.split(' ')[0]:'';
   document.getElementById('modal-container').innerHTML=`
     <div class="modal-overlay" onclick="overlayClick(event)">
-      <div class="modal">
+      <div class="modal${isNew?'':' modal-lead-wide'}">
         <div class="modal-header">
           <div><div class="modal-title">${isNew?'Add New Lead':'Edit Lead'}</div><div class="modal-subtitle">${isNew?'Fill in the details':'Lead #'+l.id+' &middot; '+l.month}</div></div>
           <button class="modal-close-btn" onclick="closeModal()">&#10005;</button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body${isNew?'':' modal-body-split'}">${isNew?'':'<div class="modal-main-col">'}
           <div class="form-section"><div class="form-section-title">Property Address</div>
             <div class="form-grid cols-1"><div class="form-field">
               <label class="form-label">Address <span class="req">*</span></label>
@@ -7529,7 +7529,7 @@ function renderEditModal(){
           <div class="form-section"><div class="form-section-title">Notes</div>
             <div class="form-field"><textarea id="f-notes" class="form-textarea" placeholder="Notes, conversations, next steps...">${esc(l.notes)}</textarea></div>
           </div>
-        </div>
+        </div>${isNew?'':cmtPanelHTML('lead', l.id)+'</div>'}
         <div class="modal-footer">
           ${!isNew?'<button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>':''}
           ${!isNew?'<button class="btn btn-secondary btn-sm" onclick="sendToReview(\'lead\','+l.id+')">&#128203; Review</button>':''}
@@ -7539,6 +7539,7 @@ function renderEditModal(){
         </div>
       </div>
     </div>`;
+  if(!isNew) cmtMount('lead', l.id);
 }
 
 function onMktChange(val){
@@ -10017,12 +10018,13 @@ function renderSharedTaskView(l) {
   sharedActivityId = l.id;
   sharedActivityLog = l.activityLog || [];
   sharedRecipientNotes = l.recipientNotes || [];
+  // Same right-side comment thread as the shared lead view (emailed link + portal).
   document.getElementById('app').innerHTML = `
     ${sharedDetailHeader()}
-    <div style="max-width:640px;margin:24px auto;padding:0 16px">
+    <div style="max-width:900px;margin:24px auto;padding:0 16px">
       <div class="modal" style="position:static;box-shadow:var(--shadow-md)">
         <div class="modal-header"><div><div class="modal-title">${esc(l.name)||'Lead'}</div><div class="modal-subtitle">${esc(l.location)||''}</div>${l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':''}</div></div>
-        <div class="modal-body">
+        <div class="modal-body modal-body-split"><div class="modal-main-col">
           <div class="detail-section"><div class="detail-section-title">Details</div>
             <div class="detail-grid">
               <div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">${esc(l.phone)||''}</span></div>
@@ -10050,11 +10052,12 @@ function renderSharedTaskView(l) {
           ${renderNeedReviewSection(l)}
           <div id="shared-save-status" style="font-size:12px;color:var(--green);margin-bottom:8px"></div>
           <div id="shared-activity-section">${renderSharedActivityLog()}</div>
-        </div>
+        </div>${cmtPanelHTML('task', l.id)}</div>
         <div class="modal-footer"><button class="btn btn-primary" onclick="saveSharedTask(${l.id})">&#128190; Save Update</button></div>
       </div>
     </div>`;
   daRenderShared();
+  cmtMount('task', l.id);
 }
 async function saveSharedTask(id) {
   // original `notes` intentionally NOT written — recipient uses their own Recipient Notes.
