@@ -258,7 +258,7 @@ Deno.serve(async (req) => {
     // above) — that last one is the normal way a lead reaches someone by email in this CRM, so
     // they get a name-only identity built from whatever first/last name they typed at the
     // agreement gate. Nothing here trusts the client for who's allowed to see or post what. ----
-    if (action === 'comments_list' || action === 'comments_add' || action === 'comments_edit') {
+    if (action === 'comments_list' || action === 'comments_add' || action === 'comments_edit' || action === 'comments_delete') {
       const { data: lead } = await withRetry(() => supa.from(table).select('*').eq('id', leadId).maybeSingle());
       if (!lead || lead.deleted) return json({ error: 'Lead not found' }, 404);
 
@@ -316,8 +316,10 @@ Deno.serve(async (req) => {
       if (action === 'comments_list') {
         const { data: rows } = await withRetry(() => supa
           .from('lead_comments').select('*')
-          .eq('kind', kind).eq('lead_id', leadId).eq('deleted', false)
+          .eq('kind', kind).eq('lead_id', leadId)
           .order('created_at', { ascending: true }));
+        // Deleted comments stay in the thread as a "Comment deleted" placeholder, text stripped.
+        const shown = (rows || []).map((c: any) => c.deleted ? { ...c, body: '', mentions: [] } : c);
 
         // Only an identified (uuid) caller has a read-marker row to update — an anonymous
         // link visitor has no durable identity across visits, so there's nothing to mark.
@@ -330,7 +332,23 @@ Deno.serve(async (req) => {
           } catch (_e) { /* best-effort — a missed read-marker just means the dot stays lit */ }
         }
 
-        return json({ comments: rows || [], mentionable, me: { id: me.id, name: me.name, role: me.role } });
+        return json({ comments: shown, mentionable, me: { id: me.id, name: me.name, role: me.role } });
+      }
+
+      // comments_delete — the author (or an admin) soft-deletes; thread keeps a "deleted" placeholder.
+      if (action === 'comments_delete') {
+        const commentId = parseInt(payload.commentId, 10);
+        if (!commentId) return json({ error: 'Missing commentId' }, 400);
+        const { data: c } = await withRetry(() => supa.from('lead_comments').select('*')
+          .eq('id', commentId).eq('kind', kind).eq('lead_id', leadId).eq('deleted', false).maybeSingle());
+        if (!c) return json({ error: 'Comment not found' }, 404);
+        const isAuthor = me.id ? c.author_id === me.id : (!c.author_id && c.author_name === me.name);
+        if (!isAuthor && me.role !== 'admin') return json({ error: 'You can only delete your own comments' }, 403);
+        const { data: updated, error } = await withRetry(() => supa.from('lead_comments')
+          .update({ deleted: true, deleted_at: new Date().toISOString() })
+          .eq('id', commentId).select('*').maybeSingle());
+        if (error) return json({ error: 'Could not delete: ' + (error as any).message }, 500);
+        return json({ comment: { ...updated, body: '', mentions: [] } });
       }
 
       // comments_edit — only the comment's own author can change its text.
