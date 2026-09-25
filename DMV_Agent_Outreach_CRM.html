@@ -1362,7 +1362,7 @@ function fromRow(r) {
 async function loadFromSupabase() {
   try {
     showSyncStatus('loading');
-    const rows = await sbFetch('leads?select=*&order=id.asc&limit=1000');
+    const rows = await sbFetchAll('leads?select=*&order=id.asc');
     if (rows && rows.length > 0) {
       // Cloud has data -- always use cloud as source of truth
       leads = rows.map(fromRow);
@@ -1487,22 +1487,17 @@ async function deleteJVFromSupabase(id) {
 }
 async function loadJVFromSupabase() {
   try {
-    var r = await fetch(SUPABASE_URL + '/rest/v1/jv_leads?select=*&order=id.desc&limit=1000', {
-      headers: {'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + sbAuthToken()}
-    });
-    if(r.ok) {
-      var rows = await r.json();
-      if(rows && rows.length > 0) {
-        jvLeads = rows.map(fromJVRow);
-        saveJV();
-        return true;
-      } else {
-        // Cloud table is empty -- upload our current local tasks so cloud catches up
-        for (var i = 0; i < jvLeads.length; i += 50) {
-          await sbFetch('jv_leads', 'POST', jvLeads.slice(i, i+50).map(toJVRow));
-        }
-        return true;
+    var rows = await sbFetchAll('jv_leads?select=*&order=id.asc');
+    if(rows && rows.length > 0) {
+      jvLeads = rows.map(fromJVRow);
+      saveJV();
+      return true;
+    } else {
+      // Cloud table is empty -- upload our current local tasks so cloud catches up
+      for (var i = 0; i < jvLeads.length; i += 50) {
+        await sbFetch('jv_leads', 'POST', jvLeads.slice(i, i+50).map(toJVRow));
       }
+      return true;
     }
   } catch(e) { console.error('JV load error:', e); }
   return false;
@@ -9724,7 +9719,7 @@ async function initFullApp() {
   setInterval(async function() {
     if(pendingSaves > 0) return; // an edit hasn't finished syncing yet -- don't let this poll stomp it
     try {
-      var rows = await sbFetch('leads?select=*&order=id.asc&limit=1000');
+      var rows = await sbFetchAll('leads?select=*&order=id.asc');
       if(rows && rows.length > 0) {
         var newLeads = rows.map(fromRow);
         // Only re-render if data actually changed
@@ -9746,7 +9741,7 @@ async function initFullApp() {
   setInterval(async function() {
     if(pendingSaves > 0) return;
     try {
-      var jvRows = await sbFetch('jv_leads?select=*&order=id.asc&limit=1000');
+      var jvRows = await sbFetchAll('jv_leads?select=*&order=id.asc');
       if(jvRows && jvRows.length > 0) {
         var newJV = jvRows.map(fromJVRow);
         if(JSON.stringify(newJV) !== JSON.stringify(jvLeads)) {
@@ -10180,11 +10175,11 @@ async function initRecipientPortal(){
   await authRefreshIfNeeded();
   // Load leads + tasks the recipient is allowed to see (RLS will also enforce this once locked down).
   try {
-    var rows = await sbFetch('leads?select=*&order=id.desc&limit=1000');
+    var rows = await sbFetchAll('leads?select=*&order=id.asc');
     leads = (rows||[]).map(fromRow);
   } catch(e){ leads = []; }
   try {
-    var jvRows = await sbFetch('jv_leads?select=*&order=id.desc&limit=1000');
+    var jvRows = await sbFetchAll('jv_leads?select=*&order=id.asc');
     jvLeads = (jvRows||[]).map(fromJVRow);
   } catch(e){ jvLeads = []; }
   renderRecipientPortal();
@@ -10202,8 +10197,8 @@ async function initRecipientPortal(){
         await authRefreshIfNeeded();
         // Bail again after the await — the user may have opened a lead while it was resolving.
         if(portalView !== 'list') return;
-        var rows = await sbFetch('leads?select=*&order=id.desc&limit=1000');
-        var jvRows = await sbFetch('jv_leads?select=*&order=id.desc&limit=1000');
+        var rows = await sbFetchAll('leads?select=*&order=id.asc');
+        var jvRows = await sbFetchAll('jv_leads?select=*&order=id.asc');
         if(portalView !== 'list') return;
         var newLeads = (rows||[]).map(fromRow);
         var newJV = (jvRows||[]).map(fromJVRow);
