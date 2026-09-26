@@ -6108,6 +6108,7 @@ function rvBulkBarHTML(items){
       +'<span id="rv-bulk-count" style="font-size:13px;font-weight:600;color:var(--text2)">0 selected</span>'
       +'<button id="rv-skiptrace-btn" class="btn btn-primary btn-sm" onclick="rvSkipTraceSelected()" disabled style="font-weight:700">&#128269; Find Numbers (Skip Trace)</button>'
       +'<button id="rv-export-btn" class="btn btn-white btn-sm" onclick="rvExportSelected()" disabled style="font-weight:700">&#11015; Download (Name + Phone)</button>'
+      +'<button id="rv-delete-btn" class="btn btn-danger btn-sm" onclick="rvDeleteSelected()" disabled style="font-weight:700">&#128465; Remove selected</button>'
       +'<button class="btn btn-secondary btn-sm" onclick="rvClearSel()">Clear</button>'
       +'<span id="rv-skip-progress" style="font-size:12px;color:var(--text3)"></span>'
     +'</div>';
@@ -6608,6 +6609,33 @@ function rvUpdateBar(){
   var c=document.getElementById('rv-bulk-count'); if(c) c.textContent=n+' selected';
   var b=document.getElementById('rv-skiptrace-btn'); if(b) b.disabled=(n===0);
   var e=document.getElementById('rv-export-btn'); if(e) e.disabled=(n===0);
+  var d=document.getElementById('rv-delete-btn'); if(d) d.disabled=(n===0);
+}
+// Bulk-remove every selected Review/D4D row in one go (soft-delete, same as the
+// single-lead Delete button, with an undo toast). Works across leads + tasks.
+function rvDeleteSelected(){
+  var keys=Array.from(reviewSel);
+  if(!keys.length){ showToast('Select at least one first','error'); return; }
+  if(!confirm('Remove '+keys.length+' selected item'+(keys.length===1?'':'s')+'?\n\nThey stay in the database (undo available right after).')) return;
+  var now=new Date().toISOString();
+  var affected=[];
+  keys.forEach(function(k){
+    var p=k.split(':'), kind=p[0], id=+p[1];
+    var arr=kind==='task'?jvLeads:leads;
+    var l=arr.find(function(x){ return x.id===id; });
+    if(!l) return;
+    l.deleted=true; l.deletedAt=now;
+    affected.push({kind:kind, l:l});
+  });
+  save(); saveJV(); rvClearSel();
+  d4dRefreshTab();
+  showToast('Removed '+affected.length+' item'+(affected.length!==1?'s':''),'warning',function(){
+    affected.forEach(function(a){ a.l.deleted=false; a.l.deletedAt=''; });
+    save(); saveJV(); d4dRefreshTab();
+    affected.forEach(function(a){ (a.kind==='task'?saveJVToSupabase:saveLeadToSupabase)(a.l); });
+    showToast('Restored','success');
+  });
+  affected.forEach(function(a){ (a.kind==='task'?saveJVToSupabase:saveLeadToSupabase)(a.l); });
 }
 // Download ONLY the selected Review leads as a simple Name,Phone CSV.
 function rvExportSelected(){
