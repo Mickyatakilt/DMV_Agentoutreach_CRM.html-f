@@ -4720,7 +4720,7 @@ function cmtPanelHTML(kind, id){
     +   '<div id="cmt-reply-'+kind+'-'+id+'"></div>'
     +   '<textarea id="cmt-input-'+kind+'-'+id+'" class="cmt-input" placeholder="Comment, or type @ to mention someone&hellip;" oninput="cmtOnInput(\''+kind+'\','+id+')" onkeydown="cmtOnKeydown(event,\''+kind+'\','+id+')"></textarea>'
     +   '<div id="cmt-mention-pop-'+kind+'-'+id+'"></div>'
-    +   '<div class="cmt-send-row"><span class="cmt-hint">@ to mention &middot; Enter to send</span><div style="display:flex;gap:6px"><button type="button" class="btn btn-primary btn-sm" onclick="cmtSubmit(\''+kind+'\','+id+',false)">Send</button><button type="button" class="btn btn-secondary btn-sm" style="color:#b45309;border-color:#fcd34d" onclick="cmtSubmit(\''+kind+'\','+id+',true)" title="Post this comment and email everyone @mentioned in it">&#128276; Send + Notify</button></div></div>'
+    +   '<div class="cmt-send-row"><span class="cmt-hint">@ to mention</span><div style="display:flex;gap:4px"><button type="button" class="btn btn-primary" style="padding:4px 9px;font-size:11px;border-radius:6px" onclick="cmtSubmit(\''+kind+'\','+id+',false)">Send</button><button type="button" class="btn btn-secondary" style="padding:4px 8px;font-size:11px;border-radius:6px;color:#b45309;border-color:#fcd34d;white-space:nowrap" onclick="cmtSubmit(\''+kind+'\','+id+',true)" title="Post this comment and email everyone @mentioned in it">&#128276; Notify</button></div></div>'
     + '</div>'
   + '</div>';
 }
@@ -4935,10 +4935,34 @@ async function cmtNotify(kind, id, commentId, key){
       if(idx>=0 && data.comment) cmtCache[key].comments[idx] = data.comment;
     }
     cmtRender(kind,id);
-    showToast('Notified '+data.notified+(data.notified===1?' person':' people'),'success');
+    cmtShowNotifiedPopup(data.recipients||[]);
   } catch(e){
     showToast('Could not send notification — '+((e&&e.message)||'try again'),'error');
   }
+}
+
+// Small standalone overlay (not the shared #modal-container, so it doesn't close the
+// lead/task modal underneath) confirming exactly who the notification email went to.
+function cmtShowNotifiedPopup(recipients){
+  var old = document.getElementById('cmt-notify-popup-overlay'); if(old) old.remove();
+  var rows = (recipients||[]).map(function(r){
+    return '<div style="padding:9px 0;border-bottom:1px solid var(--border,#e2e8f0)">'
+      + '<div style="font-weight:700;font-size:13.5px">'+esc(r.name||'Unknown')+'</div>'
+      + '<div style="color:var(--text3,#64748b);font-size:12.5px">'+esc(r.email||'no email on file')+'</div>'
+    + '</div>';
+  }).join('');
+  if(!rows) rows = '<div style="color:var(--text3,#64748b);font-size:13px;padding:8px 0">No one was emailed — the people @mentioned have no email on file.</div>';
+  var ov = document.createElement('div');
+  ov.id = 'cmt-notify-popup-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML = '<div style="background:var(--surface,#fff);border-radius:14px;max-width:380px;width:100%;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.3)">'
+    + '<div style="font-weight:800;font-size:15px;margin-bottom:2px">&#128276; Notification sent</div>'
+    + '<div style="color:var(--text3,#64748b);font-size:12.5px;margin-bottom:8px">Emailed to:</div>'
+    + rows
+    + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:14px;width:100%" onclick="document.getElementById(\'cmt-notify-popup-overlay\').remove()">Got it</button>'
+  + '</div>';
+  ov.onclick = function(e){ if(e.target===ov) ov.remove(); };
+  document.body.appendChild(ov);
 }
 
 function cmtStartEdit(kind, id, commentId){ cmtEditing = {key:cmtKey(kind,id), id:commentId}; cmtRender(kind,id); }

@@ -431,7 +431,11 @@ Deno.serve(async (req) => {
         const { data: updated } = await withRetry(() => supa.from('lead_comments')
           .update({ notified_at: new Date().toISOString(), notified_by: me!.name })
           .eq('id', commentId).select('*').maybeSingle());
-        return json({ comment: updated || c, notified: recipients.length });
+        return json({
+          comment: updated || c,
+          notified: recipients.length,
+          recipients: recipients.map((u: any) => ({ name: u.name, email: u.email })),
+        });
       }
 
       // comments_add
