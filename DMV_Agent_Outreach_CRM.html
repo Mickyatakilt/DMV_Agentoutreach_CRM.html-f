@@ -4706,8 +4706,7 @@ function tryOpenPendingDeepLink(){
   if((kind!=='lead' && kind!=='task') || !id) return;
   try {
     if(authProfile && authProfile.role==='recipient'){ openPortalLead(kind,id); }
-    else if(kind==='task'){ openJVDetail(id); }
-    else { openDetail(id); }
+    else { dashOpen(kind,id); } // switches to the right section, then opens the modal (same helper the Dashboard follow-up rows use)
   } catch(e){ /* lead/task may not be in this user's scope — fail quietly */ }
 }
 
