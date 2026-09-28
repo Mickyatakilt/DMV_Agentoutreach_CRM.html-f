@@ -4693,6 +4693,24 @@ var cmtMentionUI = null;      // {key, start, query} while the @ picker is open,
 
 function cmtKey(kind,id){ return kind+':'+id; }
 
+// Deep-link opener for the "you were @mentioned" email: the link is
+// ?open=lead:123 or ?open=task:45. Captured once at boot (window.__pendingOpen,
+// set in bootApp), then fired here once the signed-in user's leads/tasks have
+// loaded — opens straight to that lead/task's modal, comments panel included.
+function tryOpenPendingDeepLink(){
+  var target = window.__pendingOpen;
+  if(!target) return;
+  window.__pendingOpen = ''; // one-shot — don't reopen on later re-renders/polls
+  var parts = String(target).split(':');
+  var kind = parts[0], id = parseInt(parts[1],10);
+  if((kind!=='lead' && kind!=='task') || !id) return;
+  try {
+    if(authProfile && authProfile.role==='recipient'){ openPortalLead(kind,id); }
+    else if(kind==='task'){ jvOpenModal(id); }
+    else { openDetail(id); }
+  } catch(e){ /* lead/task may not be in this user's scope — fail quietly */ }
+}
+
 function cmtPanelHTML(kind, id){
   var key = cmtKey(kind,id);
   var hadUnread = cmtUnreadSet.has(key);
@@ -9742,6 +9760,7 @@ async function initFullApp() {
   if(synced) { computePendingActivity(); render(); }
   computePendingActivity(); render();
   refreshD4dHealth(); // D4D nightly-scan health (surfaces the Review-tab failure banner)
+  tryOpenPendingDeepLink();
 
   // Step 3: Auto-refresh every 30 seconds to catch other users' changes
   setInterval(async function() {
@@ -10212,6 +10231,7 @@ async function initRecipientPortal(){
   } catch(e){ jvLeads = []; }
   renderRecipientPortal();
   cmtFetchUnread(); // fire-and-forget: populates the @mention dot for the portal recipient
+  tryOpenPendingDeepLink();
   // gentle auto-refresh
   if(!window.__recipPoll){
     window.__recipPoll = setInterval(async function(){
@@ -10786,6 +10806,8 @@ function renderSharedPropertyView(p){ document.getElementById('app').innerHTML =
 
 async function bootApp(){
   var params = new URLSearchParams(window.location.search);
+  var openParam = params.get('open');
+  if(openParam) window.__pendingOpen = openParam; // consumed by tryOpenPendingDeepLink() once signed in
   var sharedKind = params.get('shared');
   var sharedId = params.get('id');
   if (sharedKind === 'lead' && sharedId) { initSharedLeadView(parseInt(sharedId, 10)); return; }

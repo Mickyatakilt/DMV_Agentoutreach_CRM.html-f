@@ -15,6 +15,39 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// ---- @mention email notifications — same Resend account/domain jv-esign already sends from ----
+const RESEND_KEY = Deno.env.get('RESEND_API_KEY') || '';
+const MAIL_FROM = Deno.env.get('RESEND_FROM') || 'MEstate <contact@mestate.info>';
+const APP_URL = Deno.env.get('APP_URL') || 'https://mickyatakilt.github.io/DMV_Agentoutreach_CRM.html-f/DMV_Agent_Outreach_CRM.html';
+
+function escHtml(v: unknown): string {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function sendMail(to: string, subject: string, bodyHtml: string): Promise<void> {
+  if (!RESEND_KEY || !to) return;
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + RESEND_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: MAIL_FROM, to: [to], subject, html: bodyHtml }),
+    });
+  } catch (_e) { /* best-effort — a missed notification email never blocks the comment itself */ }
+}
+
+function mentionEmailHtml(authorName: string, propertyLabel: string, commentBody: string, link: string): string {
+  const snippet = commentBody.length > 400 ? commentBody.slice(0, 400) + '…' : commentBody;
+  return `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:560px;margin:0 auto;color:#0f172a">
+    <h2 style="margin:0 0 6px">${escHtml(authorName)} mentioned you in a comment</h2>
+    <p style="color:#475569;margin:0 0 14px">On <b>${escHtml(propertyLabel)}</b>:</p>
+    <div style="background:#f7f9fb;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;white-space:pre-wrap;font-size:14px;color:#1e293b;margin-bottom:18px">${escHtml(snippet)}</div>
+    <p style="margin:0"><a href="${escHtml(link)}" style="background:#2563eb;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14.5px">View &amp; reply</a></p>
+    <p style="color:#94a3b8;font-size:11.5px;margin-top:20px">Sent by MEstate CRM because you were @mentioned in a comment.</p>
+  </div>`;
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Retry a Supabase op that returns { data, error }. Transient edge->DB blips show up either
@@ -301,16 +334,20 @@ Deno.serve(async (req) => {
       // staff — they have no way to know who else a lead was shared with. Staff additionally
       // see whichever portal recipients are in-scope for this specific lead.
       const { data: staffRows } = await withRetry(() => supa
-        .from('app_users').select('id, name, role').eq('disabled', false).in('role', ['admin', 'team']));
+        .from('app_users').select('id, name, role, email').eq('disabled', false).in('role', ['admin', 'team']));
       let mentionable = (staffRows || []).map((u: any) => ({ id: u.id, name: u.name, role: u.role }));
       const validIds = new Set((staffRows || []).map((u: any) => u.id));
+      // email/name lookup for every mentionable id — used only to notify a new @mention below.
+      const emailById = new Map<string, { name: string; email: string }>(
+        (staffRows || []).map((u: any) => [u.id, { name: u.name, email: u.email }])
+      );
       if (me.isStaff) {
         const { data: recipRows } = await withRetry(() => supa
           .from('app_users').select('id, name, role, email, scope_dmv, scope_nationwide, scope_emailed')
           .eq('disabled', false).eq('role', 'recipient'));
         const inScopeRecips = (recipRows || []).filter((u: any) => leadInScope(u, lead, kind));
         mentionable = mentionable.concat(inScopeRecips.map((u: any) => ({ id: u.id, name: u.name, role: u.role })));
-        for (const u of inScopeRecips) validIds.add(u.id);
+        for (const u of inScopeRecips) { validIds.add(u.id); emailById.set(u.id, { name: u.name, email: u.email }); }
       }
 
       if (action === 'comments_list') {
@@ -394,6 +431,18 @@ Deno.serve(async (req) => {
           );
         } catch (_e) { /* best-effort */ }
       }
+
+      // Email every newly @mentioned person (skip the author mentioning themselves) — same
+      // notification either way whether they're staff or a portal recipient, since both have
+      // a real app_users row + email. Best-effort: a failed send never fails the comment post.
+      const propertyLabel = kind === 'task' ? (lead.location || lead.name || 'this deal') : (lead.address || lead.name || 'this deal');
+      const link = APP_URL + '?open=' + kind + ':' + leadId;
+      await Promise.all(mentions.filter((id: string) => id !== me!.id).map((id: string) => {
+        const who = emailById.get(id);
+        if (!who || !who.email) return Promise.resolve();
+        return sendMail(who.email, me!.name + ' mentioned you in a comment — ' + propertyLabel,
+          mentionEmailHtml(me!.name, propertyLabel, body, link));
+      }));
 
       return json({ comment: inserted });
     }
