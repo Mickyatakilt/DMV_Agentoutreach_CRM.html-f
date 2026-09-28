@@ -4706,7 +4706,7 @@ function tryOpenPendingDeepLink(){
   if((kind!=='lead' && kind!=='task') || !id) return;
   try {
     if(authProfile && authProfile.role==='recipient'){ openPortalLead(kind,id); }
-    else if(kind==='task'){ jvOpenModal(id); }
+    else if(kind==='task'){ openJVDetail(id); }
     else { openDetail(id); }
   } catch(e){ /* lead/task may not be in this user's scope — fail quietly */ }
 }
