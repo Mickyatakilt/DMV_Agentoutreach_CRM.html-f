@@ -291,7 +291,7 @@ Deno.serve(async (req) => {
     // above) — that last one is the normal way a lead reaches someone by email in this CRM, so
     // they get a name-only identity built from whatever first/last name they typed at the
     // agreement gate. Nothing here trusts the client for who's allowed to see or post what. ----
-    if (action === 'comments_list' || action === 'comments_add' || action === 'comments_edit' || action === 'comments_delete') {
+    if (action === 'comments_list' || action === 'comments_add' || action === 'comments_edit' || action === 'comments_delete' || action === 'comments_notify') {
       const { data: lead } = await withRetry(() => supa.from(table).select('*').eq('id', leadId).maybeSingle());
       if (!lead || lead.deleted) return json({ error: 'Lead not found' }, 404);
 
@@ -334,20 +334,16 @@ Deno.serve(async (req) => {
       // staff — they have no way to know who else a lead was shared with. Staff additionally
       // see whichever portal recipients are in-scope for this specific lead.
       const { data: staffRows } = await withRetry(() => supa
-        .from('app_users').select('id, name, role, email').eq('disabled', false).in('role', ['admin', 'team']));
+        .from('app_users').select('id, name, role').eq('disabled', false).in('role', ['admin', 'team']));
       let mentionable = (staffRows || []).map((u: any) => ({ id: u.id, name: u.name, role: u.role }));
       const validIds = new Set((staffRows || []).map((u: any) => u.id));
-      // email/name lookup for every mentionable id — used only to notify a new @mention below.
-      const emailById = new Map<string, { name: string; email: string }>(
-        (staffRows || []).map((u: any) => [u.id, { name: u.name, email: u.email }])
-      );
       if (me.isStaff) {
         const { data: recipRows } = await withRetry(() => supa
           .from('app_users').select('id, name, role, email, scope_dmv, scope_nationwide, scope_emailed')
           .eq('disabled', false).eq('role', 'recipient'));
         const inScopeRecips = (recipRows || []).filter((u: any) => leadInScope(u, lead, kind));
         mentionable = mentionable.concat(inScopeRecips.map((u: any) => ({ id: u.id, name: u.name, role: u.role })));
-        for (const u of inScopeRecips) { validIds.add(u.id); emailById.set(u.id, { name: u.name, email: u.email }); }
+        for (const u of inScopeRecips) validIds.add(u.id);
       }
 
       if (action === 'comments_list') {
@@ -408,6 +404,36 @@ Deno.serve(async (req) => {
         return json({ comment: updated });
       }
 
+      // comments_notify — email everyone @mentioned in one specific comment, on request only.
+      // Anyone who can already see the thread (we're already past the `me` identity check above)
+      // may trigger it. Looks up mentioned users fresh (not the caller's own mentionable roster)
+      // so it works regardless of who clicks it. Marks the comment notified_at/notified_by.
+      if (action === 'comments_notify') {
+        const commentId = parseInt(payload.commentId, 10);
+        if (!commentId) return json({ error: 'Missing commentId' }, 400);
+        const { data: c } = await withRetry(() => supa.from('lead_comments').select('*')
+          .eq('id', commentId).eq('kind', kind).eq('lead_id', leadId).eq('deleted', false).maybeSingle());
+        if (!c) return json({ error: 'Comment not found' }, 404);
+        const mentionIds: string[] = Array.isArray(c.mentions) ? c.mentions : [];
+        if (mentionIds.length === 0) return json({ error: 'No one was @mentioned in this comment' }, 400);
+
+        const { data: mentionedUsers } = await withRetry(() => supa
+          .from('app_users').select('id, name, email').in('id', mentionIds));
+        const recipients = (mentionedUsers || []).filter((u: any) => u.id !== me!.id && u.email);
+
+        const propertyLabel = kind === 'task' ? (lead.location || lead.name || 'this deal') : (lead.address || lead.name || 'this deal');
+        const link = APP_URL + '?open=' + kind + ':' + leadId;
+        await Promise.all(recipients.map((u: any) =>
+          sendMail(u.email, c.author_name + ' mentioned you in a comment — ' + propertyLabel,
+            mentionEmailHtml(c.author_name, propertyLabel, c.body, link))
+        ));
+
+        const { data: updated } = await withRetry(() => supa.from('lead_comments')
+          .update({ notified_at: new Date().toISOString(), notified_by: me!.name })
+          .eq('id', commentId).select('*').maybeSingle());
+        return json({ comment: updated || c, notified: recipients.length });
+      }
+
       // comments_add
       const body = String(payload.body || '').trim().slice(0, 4000);
       if (!body) return json({ error: 'Comment is empty' }, 400);
@@ -432,18 +458,9 @@ Deno.serve(async (req) => {
         } catch (_e) { /* best-effort */ }
       }
 
-      // Email every newly @mentioned person (skip the author mentioning themselves) — same
-      // notification either way whether they're staff or a portal recipient, since both have
-      // a real app_users row + email. Best-effort: a failed send never fails the comment post.
-      const propertyLabel = kind === 'task' ? (lead.location || lead.name || 'this deal') : (lead.address || lead.name || 'this deal');
-      const link = APP_URL + '?open=' + kind + ':' + leadId;
-      await Promise.all(mentions.filter((id: string) => id !== me!.id).map((id: string) => {
-        const who = emailById.get(id);
-        if (!who || !who.email) return Promise.resolve();
-        return sendMail(who.email, me!.name + ' mentioned you in a comment — ' + propertyLabel,
-          mentionEmailHtml(me!.name, propertyLabel, body, link));
-      }));
-
+      // No auto-email here on purpose — Mike wants @mention notifications to be an explicit
+      // action, not automatic. The client's "Send + Notify" button follows up with a separate
+      // comments_notify call (above) for this comment's id.
       return json({ comment: inserted });
     }
 
