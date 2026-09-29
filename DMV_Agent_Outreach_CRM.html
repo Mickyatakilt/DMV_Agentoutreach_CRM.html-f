@@ -1570,6 +1570,7 @@ let lastSynced = localStorage.getItem('crm_last_synced') || '';
 let activeTab = 'leads'; // 'leads' | 'followups' | 'nationwide'
 // Phase 1: top-level section that wraps the tab system. 'outreach' = the current CRM (default).
 let activeSection = 'outreach'; // 'dashboard' | 'outreach' | 'lists' | 'probate' | 'dispo'
+let d4dTab = 'leads'; // 'leads' | 'mail' — sub-tabs inside the D4D section
 try{ if(localStorage.getItem('crm_sb_collapsed')==='1'){ if(document.body) document.body.classList.add('sb-collapsed'); else document.addEventListener('DOMContentLoaded',function(){document.body.classList.add('sb-collapsed');}); } }catch(e){}
 let sortField = 'month'; let sortDir = 1;
 let leadScoreFilter = '';
@@ -6138,6 +6139,17 @@ function rvRowHTML(it){
   var propwireBtn = (isD4D && !hasRealOwner && l.address)
     ? '<button class="btn btn-sm" onclick="openPropwire('+l.id+')" title="Look up the owner on Propwire (free) — opens the property in a new tab" style="margin-right:6px;background:#ecfeff;color:#0e7490;border:1px solid #67e8f9;font-weight:700">&#128100; Find Owner</button>'
     : '';
+  // ✉️ Send Mail — for D4D leads where we still couldn't find an owner name/contact, queue the
+  // property for a direct-mail postcard/letter instead (see the ✉️ Send Mail sub-tab in D4D).
+  var mailStatus = (kind==='lead') ? (l.d4dStatus||'') : '';
+  var mailBtn = (isD4D && !hasRealOwner && l.address && mailStatus!=='mail_queued' && mailStatus!=='mail_sent')
+    ? '<button class="btn btn-sm" onclick="d4dQueueForMail('+l.id+')" title="No owner found — queue this property for a direct-mail postcard/letter" style="margin-right:6px;background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>'
+    : '';
+  var mailBadge = mailStatus==='mail_sent'
+    ? '<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;background:#dcfce7;color:#166534;border:1px solid #86efac;margin-right:6px;white-space:nowrap">&#9993; Mail sent</span>'
+    : mailStatus==='mail_queued'
+    ? '<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;margin-right:6px;white-space:nowrap">&#9993; Mail queued</span>'
+    : '';
   // Owner name shown ABOVE the address, if we have a real one (not a placeholder / address dup).
   var ownerLine = hasRealOwner
     ? '<div style="font-weight:700;font-size:13px;color:var(--text1)">'+esc(ownerNmRaw)+'</div>' : '';
@@ -6155,7 +6167,9 @@ function rvRowHTML(it){
     +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
       +dlBtn
       +hotBtn
+      +mailBadge
       +propwireBtn
+      +mailBtn
       +'<button class="btn btn-secondary btn-sm" onclick="'+openFn+'">Open</button> '
       +(kind==='lead' ? '<button class="btn btn-sm" onclick="sendLeadToTask('+l.id+')" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button> ' : '')
       +'<button class="btn btn-green btn-sm" onclick="completeReview(\''+kind+'\','+l.id+')">&#9989; Complete</button> '
@@ -6196,17 +6210,38 @@ function renderReviewTab(){
 }
 // Dedicated Driving-for-Dollars SECTION (left-sidebar item, not a tab): only D4D auto-scan leads,
 // plus the ⚡ Scan Now button, the Google-budget banner, and the "no qualified leads" messaging.
+function d4dSetTab(t){ d4dTab=t; reviewSel.clear(); renderD4DSection(); }
 function renderD4DSection(){
   var host=document.getElementById('section-main'); if(!host) return;
-  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && isD4DLead(l); }).map(function(l){ return {kind:'lead', l:l}; })
-    .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
+  var mailN = leads.filter(function(l){ return !l.deleted && isD4DLead(l) && l.d4dStatus==='mail_queued'; }).length;
   host.innerHTML = '<div class="lt-wrap">'
     +'<div class="lt-head"><div><h2>&#128663; Driving for Dollars</h2>'
-    +'<p>Distress leads found automatically by the Driving-for-Dollars robot (facade graded from Street View). Click &#9889; Scan Now to find more &mdash; new hot leads land here in ~5-10 minutes. Address links open the exact graded Street View. Use &#128100; Find Owner (Propwire) where the owner name is blank.</p></div>'
+    +'<p>Distress leads found automatically by the Driving-for-Dollars robot (facade graded from Street View). Click &#9889; Scan Now to find more &mdash; new hot leads land here in ~5-10 minutes. Address links open the exact graded Street View. Use &#128100; Find Owner (Propwire) where the owner name is blank, or &#9993; Send Mail to queue a direct-mail postcard/letter when no owner can be found.</p></div>'
     +'<div class="lt-actions">'+d4dScanBtnHTML()+'</div></div>'
-    +d4dScanBannerHTML()+d4dLimitBannerHTML()+rvBulkBarHTML(items)+rvTableHTML(items,'&#128663;','No D4D leads yet — click &#9889; Scan Now')
+    +d4dScanBannerHTML()+d4dLimitBannerHTML()
+    +'<div class="tabs" style="position:static;margin:0 0 14px;padding:0">'
+      +'<div class="tab '+(d4dTab==='leads'?'active':'')+'" onclick="d4dSetTab(\'leads\')">&#128663; Leads</div>'
+      +'<div class="tab '+(d4dTab==='mail'?'active':'')+'" onclick="d4dSetTab(\'mail\')">&#9993; Send Mail'
+        +(mailN?' <span style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">'+mailN+'</span>':'')
+      +'</div>'
+    +'</div>'
+    +(d4dTab==='mail' ? renderD4DMailTabHTML() : renderD4DLeadsTabHTML())
     +'</div>';
   rvUpdateBar();
+}
+function renderD4DLeadsTabHTML(){
+  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && isD4DLead(l); }).map(function(l){ return {kind:'lead', l:l}; })
+    .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
+  return rvBulkBarHTML(items)+rvTableHTML(items,'&#128663;','No D4D leads yet — click &#9889; Scan Now');
+}
+// ✉️ Send Mail sub-tab: D4D properties queued for a direct-mail postcard/letter because no
+// owner name/contact could be found. Independent of needsReview so a lead doesn't fall off
+// this list just because it was completed/cleared elsewhere — only Remove takes it off.
+function renderD4DMailTabHTML(){
+  var items = leads.filter(function(l){ return !l.deleted && isD4DLead(l) && (l.d4dStatus==='mail_queued' || l.d4dStatus==='mail_sent'); })
+    .sort(function(a,b){ return (a.d4dStatus==='mail_sent'?1:0) - (b.d4dStatus==='mail_sent'?1:0); });
+  return '<p style="font-size:12px;color:var(--text3);margin:-4px 0 12px">Properties with no owner found — start with a CSV of the mailing addresses for your mail house/postcard service. Select properties, then <b>Download Mailing List</b>. Once postcards go out, select them again and click <b>Mark Mail Sent</b> to track it.</p>'
+    +d4dMailBulkBarHTML(items)+d4dMailTableHTML(items);
 }
 // Re-render whichever queue tab (D4D or Review) is currently open — used by the scan/budget flow,
 // whose ⚡ Scan Now button now lives in the D4D tab.
@@ -6218,6 +6253,140 @@ function openPropwire(id){
   var q = (l.address||l.name||'').trim();
   if(!q){ showToast('No address on this lead','error'); return; }
   window.open('https://propwire.com/search?q='+encodeURIComponent(q), '_blank', 'noopener');
+}
+// ============================================================================
+// D4D ✉️ SEND MAIL sub-tab — D4D properties where no owner/contact was found, queued for a
+// direct-mail postcard/letter instead. Reuses the existing d4d_status column (was unused) as
+// '' | 'mail_queued' | 'mail_sent', so no schema change was needed. Reuses the same
+// reviewSel/rvKey/rvToggle(All)/rvClearSel selection plumbing as the Review/D4D leads table.
+// ============================================================================
+function d4dMailRowHTML(l){
+  var addr = l.address || l.name || 'Untitled';
+  var mapHref = (l.webLink && /^https?:/i.test(l.webLink)) ? l.webLink : 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(addr);
+  var p = rvParseAddr(l.address||'');
+  var sent = l.d4dStatus==='mail_sent';
+  var badge = sent
+    ? '<span style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:10px;background:#dcfce7;color:#166534;border:1px solid #86efac;white-space:nowrap">&#9993; Mail sent</span>'
+    : '<span style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:10px;background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;white-space:nowrap">&#9993; Queued</span>';
+  return '<tr>'
+    +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="lead" data-id="'+l.id+'"'+(reviewSel.has(rvKey('lead',l.id))?' checked':'')+' onclick="rvToggle(\'lead\','+l.id+',this.checked)"></td>'
+    +'<td onclick="openDetail('+l.id+')" style="cursor:pointer"><a href="'+esc(mapHref)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;font-weight:600">'+esc(addr)+'</a></td>'
+    +'<td style="font-size:12.5px">'+esc(p.city||'&mdash;')+'</td>'
+    +'<td style="font-size:12.5px">'+esc(p.state||'&mdash;')+'</td>'
+    +'<td style="font-size:12.5px">'+esc(p.zip||'&mdash;')+'</td>'
+    +'<td>'+badge+'</td>'
+    +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
+      +(sent
+        ? '<button class="btn btn-secondary btn-sm" onclick="d4dUnmarkMailSent('+l.id+')" title="Undo — mark as queued again">Undo Sent</button> '
+        : '<button class="btn btn-green btn-sm" onclick="d4dMarkMailSent('+l.id+')" title="Mark this postcard/letter as mailed">&#9989; Mark Mail Sent</button> ')
+      +'<button class="btn btn-danger btn-sm" onclick="d4dRemoveFromMailQueue('+l.id+')" title="Take this off the mail list">Remove</button>'
+    +'</td>'
+  +'</tr>';
+}
+function d4dMailTableHTML(items){
+  return items.length===0
+    ? '<div class="empty"><div class="empty-icon">&#9993;</div><h3>No properties queued for mail &mdash; click &#9993; Send Mail on a D4D lead with no owner found</h3></div>'
+    : '<div class="table-container"><div class="table-wrap"><table>'
+      +'<thead><tr><th style="width:30px;text-align:center"><input type="checkbox" title="Select all" onclick="rvToggleAll(this.checked)"></th><th>Property</th><th>City</th><th>State</th><th>Zip</th><th>Status</th><th></th></tr></thead><tbody>'
+      + items.map(d4dMailRowHTML).join('')
+      +'</tbody></table></div></div>';
+}
+function d4dMailBulkBarHTML(items){
+  return items.length===0 ? '' :
+    '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:10px 14px;margin-bottom:12px">'
+      +'<span id="rv-bulk-count" style="font-size:13px;font-weight:600;color:var(--text2)">0 selected</span>'
+      +'<button id="d4d-mail-csv-btn" class="btn btn-primary btn-sm" onclick="d4dMailExportSelected()" disabled style="font-weight:700">&#11015; Download Mailing List (CSV)</button>'
+      +'<button id="d4d-mail-sent-btn" class="btn btn-green btn-sm" onclick="d4dMarkMailSentSelected()" disabled style="font-weight:700">&#9989; Mark Mail Sent</button>'
+      +'<button id="d4d-mail-remove-btn" class="btn btn-danger btn-sm" onclick="d4dRemoveFromMailQueueSelected()" disabled style="font-weight:700">&#128465; Remove selected</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="rvClearSel()">Clear</button>'
+    +'</div>';
+}
+// Queue a single D4D lead (no owner found) for mail — the ✉️ Send Mail button on the D4D Leads tab.
+async function d4dQueueForMail(id){
+  var l=leads.find(function(x){return x.id===id;});
+  if(!l){ showToast('Lead not found','error'); return; }
+  l.d4dStatus='mail_queued';
+  var tag='Mail queued (no owner found) — '+new Date().toLocaleDateString();
+  l.notes=l.notes?(l.notes+'\n'+tag):tag;
+  save(); render();
+  var ok=await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+  else showToast('Queued for mail — see the ✉️ Send Mail tab','success');
+}
+async function d4dMarkMailSent(id){
+  var l=leads.find(function(x){return x.id===id;});
+  if(!l) return;
+  l.d4dStatus='mail_sent';
+  var tag='Mail sent — '+new Date().toLocaleDateString();
+  l.notes=l.notes?(l.notes+'\n'+tag):tag;
+  save(); d4dRefreshTab();
+  var ok=await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+}
+async function d4dUnmarkMailSent(id){
+  var l=leads.find(function(x){return x.id===id;});
+  if(!l) return;
+  l.d4dStatus='mail_queued';
+  save(); d4dRefreshTab();
+  var ok=await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+}
+async function d4dRemoveFromMailQueue(id){
+  var l=leads.find(function(x){return x.id===id;});
+  if(!l) return;
+  l.d4dStatus='';
+  save(); d4dRefreshTab();
+  var ok=await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+}
+function d4dMailSelectedLeads(){
+  return Array.from(reviewSel).filter(function(k){ return k.indexOf('lead:')===0; })
+    .map(function(k){ return leads.find(function(x){ return x.id===(+k.split(':')[1]); }); })
+    .filter(Boolean);
+}
+function d4dMarkMailSentSelected(){
+  var sel=d4dMailSelectedLeads();
+  if(!sel.length){ showToast('Select at least one first','error'); return; }
+  var stamp=new Date().toLocaleDateString();
+  sel.forEach(function(l){
+    l.d4dStatus='mail_sent';
+    var tag='Mail sent — '+stamp;
+    l.notes=l.notes?(l.notes+'\n'+tag):tag;
+  });
+  save(); rvClearSel(); d4dRefreshTab();
+  sel.forEach(function(l){ saveLeadToSupabase(l); });
+  showToast('Marked '+sel.length+' as mailed','success');
+}
+function d4dRemoveFromMailQueueSelected(){
+  var sel=d4dMailSelectedLeads();
+  if(!sel.length){ showToast('Select at least one first','error'); return; }
+  if(!confirm('Take '+sel.length+' propert'+(sel.length===1?'y':'ies')+' off the mail list?')) return;
+  sel.forEach(function(l){ l.d4dStatus=''; });
+  save(); rvClearSel(); d4dRefreshTab();
+  sel.forEach(function(l){ saveLeadToSupabase(l); });
+  showToast('Removed '+sel.length+' from mail list','success');
+}
+// Download the selected properties as a mail-merge-ready CSV (Name/Street/City/State/Zip) for an
+// outside mail house or postcard service. "Current Resident" is used when no owner name is known —
+// these are exactly the leads where an owner couldn't be found, by design.
+function d4dMailExportSelected(){
+  var sel=d4dMailSelectedLeads();
+  if(!sel.length){ showToast('Select at least one property first','error'); return; }
+  function cell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+  var lines=['Name,Street,City,State,Zip'];
+  sel.forEach(function(l){
+    var p=rvParseAddr(l.address||'');
+    var nm=(l.name||'').trim();
+    if(!nm || /^(D4D Lead —|Name Not Available)/i.test(nm)) nm='Current Resident';
+    lines.push([cell(nm),cell(p.street),cell(p.city),cell(p.state),cell(p.zip)].join(','));
+  });
+  var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url; a.download='d4d-mailing-list-'+today()+'.csv'; a.style.display='none';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); document.body.removeChild(a); },100);
+  showToast('Downloaded '+sel.length+' address'+(sel.length!==1?'es':'')+' for mail','success');
 }
 // Download a Facebook-scrape batch row as a CSV. The whole day's Name,Phone,Group,Link
 // payload is stored on the jv_lead's .notes field by the fb-scrape-daily edge function.
@@ -6679,6 +6848,9 @@ function rvUpdateBar(){
   var b=document.getElementById('rv-skiptrace-btn'); if(b) b.disabled=(n===0);
   var e=document.getElementById('rv-export-btn'); if(e) e.disabled=(n===0);
   var d=document.getElementById('rv-delete-btn'); if(d) d.disabled=(n===0);
+  var mc=document.getElementById('d4d-mail-csv-btn'); if(mc) mc.disabled=(n===0);
+  var ms=document.getElementById('d4d-mail-sent-btn'); if(ms) ms.disabled=(n===0);
+  var mr=document.getElementById('d4d-mail-remove-btn'); if(mr) mr.disabled=(n===0);
 }
 // Bulk-remove every selected Review/D4D row in one go (soft-delete, same as the
 // single-lead Delete button, with an undo toast). Works across leads + tasks.
