@@ -1445,6 +1445,7 @@ function toJVRow(l) {
     review_sent_by: l.reviewSentBy||'', review_sent_at: l.reviewSentAt||'', review_note: l.reviewNote||'',
     shared: l.shared||false,
     shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
+    d4d_status: l.d4dStatus||'',
     deleted: l.deleted||false, deleted_at: l.deletedAt||''
   };
 }
@@ -1465,6 +1466,7 @@ function fromJVRow(r) {
     sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
     recipientFollowUpDate: r.recipient_follow_up_date||'',
+    d4dStatus: r.d4d_status||'',
     deleted: r.deleted||false, deletedAt: r.deleted_at||''
   };
 }
@@ -6091,6 +6093,13 @@ function d4dScanBannerHTML(){
 // A D4D auto-scan lead (from the Driving-for-Dollars robot). These now live in their OWN D4D tab,
 // not the Review queue.
 function isD4DLead(l){ return l.leadSource==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan'; }
+// Same idea as isD4DLead but also matches a Task that was converted from a D4D lead (Send to
+// Task carries the source onto sourceGroup). Kept as its own function — used by the ✉️ Send Mail
+// feature, which needs to recognize D4D origin on BOTH leads and tasks.
+function d4dOrigin(l){
+  if(!l) return false;
+  return l.leadSource==='D4D Auto-Scan' || l.sourceGroup==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan';
+}
 
 // Shared row builder for the Review + D4D tables (identical layout, different item sets).
 function rvRowHTML(it){
@@ -6139,11 +6148,11 @@ function rvRowHTML(it){
   var propwireBtn = (isD4D && !hasRealOwner && l.address)
     ? '<button class="btn btn-sm" onclick="openPropwire('+l.id+')" title="Look up the owner on Propwire (free) — opens the property in a new tab" style="margin-right:6px;background:#ecfeff;color:#0e7490;border:1px solid #67e8f9;font-weight:700">&#128100; Find Owner</button>'
     : '';
-  // ✉️ Send Mail — for D4D leads where we still couldn't find an owner name/contact, queue the
-  // property for a direct-mail postcard/letter instead (see the ✉️ Send Mail sub-tab in D4D).
+  // ✉️ Send Mail — queue any D4D lead for a direct-mail postcard/letter (parallel outreach, not
+  // just a no-owner fallback). Moves it out of this list into the ✉️ Send Mail sub-tab in D4D.
   var mailStatus = (kind==='lead') ? (l.d4dStatus||'') : '';
-  var mailBtn = (isD4D && !hasRealOwner && l.address && mailStatus!=='mail_queued' && mailStatus!=='mail_sent')
-    ? '<button class="btn btn-sm" onclick="d4dQueueForMail('+l.id+')" title="No owner found — queue this property for a direct-mail postcard/letter" style="margin-right:6px;background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>'
+  var mailBtn = (isD4D && l.address && mailStatus!=='mail_queued' && mailStatus!=='mail_sent')
+    ? '<button class="btn btn-sm" onclick="d4dQueueForMail('+l.id+')" title="Queue this property for a direct-mail postcard/letter" style="margin-right:6px;background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>'
     : '';
   var mailBadge = mailStatus==='mail_sent'
     ? '<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;background:#dcfce7;color:#166534;border:1px solid #86efac;margin-right:6px;white-space:nowrap">&#9993; Mail sent</span>'
@@ -6198,8 +6207,8 @@ function rvBulkBarHTML(items){
 }
 function renderReviewTab(){
   // Review = team/recipient-flagged leads + Tasks. D4D auto-scan leads live in the D4D tab now.
-  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && !isD4DLead(l) && !isFbBatchLead(l); }).map(function(l){ return {kind:'lead', l:l}; })
-    .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview; }).map(function(t){ return {kind:'task', l:t}; }))
+  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && !isD4DLead(l) && !isFbBatchLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'; }).map(function(l){ return {kind:'lead', l:l}; })
+    .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview && t.d4dStatus!=='mail_queued' && t.d4dStatus!=='mail_sent'; }).map(function(t){ return {kind:'task', l:t}; }))
     .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
     // Note: Hot rows stay in place (turn red where they are) — no reordering, so clicks never shift the list under you.
   document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
@@ -6213,10 +6222,11 @@ function renderReviewTab(){
 function d4dSetTab(t){ d4dTab=t; reviewSel.clear(); renderD4DSection(); }
 function renderD4DSection(){
   var host=document.getElementById('section-main'); if(!host) return;
-  var mailN = leads.filter(function(l){ return !l.deleted && isD4DLead(l) && l.d4dStatus==='mail_queued'; }).length;
+  var mailN = leads.filter(function(l){ return !l.deleted && l.d4dStatus==='mail_queued'; }).length
+    + jvLeads.filter(function(l){ return !l.deleted && l.d4dStatus==='mail_queued'; }).length;
   host.innerHTML = '<div class="lt-wrap">'
     +'<div class="lt-head"><div><h2>&#128663; Driving for Dollars</h2>'
-    +'<p>Distress leads found automatically by the Driving-for-Dollars robot (facade graded from Street View). Click &#9889; Scan Now to find more &mdash; new hot leads land here in ~5-10 minutes. Address links open the exact graded Street View. Use &#128100; Find Owner (Propwire) where the owner name is blank, or &#9993; Send Mail to queue a direct-mail postcard/letter when no owner can be found.</p></div>'
+    +'<p>Distress leads found automatically by the Driving-for-Dollars robot (facade graded from Street View). Click &#9889; Scan Now to find more &mdash; new hot leads land here in ~5-10 minutes. Address links open the exact graded Street View. Use &#128100; Find Owner (Propwire) where the owner name is blank, or &#9993; Send Mail to queue a property for a direct-mail postcard/letter — it moves to the Send Mail tab and off your other lists.</p></div>'
     +'<div class="lt-actions">'+d4dScanBtnHTML()+'</div></div>'
     +d4dScanBannerHTML()+d4dLimitBannerHTML()
     +'<div class="tabs" style="position:static;margin:0 0 14px;padding:0">'
@@ -6230,17 +6240,19 @@ function renderD4DSection(){
   rvUpdateBar();
 }
 function renderD4DLeadsTabHTML(){
-  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && isD4DLead(l); }).map(function(l){ return {kind:'lead', l:l}; })
+  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && isD4DLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'; }).map(function(l){ return {kind:'lead', l:l}; })
     .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
   return rvBulkBarHTML(items)+rvTableHTML(items,'&#128663;','No D4D leads yet — click &#9889; Scan Now');
 }
-// ✉️ Send Mail sub-tab: D4D properties queued for a direct-mail postcard/letter because no
-// owner name/contact could be found. Independent of needsReview so a lead doesn't fall off
-// this list just because it was completed/cleared elsewhere — only Remove takes it off.
+// ✉️ Send Mail sub-tab: D4D properties (leads AND tasks — a D4D lead can be converted to a Task
+// via Send to Task) queued for a direct-mail postcard/letter. Queueing PULLS the item out of
+// wherever it currently lives (D4D Leads, Review, Tasks, Follow-Ups) — it lives ONLY here until
+// Remove takes it back out of the queue.
 function renderD4DMailTabHTML(){
-  var items = leads.filter(function(l){ return !l.deleted && isD4DLead(l) && (l.d4dStatus==='mail_queued' || l.d4dStatus==='mail_sent'); })
-    .sort(function(a,b){ return (a.d4dStatus==='mail_sent'?1:0) - (b.d4dStatus==='mail_sent'?1:0); });
-  return '<p style="font-size:12px;color:var(--text3);margin:-4px 0 12px">Properties with no owner found — start with a CSV of the mailing addresses for your mail house/postcard service. Select properties, then <b>Download Mailing List</b>. Once postcards go out, select them again and click <b>Mark Mail Sent</b> to track it.</p>'
+  var items = leads.filter(function(l){ return !l.deleted && (l.d4dStatus==='mail_queued' || l.d4dStatus==='mail_sent'); }).map(function(l){ return {kind:'lead', l:l}; })
+    .concat(jvLeads.filter(function(l){ return !l.deleted && (l.d4dStatus==='mail_queued' || l.d4dStatus==='mail_sent'); }).map(function(l){ return {kind:'task', l:l}; }))
+    .sort(function(a,b){ return (a.l.d4dStatus==='mail_sent'?1:0) - (b.l.d4dStatus==='mail_sent'?1:0); });
+  return '<p style="font-size:12px;color:var(--text3);margin:-4px 0 12px">Queued from a D4D lead or task (via the &#9993; Send Mail button) — start with a CSV of the mailing addresses for your mail house/postcard service. Select properties, then <b>Download Mailing List</b>. Once postcards go out, select them again and click <b>Mark Mail Sent</b> to track it. <b>Remove</b> sends it back to where it came from.</p>'
     +d4dMailBulkBarHTML(items)+d4dMailTableHTML(items);
 }
 // Re-render whichever queue tab (D4D or Review) is currently open — used by the scan/budget flow,
@@ -6260,26 +6272,29 @@ function openPropwire(id){
 // '' | 'mail_queued' | 'mail_sent', so no schema change was needed. Reuses the same
 // reviewSel/rvKey/rvToggle(All)/rvClearSel selection plumbing as the Review/D4D leads table.
 // ============================================================================
-function d4dMailRowHTML(l){
-  var addr = l.address || l.name || 'Untitled';
+function d4dMailRowHTML(item){
+  var kind=item.kind, l=item.l;
+  var addr = (kind==='task' ? l.location : l.address) || l.name || 'Untitled';
   var mapHref = (l.webLink && /^https?:/i.test(l.webLink)) ? l.webLink : 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(addr);
-  var p = rvParseAddr(l.address||'');
+  var p = rvParseAddr(addr||'');
   var sent = l.d4dStatus==='mail_sent';
+  var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
+  var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
   var badge = sent
     ? '<span style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:10px;background:#dcfce7;color:#166534;border:1px solid #86efac;white-space:nowrap">&#9993; Mail sent</span>'
     : '<span style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:10px;background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;white-space:nowrap">&#9993; Queued</span>';
   return '<tr>'
-    +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="lead" data-id="'+l.id+'"'+(reviewSel.has(rvKey('lead',l.id))?' checked':'')+' onclick="rvToggle(\'lead\','+l.id+',this.checked)"></td>'
-    +'<td onclick="openDetail('+l.id+')" style="cursor:pointer"><a href="'+esc(mapHref)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;font-weight:600">'+esc(addr)+'</a></td>'
+    +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>'
+    +'<td onclick="'+openFn+'" style="cursor:pointer">'+typeTag+'<a href="'+esc(mapHref)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;font-weight:600">'+esc(addr)+'</a></td>'
     +'<td style="font-size:12.5px">'+esc(p.city||'&mdash;')+'</td>'
     +'<td style="font-size:12.5px">'+esc(p.state||'&mdash;')+'</td>'
     +'<td style="font-size:12.5px">'+esc(p.zip||'&mdash;')+'</td>'
     +'<td>'+badge+'</td>'
     +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
       +(sent
-        ? '<button class="btn btn-secondary btn-sm" onclick="d4dUnmarkMailSent('+l.id+')" title="Undo — mark as queued again">Undo Sent</button> '
-        : '<button class="btn btn-green btn-sm" onclick="d4dMarkMailSent('+l.id+')" title="Mark this postcard/letter as mailed">&#9989; Mark Mail Sent</button> ')
-      +'<button class="btn btn-danger btn-sm" onclick="d4dRemoveFromMailQueue('+l.id+')" title="Take this off the mail list">Remove</button>'
+        ? '<button class="btn btn-secondary btn-sm" onclick="d4dUnmarkMailSent(\''+kind+'\','+l.id+')" title="Undo — mark as queued again">Undo Sent</button> '
+        : '<button class="btn btn-green btn-sm" onclick="d4dMarkMailSent(\''+kind+'\','+l.id+')" title="Mark this postcard/letter as mailed">&#9989; Mark Mail Sent</button> ')
+      +'<button class="btn btn-danger btn-sm" onclick="d4dRemoveFromMailQueue(\''+kind+'\','+l.id+')" title="Take this off the mail list">Remove</button>'
     +'</td>'
   +'</tr>';
 }
@@ -6301,81 +6316,98 @@ function d4dMailBulkBarHTML(items){
       +'<button class="btn btn-secondary btn-sm" onclick="rvClearSel()">Clear</button>'
     +'</div>';
 }
-// Queue a single D4D lead (no owner found) for mail — the ✉️ Send Mail button on the D4D Leads tab.
-async function d4dQueueForMail(id){
-  var l=leads.find(function(x){return x.id===id;});
+function d4dMailArr(kind){ return kind==='task' ? jvLeads : leads; }
+function d4dMailSaveFn(kind){ return kind==='task' ? saveJVToSupabase : saveLeadToSupabase; }
+function d4dMailLocalSave(kind){ if(kind==='task') saveJV(); else save(); }
+// Queue a single D4D lead OR task for mail — the ✉️ Send Mail button on the D4D Leads tab, the
+// Task detail modal, and the Lead detail modal. Pulls it out of wherever it currently shows
+// (D4D Leads, Review, Tasks, Follow-Ups) — from here on it only shows in the ✉️ Send Mail tab.
+// kind defaults to 'lead' for back-compat with the existing D4D-row button (single-arg call).
+async function d4dQueueForMail(kind,id){
+  if(typeof id==='undefined'){ id=kind; kind='lead'; }
+  var l=d4dMailArr(kind).find(function(x){return x.id===id;});
   if(!l){ showToast('Lead not found','error'); return; }
   l.d4dStatus='mail_queued';
-  var tag='Mail queued (no owner found) — '+new Date().toLocaleDateString();
+  var tag='Mail queued — '+new Date().toLocaleDateString();
   l.notes=l.notes?(l.notes+'\n'+tag):tag;
-  save(); render();
-  var ok=await saveLeadToSupabase(l);
+  d4dMailLocalSave(kind); render();
+  var ok=await d4dMailSaveFn(kind)(l);
   if(!ok) showToast('Cloud sync failed -- check your connection','error');
-  else showToast('Queued for mail — see the ✉️ Send Mail tab','success');
+  else showToast('Moved to the ✉️ Send Mail tab','success');
 }
-async function d4dMarkMailSent(id){
-  var l=leads.find(function(x){return x.id===id;});
+// Send Mail button inside the Lead/Task detail modal: close the modal first (the item is about
+// to vanish from whatever list it's shown in), then queue it.
+function d4dSendMailFromModal(kind,id){
+  closeModal();
+  d4dQueueForMail(kind,id);
+}
+async function d4dMarkMailSent(kind,id){
+  var l=d4dMailArr(kind).find(function(x){return x.id===id;});
   if(!l) return;
   l.d4dStatus='mail_sent';
   var tag='Mail sent — '+new Date().toLocaleDateString();
   l.notes=l.notes?(l.notes+'\n'+tag):tag;
-  save(); d4dRefreshTab();
-  var ok=await saveLeadToSupabase(l);
+  d4dMailLocalSave(kind); d4dRefreshTab();
+  var ok=await d4dMailSaveFn(kind)(l);
   if(!ok) showToast('Cloud sync failed -- check your connection','error');
 }
-async function d4dUnmarkMailSent(id){
-  var l=leads.find(function(x){return x.id===id;});
+async function d4dUnmarkMailSent(kind,id){
+  var l=d4dMailArr(kind).find(function(x){return x.id===id;});
   if(!l) return;
   l.d4dStatus='mail_queued';
-  save(); d4dRefreshTab();
-  var ok=await saveLeadToSupabase(l);
+  d4dMailLocalSave(kind); d4dRefreshTab();
+  var ok=await d4dMailSaveFn(kind)(l);
   if(!ok) showToast('Cloud sync failed -- check your connection','error');
 }
-async function d4dRemoveFromMailQueue(id){
-  var l=leads.find(function(x){return x.id===id;});
+async function d4dRemoveFromMailQueue(kind,id){
+  var l=d4dMailArr(kind).find(function(x){return x.id===id;});
   if(!l) return;
   l.d4dStatus='';
-  save(); d4dRefreshTab();
-  var ok=await saveLeadToSupabase(l);
+  d4dMailLocalSave(kind); d4dRefreshTab();
+  var ok=await d4dMailSaveFn(kind)(l);
   if(!ok) showToast('Cloud sync failed -- check your connection','error');
 }
 function d4dMailSelectedLeads(){
-  return Array.from(reviewSel).filter(function(k){ return k.indexOf('lead:')===0; })
-    .map(function(k){ return leads.find(function(x){ return x.id===(+k.split(':')[1]); }); })
-    .filter(Boolean);
+  return Array.from(reviewSel).map(function(k){
+    var p=k.split(':'), kind=p[0], id=+p[1];
+    var l=d4dMailArr(kind).find(function(x){ return x.id===id; });
+    return l ? {kind:kind, l:l} : null;
+  }).filter(Boolean);
 }
 function d4dMarkMailSentSelected(){
   var sel=d4dMailSelectedLeads();
   if(!sel.length){ showToast('Select at least one first','error'); return; }
   var stamp=new Date().toLocaleDateString();
-  sel.forEach(function(l){
-    l.d4dStatus='mail_sent';
+  sel.forEach(function(item){
+    item.l.d4dStatus='mail_sent';
     var tag='Mail sent — '+stamp;
-    l.notes=l.notes?(l.notes+'\n'+tag):tag;
+    item.l.notes=item.l.notes?(item.l.notes+'\n'+tag):tag;
   });
-  save(); rvClearSel(); d4dRefreshTab();
-  sel.forEach(function(l){ saveLeadToSupabase(l); });
+  save(); saveJV(); rvClearSel(); d4dRefreshTab();
+  sel.forEach(function(item){ d4dMailSaveFn(item.kind)(item.l); });
   showToast('Marked '+sel.length+' as mailed','success');
 }
 function d4dRemoveFromMailQueueSelected(){
   var sel=d4dMailSelectedLeads();
   if(!sel.length){ showToast('Select at least one first','error'); return; }
   if(!confirm('Take '+sel.length+' propert'+(sel.length===1?'y':'ies')+' off the mail list?')) return;
-  sel.forEach(function(l){ l.d4dStatus=''; });
-  save(); rvClearSel(); d4dRefreshTab();
-  sel.forEach(function(l){ saveLeadToSupabase(l); });
+  sel.forEach(function(item){ item.l.d4dStatus=''; });
+  save(); saveJV(); rvClearSel(); d4dRefreshTab();
+  sel.forEach(function(item){ d4dMailSaveFn(item.kind)(item.l); });
   showToast('Removed '+sel.length+' from mail list','success');
 }
 // Download the selected properties as a mail-merge-ready CSV (Name/Street/City/State/Zip) for an
-// outside mail house or postcard service. "Current Resident" is used when no owner name is known —
-// these are exactly the leads where an owner couldn't be found, by design.
+// outside mail house or postcard service. "Current Resident" is used whenever no owner name is on
+// file, so a queued item never ends up with a blank recipient name.
 function d4dMailExportSelected(){
   var sel=d4dMailSelectedLeads();
   if(!sel.length){ showToast('Select at least one property first','error'); return; }
   function cell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
   var lines=['Name,Street,City,State,Zip'];
-  sel.forEach(function(l){
-    var p=rvParseAddr(l.address||'');
+  sel.forEach(function(item){
+    var l=item.l;
+    var addr=(item.kind==='task' ? l.location : l.address)||'';
+    var p=rvParseAddr(addr);
     var nm=(l.name||'').trim();
     if(!nm || /^(D4D Lead —|Name Not Available)/i.test(nm)) nm='Current Resident';
     lines.push([cell(nm),cell(p.street),cell(p.city),cell(p.state),cell(p.zip)].join(','));
@@ -7538,12 +7570,12 @@ function buildFollowUpQueueHTML(nationwideOnly){
     });
   } else {
     leads.forEach(function(l){
-      if(!l.deleted && l.followUpDate && l.nationwide!=='Yes'){
+      if(!l.deleted && l.followUpDate && l.nationwide!=='Yes' && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'){
         allFU.push({lead:l, type:'dmv', isTask:false});
       }
     });
     jvLeads.forEach(function(l){
-      if(!l.deleted && l.followUpDate){
+      if(!l.deleted && l.followUpDate && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'){
         allFU.push({lead:l, type:'task', isTask:true});
       }
     });
@@ -7735,6 +7767,7 @@ function renderDetailModal(){
           <button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>
           <button class="btn btn-secondary btn-sm" onclick="sendToReview('lead',${l.id})">&#128203; Review</button>
           <button class="btn btn-sm" onclick="sendLeadToTask(${l.id})" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button>
+          ${d4dOrigin(l)&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent'?'<button class="btn btn-sm" onclick="d4dSendMailFromModal(\'lead\','+l.id+')" title="Queue this property for a direct-mail postcard/letter — moves it to the ✉️ Send Mail tab" style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>':''}
           <button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal('lead',${l.id})">&#128197; Schedule SMS</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,'lead',${l.id})">&#128231; Send to Team</button>
           <button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button>
@@ -8401,6 +8434,7 @@ function renderJVLeadsTab(){
   // Apply filters
   var filtered = jvLeads.filter(function(l){
     if(l.deleted) return false;
+    if(l.d4dStatus==='mail_queued'||l.d4dStatus==='mail_sent') return false; // queued for ✉️ Send Mail — lives only in that tab now
     if(jvScoreFilter && l.score !== jvScoreFilter) return false;
     if(jvStatusFilter && l.jvStatus !== jvStatusFilter) return false;
     if(jvDateFrom && l.dateAdded < jvDateFrom) return false;
@@ -8414,7 +8448,7 @@ function renderJVLeadsTab(){
   var cold = jvLeads.filter(function(l){return !l.deleted&&l.score==='Cold';}).length;
 
   // Follow-up section
-  var withFU = jvLeads.filter(function(l){return !l.deleted&&l.followUpDate;}).sort(function(a,b){return a.followUpDate>b.followUpDate?1:-1;});
+  var withFU = jvLeads.filter(function(l){return !l.deleted&&l.followUpDate&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent';}).sort(function(a,b){return a.followUpDate>b.followUpDate?1:-1;});
   var fuOverdue = withFU.filter(function(l){return getFUStatus(l.followUpDate)==='overdue';});
   var fuToday = withFU.filter(function(l){return getFUStatus(l.followUpDate)==='today';});
   var fuSoon = withFU.filter(function(l){return getFUStatus(l.followUpDate)==='soon';});
@@ -8595,7 +8629,7 @@ function openJVDetail(id){
     +emailOfferSectionHTML(l,'task')
     +renderAttachmentsSection('task', l.id)
     +renderActivityLog('task', l.id, l.activityLog)
-    +'</div>'+cmtPanelHTML('task', l.id)+'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button><button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
+    +'</div>'+cmtPanelHTML('task', l.id)+'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button>'+(d4dOrigin(l)&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent'?'<button class="btn btn-sm" onclick="d4dSendMailFromModal(\'task\','+l.id+')" title="Queue this property for a direct-mail postcard/letter — moves it out of Tasks/Follow-Ups into the ✉️ Send Mail tab" style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>':'')+'<button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
   nciMount('task', l.id);
   mountGhlSms('task', l.id);
   cmtMount('task', l.id);
