@@ -622,6 +622,7 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const AUTH_ENABLED = true;
 const ADMIN_FN_URL = SUPABASE_URL + '/functions/v1/admin-users';
 const KEY_LOGIN_FN_URL = SUPABASE_URL + '/functions/v1/key-login';
+const SLACK_FN_URL = SUPABASE_URL + '/functions/v1/send-to-slack';
 
 // Session shape: { access_token, refresh_token, expires_at (unix seconds), user:{id,email} }
 let authSession = null;
@@ -768,6 +769,22 @@ async function adminUsersCall(body){
   var r = await adminFetch(body);
   // If the token was rejected, force one fresh token and retry before giving up.
   if(r.status===401 && await authForceRefresh()){ r = await adminFetch(body); }
+  if(r.status===401){ bounceToLogin(); throw new Error('Your session expired — please sign in again.'); }
+  var data = await r.json().catch(function(){ return {}; });
+  if(!r.ok){ throw new Error(data.error || ('Request failed ('+r.status+')')); }
+  return data;
+}
+function slackFetch(body){
+  return fetch(SLACK_FN_URL, {
+    method:'POST',
+    headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+async function slackCall(body){
+  await authRefreshIfNeeded();
+  var r = await slackFetch(body);
+  if(r.status===401 && await authForceRefresh()){ r = await slackFetch(body); }
   if(r.status===401){ bounceToLogin(); throw new Error('Your session expired — please sign in again.'); }
   var data = await r.json().catch(function(){ return {}; });
   if(!r.ok){ throw new Error(data.error || ('Request failed ('+r.status+')')); }
@@ -1846,10 +1863,11 @@ const SB_ITEMS = [
   {k:'fb',        ic:'&#128241;', lb:'Facebook Scrape', sl:'FB Scrape', soon:false},
   {k:'dispo',     ic:'&#127991;&#65039;', lb:'Dispo',  sl:'Dispo',    soon:false},
   {k:'d4d',       ic:'&#128663;', lb:'D4D', sl:'D4D',  soon:false},
-  {k:'jv',        ic:'&#9997;&#65039;', lb:'JV Agreements', sl:'JV',  soon:false}
+  {k:'jv',        ic:'&#9997;&#65039;', lb:'JV Agreements', sl:'JV',  soon:false},
+  {k:'dealcheck', ic:'&#128269;', lb:'Deal Check', sl:'Deal Check', soon:false}
 ];
 function sidebarHTML(){
-  var nav = SB_ITEMS.map(function(it){
+  var nav = sbItems().map(function(it){
     return '<div class="crm-sb-item '+(activeSection===it.k?'active':'')+'" onclick="setSection(\''+it.k+'\')" title="'+it.lb+'">'
       +'<span class="crm-sb-ico">'+it.ic+'</span>'
       +'<span class="crm-sb-label">'+it.lb+'</span>'
@@ -1868,7 +1886,7 @@ function sidebarHTML(){
 }
 // Phone-only bottom tab bar (hidden on desktop via CSS). Mirrors SB_ITEMS + activeSection.
 function bottomNavHTML(){
-  var items = SB_ITEMS.map(function(it){
+  var items = sbItems().map(function(it){
     return '<button class="crm-bn-item '+(activeSection===it.k?'active':'')+'" onclick="setSection(\''+it.k+'\')" aria-label="'+it.lb+'">'
       +'<span class="bn-ic">'+it.ic+'</span><span class="bn-lb">'+it.sl+'</span>'
     +'</button>';
@@ -2664,6 +2682,386 @@ var crmProps  = null;                 // saved deals, null = not loaded yet
 var bySearch = '', byArea = '', byHot = false;
 // property builder draft (kept so re-renders don't lose typing); photos = array of image URLs
 var dispoDraft = {id:null,address:'',headerPhoto:'',price:'',arv:'',beds:'',baths:'',sqft:'',basement:'',description:'',comps:'',compsPhotos:[],notes:'',photos:[],photosLink:'',sourceType:'',contactName:'',contactEmail:'',contactPhone:''};
+
+// ===================== Deal Check (Phase 1: property record shell) =====================
+// Phase 1 of the Rehab Comps build (see HANDOFF_REHAB_COMPS_TAB.md): a manual property
+// record — address/sqft/beds/baths/notes. Later phases attach owner+comps (Propwire button)
+// and photos+AI rehab estimate (Zillow/Redfin/Realtor bookmarklet + OpenAI) onto the same
+// record via additive columns — nothing here is wired to those yet.
+const DC_PATH = 'crm_dealcheck';
+var crmDealCheck = null; // null = not loaded yet
+function dcFromDb(r){ return {id:r.id,address:r.address||'',sqft:r.sqft||'',beds:r.beds||'',baths:r.baths||'',notes:r.notes||'',ownerName:r.owner_name||'',ownerMailingAddress:r.owner_mailing_address||'',comps:r.comps||'',photoUrls:r.photo_urls||'',arv:+r.arv||0,arvLow:+r.arv_low||0,arvHigh:+r.arv_high||0,rehabLow:+r.rehab_low||0,rehabHigh:+r.rehab_high||0,rehabTier:r.rehab_tier||'',rehabDetail:r.rehab_detail||'',analyzedAt:r.analyzed_at||null}; }
+function dcToDb(d){ return {address:d.address||'',sqft:d.sqft||'',beds:d.beds||'',baths:d.baths||'',notes:d.notes||'',owner_name:d.ownerName||'',owner_mailing_address:d.ownerMailingAddress||'',comps:d.comps||'',photo_urls:d.photoUrls||'',arv:d.arv||null,arv_low:d.arvLow||null,arv_high:d.arvHigh||null,rehab_low:d.rehabLow||null,rehab_high:d.rehabHigh||null,rehab_tier:d.rehabTier||null,rehab_detail:d.rehabDetail||null,analyzed_at:d.analyzedAt||null,updated_at:new Date().toISOString()}; }
+async function crmDealCheckFetch(){
+  try { var rows=await sbFetch(DC_PATH+'?select=*&order=id.desc&limit=2000'); crmDealCheck=(rows||[]).map(dcFromDb); }
+  catch(e){ crmDealCheck=[]; showToast('Could not load Deal Check — check connection','error'); }
+}
+async function crmDealCheckInsert(d){ var b=dcToDb(d); b.created_by=(currentUser&&currentUser.name)||''; b.created_at=new Date().toISOString();
+  var rows=await sbFetch(DC_PATH,'POST',b); return rows&&rows[0]?dcFromDb(rows[0]):null; }
+async function crmDealCheckUpdate(d){ await sbFetch(DC_PATH+'?id=eq.'+d.id,'PATCH',dcToDb(d)); }
+async function crmDealCheckDeleteDb(id){ await sbFetch(DC_PATH+'?id=eq.'+id,'DELETE'); }
+function crmDealCheckById(id){ id=+id; return (crmDealCheck||[]).find(function(d){ return +d.id===id; }); }
+
+function renderDealCheck(){
+  var host=document.getElementById('section-main'); if(!host) return;
+  if(crmDealCheck===null){
+    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128269; Deal Check</h2></div></div>'
+      +'<div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading&hellip;</div></div>';
+    crmDealCheckFetch().then(function(){ if(activeSection==='dealcheck') renderDealCheck(); });
+    return;
+  }
+  host.innerHTML =
+    '<div class="lt-wrap">'
+    + '<div class="lt-head"><div><h2>&#128269; Deal Check</h2>'
+      + '<p>One record per property &mdash; specs now, owner+comps (Propwire) and photos+AI rehab estimate attach to the same record in later phases.</p></div>'
+      + '<div class="lt-actions">'
+        + '<button class="btn btn-secondary btn-sm" onclick="crmDealCheck=null;renderDealCheck()">&#8635; Refresh</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="openDealCheckImport()">&#128203; Import from listing</button>'
+                + '<button class="btn btn-primary btn-sm" onclick="openDealCheckEditModal(null)">&#43; Add Property</button>'
+      + '</div>'
+    + '</div>'
+    + '<div id="dc-list">'+dcListHTML()+'</div>'
+    + '</div>';
+}
+function dcListHTML(){
+  var rows=(crmDealCheck||[]);
+  if(!rows.length) return '<div class="empty"><div class="empty-icon">&#128269;</div><h3>No properties yet</h3><p style="color:var(--text3);font-size:12px">Click Add Property to start a record.</p></div>';
+  var body=rows.map(function(d){
+    var spec=[]; if(d.beds) spec.push(d.beds+'bd'); if(d.baths) spec.push(d.baths+'ba'); if(d.sqft) spec.push(d.sqft+' sqft');
+    return '<tr>'
+      + '<td><div style="font-weight:600;font-size:13px">'+esc(d.address||'(no address)')+'</div></td>'
+      + '<td style="white-space:nowrap;font-size:12.5px">'+(spec.length?esc(spec.join(' / ')):'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
+      + '<td style="font-size:12.5px">'+(d.ownerName?esc(d.ownerName):'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
+      + '<td style="font-size:12.5px;white-space:nowrap">'+dcMoney(d.arv)+'</td>'
+      + '<td style="font-size:12.5px;white-space:nowrap">'+(d.rehabLow||d.rehabHigh?dcMoney(d.rehabLow)+'–'+dcMoney(d.rehabHigh):'—')+'</td>'
+      + '<td style="font-size:12.5px;font-weight:700;white-space:nowrap">'+((d.arv&&(d.rehabLow||d.rehabHigh))?dcMoney(d.arv*0.7-(d.rehabLow+d.rehabHigh)/2):'—')+'</td>'
+      + '<td style="max-width:260px;font-size:12px;color:var(--text2)">'+(d.notes?esc(d.notes):'<span style="color:var(--text4)">&mdash;</span>')+'</td>'
+      + '<td style="white-space:nowrap">'
+        + '<button class="btn btn-primary btn-sm" onclick="openDealCheckAnalyze('+d.id+')" title="Comps, ARV &amp; rehab">&#128202; Analyze</button> '
+        + '<button class="btn btn-secondary btn-sm" onclick="openDealCheckEditModal('+d.id+')">&#9998;</button> '
+        + '<button class="btn btn-secondary btn-sm" onclick="deleteDealCheck('+d.id+')" title="Delete">&#128465;</button>'
+      + '</td>'
+    + '</tr>';
+  }).join('');
+  return '<div class="table-container"><div class="table-wrap"><table>'
+    + '<thead><tr><th>Address</th><th>Specs</th><th>Owner</th><th>ARV</th><th>Rehab</th><th>MAO 70%</th><th>Notes</th><th></th></tr></thead>'
+    + '<tbody>'+body+'</tbody></table></div></div>';
+}
+function openDealCheckEditModal(id){
+  var isNew=(id===null||id===undefined);
+  var d=isNew?{id:null,address:'',sqft:'',beds:'',baths:'',notes:'',ownerName:'',ownerMailingAddress:'',comps:''}:crmDealCheckById(id);
+  if(!d){ showToast('Property not found','error'); return; }
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:480px">'
+    + '<div class="modal-header"><div class="modal-title">'+(isNew?'&#43; Add Property':'&#9998; Edit Property')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<div class="form-field"><label class="form-label">Address</label><input id="dc-address" class="form-input" value="'+esc(d.address)+'" placeholder="123 Main St, City, ST"></div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">'
+        + '<div class="form-field"><label class="form-label">Sqft</label><input id="dc-sqft" class="form-input" value="'+esc(d.sqft)+'" placeholder="1,450"></div>'
+        + '<div class="form-field"><label class="form-label">Beds</label><input id="dc-beds" class="form-input" value="'+esc(d.beds)+'" placeholder="3"></div>'
+        + '<div class="form-field"><label class="form-label">Baths</label><input id="dc-baths" class="form-input" value="'+esc(d.baths)+'" placeholder="2"></div>'
+      + '</div>'
+      + '<div style="margin:4px 0 10px"><button type="button" class="btn btn-secondary btn-sm" onclick="openDealCheckPropwire()">&#128270; Look up on Propwire</button></div>'
+      + '<div class="form-field"><label class="form-label">Owner Name</label><input id="dc-owner" class="form-input" value="'+esc(d.ownerName)+'"></div>'
+      + '<div class="form-field"><label class="form-label">Owner Mailing Address</label><input id="dc-ownermail" class="form-input" value="'+esc(d.ownerMailingAddress)+'"></div>'
+      + '<div class="form-field"><label class="form-label">Comps</label><textarea id="dc-comps" class="form-input" rows="4" placeholder="Paste what you see on Propwire\'s Comps tab">'+esc(d.comps)+'</textarea></div>'
+      + '<div class="form-field"><label class="form-label">Notes</label><textarea id="dc-notes" class="form-input" rows="2" placeholder="Optional">'+esc(d.notes)+'</textarea></div>'
+    + '</div>'
+    + '<div class="modal-footer">'
+      + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+      + '<button class="btn btn-primary" onclick="saveDealCheck('+(isNew?'null':d.id)+')">'+(isNew?'Add Property':'Save Changes')+'</button>'
+    + '</div></div></div>';
+}
+function openDealCheckPropwire(){
+  var a=(document.getElementById('dc-address').value||'').trim();
+  if(!a){ showToast('Enter an address first','error'); return; }
+  var w=window.open('https://propwire.com/search?q='+encodeURIComponent(a),'_blank');
+  if(!w) showToast('Popup blocked — allow popups for this page and click again','error');
+}
+function dcReadForm(){
+  return {
+    address:(document.getElementById('dc-address').value||'').trim(),
+    sqft:(document.getElementById('dc-sqft').value||'').trim(),
+    beds:(document.getElementById('dc-beds').value||'').trim(),
+    baths:(document.getElementById('dc-baths').value||'').trim(),
+    notes:(document.getElementById('dc-notes').value||'').trim(),
+    ownerName:(document.getElementById('dc-owner').value||'').trim(),
+    ownerMailingAddress:(document.getElementById('dc-ownermail').value||'').trim(),
+    comps:(document.getElementById('dc-comps').value||'').trim()
+  };
+}
+async function saveDealCheck(id){
+  var data=dcReadForm();
+  if(!data.address){ showToast('Add an address first','error'); return; }
+  if(id===null||id===undefined){
+    try { var row=await crmDealCheckInsert(data); if(row) crmDealCheck.unshift(row); showToast('Property added','success'); }
+    catch(e){ showToast('Could not save property — try again','error'); return; }
+  } else {
+    var d=crmDealCheckById(id); if(!d){ showToast('Property not found','error'); return; }
+    Object.assign(d,data);
+    try { await crmDealCheckUpdate(d); showToast('Property updated','success'); }
+    catch(e){ showToast('Saved locally, cloud sync failed — Refresh and retry','error'); }
+  }
+  closeModal(); renderDealCheck();
+}
+function deleteDealCheck(id){
+  var d=crmDealCheckById(id); if(!d) return;
+  deleteWithUndo({
+    label:'Property deleted',
+    removeMem:function(){ crmDealCheck=(crmDealCheck||[]).filter(function(x){ return +x.id!==+id; }); },
+    restoreMem:function(){ crmDealCheck=(crmDealCheck||[]).concat([d]); },
+    dbDelete:function(){ return crmDealCheckDeleteDb(id); },
+    reRender:function(){ if(activeSection==='dealcheck') renderDealCheck(); }
+  });
+}
+// ===================== end Deal Check =====================
+// ===================== Deal Check analysis (Phase 5: real-comps ARV + AI rehab) =====================
+// ARV = weighted-median $/sqft of REAL sold comps (sold_comps via find_comps RPC) x subject sqft.
+// Rehab = OpenAI vision (edge fn dealcheck-ai) from pasted photo URLs and/or uploaded photos.
+// The AI never invents comps or ARV.
+var DC_FN_URL = SUPABASE_URL + '/functions/v1/dealcheck-ai';
+var dcAn = null; // {id, comps, arv, arvLow, arvHigh, rehab, files:[dataUrl]}
+function dcMoney(n){ n=Number(n); return isFinite(n)&&n?'$'+Math.round(n).toLocaleString():'—'; }
+function dcNum(v){ return Number(String(v==null?'':v).replace(/[^0-9.]/g,''))||0; }
+function dcWMedian(pairs){ // [[value,weight]]
+  pairs=pairs.slice().sort(function(a,b){return a[0]-b[0];});
+  var tot=pairs.reduce(function(s,p){return s+p[1];},0), acc=0;
+  for(var i=0;i<pairs.length;i++){ acc+=pairs[i][1]; if(acc>=tot/2) return pairs[i][0]; }
+  return pairs.length?pairs[pairs.length-1][0]:0;
+}
+function dcQuant(arr,q){ arr=arr.slice().sort(function(a,b){return a-b;}); if(!arr.length) return 0; var p=(arr.length-1)*q, lo=Math.floor(p), hi=Math.ceil(p); return arr[lo]+(arr[hi]-arr[lo])*(p-lo); }
+async function dcGeocode(addr){
+  var r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q='+encodeURIComponent(addr));
+  var j=await r.json(); if(!j||!j[0]) return null; return {lat:+j[0].lat,lng:+j[0].lon};
+}
+function dcNormAddr(a){ return String(a||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,18); }
+async function dcPullComps(d){
+  var sqft=dcNum(d.sqft);
+  if(!sqft){ var ans=prompt('Square footage of this property?'); sqft=dcNum(ans); if(!sqft) throw new Error('Sqft is needed to compute ARV.'); d.sqft=String(sqft); try{ await crmDealCheckUpdate(d); }catch(e){} }
+  var g=await dcGeocode(d.address); if(!g) throw new Error('Could not locate that address — check the spelling.');
+  var found=[], tries=[[0.5,12],[1,12],[1,18],[2,24]];
+  for(var t=0;t<tries.length;t++){
+    var rows=await sbFetch('rpc/find_comps','POST',{subject_lat:g.lat,subject_lng:g.lng,radius_miles:tries[t][0],target_sqft:sqft,sqft_tolerance:0.25,months_back:tries[t][1],max_results:40});
+    found=(rows||[]).filter(function(c){
+      if(/condo|co-?op/i.test(c.style||'')) return false;
+      if(+c.distance_miles<0.02 && dcNormAddr(c.address)===dcNormAddr(d.address)) return false; // subject's own sale
+      return c.price_per_sqft>0;
+    });
+    if(found.length>=6) break;
+  }
+  if(found.length<3) throw new Error('Only '+found.length+' usable sold comps nearby — this area may not be covered (DC/MD/Fairfax/Arlington are).');
+  var pp=found.map(function(c){return +c.price_per_sqft;}), q1=dcQuant(pp,.25), q3=dcQuant(pp,.75), iqr=q3-q1;
+  found.forEach(function(c){ c._out=(c.price_per_sqft<q1-1.5*iqr||c.price_per_sqft>q3+1.5*iqr); });
+  var now=Date.now();
+  found.forEach(function(c){
+    var mo=Math.max(0,(now-new Date(c.sale_date).getTime())/2.63e9);
+    var sz=1-Math.min(1,Math.abs((+c.sqft||sqft)-sqft)/sqft);
+    c._w=(1/(1+(+c.distance_miles)*2))*Math.pow(0.5,mo/12)*(0.4+0.6*sz);
+  });
+  var use=found.filter(function(c){return !c._out;}).sort(function(a,b){return b._w-a._w;}).slice(0,10);
+  var ppsf=dcWMedian(use.map(function(c){return [+c.price_per_sqft,c._w];}));
+  var ul=use.map(function(c){return +c.price_per_sqft;});
+  return {comps:use, ppsf:ppsf, arv:Math.round(ppsf*sqft), arvLow:Math.round(dcQuant(ul,.25)*sqft), arvHigh:Math.round(dcQuant(ul,.75)*sqft)};
+}
+function dcCompsText(a){
+  if(!a||!a.comps) return '';
+  return 'ARV '+dcMoney(a.arv)+' ('+dcMoney(a.arvLow)+'–'+dcMoney(a.arvHigh)+') @ $'+Math.round(a.ppsf)+'/sqft from '+a.comps.length+' sold comps:\n'
+    + a.comps.map(function(c){ return '• '+c.address+' — '+dcMoney(c.sale_price)+' '+(c.sale_date||'')+', '+(c.sqft||'?')+' sqft, $'+Math.round(c.price_per_sqft)+'/sqft, '+(+c.distance_miles).toFixed(2)+' mi'; }).join('\n');
+}
+function dcShrink(file){
+  return new Promise(function(res,rej){
+    var fr=new FileReader(); fr.onerror=rej;
+    fr.onload=function(){ var im=new Image(); im.onerror=rej; im.onload=function(){
+      var s=Math.min(1,1024/Math.max(im.width,im.height)), c=document.createElement('canvas');
+      c.width=Math.round(im.width*s); c.height=Math.round(im.height*s); c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+      res(c.toDataURL('image/jpeg',0.7)); }; im.src=fr.result; };
+    fr.readAsDataURL(file);
+  });
+}
+async function dcAddFiles(inp){
+  var fs=Array.prototype.slice.call(inp.files||[]);
+  for(var i=0;i<fs.length&&dcAn.files.length<10;i++){ try{ dcAn.files.push(await dcShrink(fs[i])); }catch(e){} }
+  inp.value=''; dcAnRefresh();
+}
+function dcRmFile(i){ dcAn.files.splice(i,1); dcAnRefresh(); }
+function dcPhotoUrls(){ var el=document.getElementById('dca-urls'); return el?(el.value||'').split(/\s+/).filter(function(u){return /^https?:\/\//.test(u);}):(dcAn&&dcAn.urls||[]); }
+function dcRehabMid(r){ if(!r) return 0; var lo=r.item_low||r.tier_low, hi=r.item_high||r.tier_high; return (lo+hi)/2; }
+function dcAnHTML(d){
+  var a=dcAn, r=a.rehab, h='';
+  h+='<div class="form-field"><label class="form-label">Step 1 — Comps &amp; ARV <span style="font-weight:400;color:var(--text4)">(real sold data, no AI)</span></label>'
+   +'<button class="btn btn-secondary btn-sm" id="dca-b1" onclick="dcRunComps()">&#128202; Pull comps &amp; ARV</button> <span id="dca-s1" style="font-size:12px;color:var(--text3)"></span>';
+  if(a.arv){
+    h+='<div style="margin-top:8px;font-size:15px;font-weight:700">ARV '+dcMoney(a.arv)+' <span style="font-size:12px;font-weight:500;color:var(--text3)">range '+dcMoney(a.arvLow)+' – '+dcMoney(a.arvHigh)+' &middot; $'+Math.round(a.ppsf)+'/sqft</span></div>'
+     +'<div style="max-height:160px;overflow:auto;margin-top:6px;font-size:11.5px;border:1px solid var(--border);border-radius:6px"><table style="width:100%"><tbody>'
+     + a.comps.map(function(c){ return '<tr><td style="padding:3px 6px">'+esc(c.address)+'</td><td>'+dcMoney(c.sale_price)+'</td><td>'+esc(c.sale_date||'')+'</td><td>'+(c.sqft||'?')+' sf</td><td>$'+Math.round(c.price_per_sqft)+'</td><td>'+(+c.distance_miles).toFixed(2)+'mi</td></tr>'; }).join('')
+     +'</tbody></table></div>';
+  }
+  h+='</div>';
+  h+='<div class="form-field"><label class="form-label">Step 2 — Rehab estimate <span style="font-weight:400;color:var(--text4)">(OpenAI reads the photos)</span></label>'
+   +'<textarea id="dca-urls" class="form-input" rows="3" placeholder="Paste photo links, one per line (direct image links, e.g. Zillow/Redfin photo URLs)">'+esc((a.urls||[]).join('\n'))+'</textarea>'
+   +'<div style="margin:6px 0"><label class="btn btn-secondary btn-sm" style="cursor:pointer">&#128247; Upload photos<input type="file" accept="image/*" multiple style="display:none" onchange="dcAddFiles(this)"></label> '
+   +'<span style="font-size:12px;color:var(--text3)">'+a.files.length+' uploaded</span></div>';
+  if(a.files.length) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'+a.files.map(function(f,i){ return '<div style="position:relative"><img src="'+f+'" style="height:48px;border-radius:4px"><span onclick="dcRmFile('+i+')" style="position:absolute;top:-4px;right:-4px;background:#000;color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;text-align:center;cursor:pointer">&#10005;</span></div>'; }).join('')+'</div>';
+  h+='<button class="btn btn-secondary btn-sm" id="dca-b2" onclick="dcRunRehab()">&#129520; Estimate rehab</button> <span id="dca-s2" style="font-size:12px;color:var(--text3)"></span>';
+  if(r){
+    var lo=r.item_low||r.tier_low, hi=r.item_high||r.tier_high;
+    h+='<div style="margin-top:8px;font-size:15px;font-weight:700">Rehab '+dcMoney(lo)+' – '+dcMoney(hi)+' <span style="font-size:12px;font-weight:500;color:var(--text3)">tier: '+esc(r.tier)+' &middot; confidence '+esc(r.confidence)+'</span></div>';
+    if(!r.enough_photos) h+='<div style="margin-top:4px;color:#b45309;font-size:12.5px">&#9888; Not enough interior photos — treat this as a rough guess. '+esc(r.notes||'')+'</div>';
+    if(r.tier_high) h+='<div style="font-size:11.5px;color:var(--text3)">Cross-check ('+esc(r.tier)+' @ $'+r.tier_rates[0]+'–'+r.tier_rates[1]+'/sqft): '+dcMoney(r.tier_low)+' – '+dcMoney(r.tier_high)+'</div>';
+    h+='<ul style="margin:6px 0 0 16px;font-size:12px">'+(r.line_items||[]).map(function(i){ return '<li>'+esc(i.item)+': '+dcMoney(i.low)+'–'+dcMoney(i.high)+'</li>'; }).join('')+'</ul>';
+    if((r.red_flags||[]).length) h+='<div style="margin-top:4px;font-size:12px;color:#b91c1c">&#128681; '+r.red_flags.map(esc).join('; ')+'</div>';
+    if(r.enough_photos && r.notes) h+='<div style="margin-top:4px;font-size:12px;color:var(--text2)">'+esc(r.notes)+'</div>';
+  }
+  h+='</div>';
+  if(a.arv&&r){
+    var rm=dcRehabMid(r), mao=a.arv*0.70-rm;
+    h+='<div style="padding:10px;border-radius:8px;background:var(--bg2,#eef2f7);font-size:13px"><b>Deal math</b><br>ARV '+dcMoney(a.arv)+' × 70% − rehab '+dcMoney(rm)+' = <b style="font-size:16px">MAO '+dcMoney(mao)+'</b></div>';
+  }
+  return h;
+}
+function openDealCheckAnalyze(id){
+  var d=crmDealCheckById(id); if(!d) return;
+  dcAn={id:id,comps:null,arv:d.arv||0,arvLow:d.arvLow||0,arvHigh:d.arvHigh||0,ppsf:(d.arv&&dcNum(d.sqft))?d.arv/dcNum(d.sqft):0,rehab:null,files:[],urls:(d.photoUrls||'').split('\n').filter(Boolean)};
+  if(d.rehabLow||d.rehabHigh) dcAn.rehab={tier:d.rehabTier||'',confidence:'saved',enough_photos:true,line_items:[],red_flags:[],notes:d.rehabDetail||'',item_low:d.rehabLow,item_high:d.rehabHigh,tier_low:0,tier_high:0,tier_rates:[0,0]};
+  if(d.arv) dcAn.comps=[];
+  document.getElementById('modal-container').innerHTML=
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:640px">'
+    +'<div class="modal-header"><div class="modal-title">&#128202; Analyze &mdash; '+esc(d.address)+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    +'<div class="modal-body" id="dca-body" style="max-height:70vh;overflow:auto">'+dcAnHTML(d)+'</div>'
+    +'<div class="modal-footer"><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button>'
+    +'<button class="btn btn-primary" onclick="dcAnSave()">Save to property</button></div></div></div>';
+}
+function dcAnRefresh(){ var d=crmDealCheckById(dcAn.id), el=document.getElementById('dca-body'); if(!el||!d) return; dcAn.urls=dcPhotoUrls(); el.innerHTML=dcAnHTML(d); }
+async function dcRunComps(){
+  var d=crmDealCheckById(dcAn.id), b=document.getElementById('dca-b1'), s=document.getElementById('dca-s1');
+  b.disabled=true; s.textContent='Searching sold comps…';
+  try{ var res=await dcPullComps(d); dcAn.urls=dcPhotoUrls(); Object.assign(dcAn,res); dcAnRefresh(); }
+  catch(e){ b.disabled=false; s.textContent=''; showToast(e.message||'Comps lookup failed','error'); }
+}
+async function dcRunRehab(){
+  var d=crmDealCheckById(dcAn.id), b=document.getElementById('dca-b2'), s=document.getElementById('dca-s2');
+  var urls=dcPhotoUrls(), pages=urls.filter(function(u){ return /homedetails|\/homes\/|redfin\.com\/.+\/home\/|realtor\.com\/realestateandhomes-detail/i.test(u); });
+  urls=urls.filter(function(u){ return pages.indexOf(u)<0; });
+  if(pages.length&&!urls.length&&!dcAn.files.length){ showToast('That is a listing page link, not a photo. Upload photos here, or use the Grab Listing bookmark on the Zillow page.','error'); return; }
+  var imgs=urls.concat(dcAn.files);
+  if(!imgs.length){ showToast('Paste photo links or upload photos first','error'); return; }
+  b.disabled=true; s.textContent='Reading '+imgs.length+' photo(s)…';
+  try{
+    var r=await fetch(DC_FN_URL,{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({images:imgs,address:d.address,sqft:d.sqft,beds:d.beds,baths:d.baths,notes:d.notes})});
+    var j=await r.json();
+    if(j.error){ b.disabled=false; s.textContent=''; showToast(j.message||'Estimate failed','error'); return; }
+    dcAn.urls=urls; dcAn.rehab=j; dcAnRefresh();
+  }catch(e){ b.disabled=false; s.textContent=''; showToast('Could not reach the estimator — try again','error'); }
+}
+async function dcAnSave(){
+  var d=crmDealCheckById(dcAn.id); if(!d) return;
+  dcAn.urls=dcPhotoUrls();
+  if(dcAn.arv){ d.arv=dcAn.arv; d.arvLow=dcAn.arvLow; d.arvHigh=dcAn.arvHigh; if(dcAn.comps&&dcAn.comps.length) d.comps=dcCompsText(dcAn); }
+  var r=dcAn.rehab;
+  if(r&&r.confidence!=='saved'){ d.rehabLow=r.item_low||r.tier_low; d.rehabHigh=r.item_high||r.tier_high; d.rehabTier=r.tier;
+    d.rehabDetail=(r.enough_photos?'':'[NOT ENOUGH PHOTOS] ')+(r.line_items||[]).map(function(i){return i.item+': '+dcMoney(i.low)+'–'+dcMoney(i.high);}).join('; ')+(r.red_flags&&r.red_flags.length?' | Red flags: '+r.red_flags.join('; '):'')+(r.notes?' | '+r.notes:''); }
+  d.photoUrls=dcAn.urls.join('\n'); d.analyzedAt=new Date().toISOString();
+  try{ await crmDealCheckUpdate(d); showToast('Analysis saved','success'); }
+  catch(e){ showToast('Could not save — try again','error'); return; }
+  closeModal(); renderDealCheck();
+}
+// ===================== end Deal Check analysis =====================
+// ===================== Deal Check: listing bookmarklet import (Phases 3+4) =====================
+// A bookmarklet Mike clicks on a Zillow / Redfin / Realtor.com listing page in HIS OWN browser. It only
+// READS the already-rendered page (never issues a request to the site — so no bot check), copies a small
+// JSON payload to the clipboard, and this modal imports it into a Deal Check record.
+function dcBookmarkletFn(){
+  try{
+    if(!/zillow|redfin|realtor/i.test(location.hostname)){ alert('Open a Zillow / Redfin / Realtor.com listing first, then click this bookmark there.'); return; }
+    var host=location.hostname, txt=document.body.innerText||'', html=document.documentElement.innerHTML.replace(/\\u002F/gi,'/').replace(/\\\//g,'/');
+    var out={v:1,source:host,url:location.href,address:'',beds:'',baths:'',sqft:'',photos:[]};
+    // address: JSON-LD first, then <h1>, then <title>
+    document.querySelectorAll('script[type="application/ld+json"]').forEach(function(s){
+      try{ var j=JSON.parse(s.textContent), arr=Array.isArray(j)?j:[j];
+        arr.forEach(function(o){ var a=o&&(o.address||(o.about&&o.about.address)||(o.mainEntity&&o.mainEntity.address));
+          if(a&&!out.address){ out.address=typeof a==='string'?a:[a.streetAddress,a.addressLocality,a.addressRegion,a.postalCode].filter(Boolean).join(', '); } });
+      }catch(e){} });
+    if(!out.address){ var h=document.querySelector('h1'); if(h) out.address=h.innerText.replace(/\s+/g,' ').trim(); }
+    if(!out.address) out.address=(document.title||'').split('|')[0].trim();
+    // specs from visible text
+    var m;
+    if(m=txt.match(/([\d,.]+)\s*(?:sq\.?\s?ft|sqft)/i)) out.sqft=m[1].replace(/,/g,'');
+    if(m=txt.match(/(\d+)\s*(?:bd|beds?|bedrooms?)\b/i)) out.beds=m[1];
+    if(m=txt.match(/(\d+(?:\.\d)?)\s*(?:ba|baths?|bathrooms?)\b/i)) out.baths=m[1];
+    // photos: scan img tags AND the page's own embedded data for CDN photo URLs (already loaded — no new requests)
+    var seen={}, list=[];
+    function add(u){
+      if(!u) return; u=u.replace(/\\u002F/g,'/').replace(/\\\//g,'/').split(' ')[0];
+      var k=u, z=u.match(/photos\.zillowstatic\.com\/fp\/([a-f0-9]+)-/i);
+      if(z){ k=z[1]; u='https://photos.zillowstatic.com/fp/'+z[1]+'-cc_ft_768.jpg'; }
+      else if(/ssl\.cdn-redfin\.com\/photo/i.test(u)){ k=u.replace(/\/(?:bigphoto|islphoto|mbphoto|genMid|genBcs)[^/]*\//,'/'); u=u.replace(/\/(?:islphoto|mbphoto|genMid|genBcs)\//,'/bigphoto/'); }
+      else if(/rdcpix\.com/i.test(u)){ k=u.replace(/-[a-z]\d+x\d+[a-z]*\./i,'.'); }
+      else return;
+      if(seen[k]) return; seen[k]=1; list.push(u);
+    }
+    document.querySelectorAll('img,source').forEach(function(e){ add(e.currentSrc||e.src); (e.srcset||'').split(',').forEach(function(p){ add(p.trim()); }); });
+    (html.match(/https?:\/\/photos\.zillowstatic\.com\/fp\/[a-f0-9]+-[a-z_0-9]+\.(?:jpg|webp)/gi)||[]).forEach(add);
+    (html.match(/https?:\/\/ssl\.cdn-redfin\.com\/photo\/[^"'\s\\]+\.jpg/gi)||[]).forEach(add);
+    var og=document.querySelector('meta[property="og:image"]'); if(og&&list.length<1) add(og.content);
+    // generic fallback: any big photo on the page (skips logos/icons/maps)
+    var gen=[]; if(list.length<3){ document.querySelectorAll('img').forEach(function(e){ var u=e.currentSrc||e.src; if(u&&/^https?:/.test(u)&&e.naturalWidth>=400&&e.naturalHeight>=250&&!/logo|icon|sprite|avatar|staticmap|maps\.google/i.test(u)&&!seen[u]){ seen[u]=1; gen.push(u); } }); list=list.concat(gen); }
+    out.photos=list.slice(0,10);
+    var nimg=document.querySelectorAll('img').length; out.diag='imgs:'+nimg+' generic:'+gen.length;
+    var s=JSON.stringify(out), note=out.photos.length+' photos, '+(out.sqft||'?')+' sqft ('+out.diag+') — now paste into CRM Deal Check → Import';
+    function done(){ var d=document.createElement('div'); d.textContent='✅ Copied: '+note; d.style.cssText='position:fixed;top:12px;right:12px;z-index:2147483647;background:#166534;color:#fff;padding:12px 16px;border-radius:8px;font:14px sans-serif;max-width:340px'; document.body.appendChild(d); setTimeout(function(){d.remove();},6000); }
+    var payload='DCLISTING:'+s;
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(payload).then(done,function(){ prompt('Copy this, then paste into CRM Deal Check → Import:',payload); });
+    else prompt('Copy this, then paste into CRM Deal Check → Import:',payload);
+  }catch(e){ alert('Deal Check grab failed: '+e.message); }
+}
+function dcBookmarkletHref(){ return 'javascript:'+encodeURIComponent('('+dcBookmarkletFn.toString()+')()'); }
+function openDealCheckImport(){
+  document.getElementById('modal-container').innerHTML=
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px">'
+    +'<div class="modal-header"><div class="modal-title">&#128203; Import from a listing</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    +'<div class="modal-body">'
+    +'<div style="font-size:12.5px;color:var(--text2);margin-bottom:10px"><b>One-time setup:</b> drag this button to your bookmarks bar &rarr; <a id="dc-bm" class="btn btn-primary btn-sm" style="cursor:grab;text-decoration:none">&#127968; Grab Listing</a><br>'
+    +'<b>Each property:</b> open the listing on Zillow / Redfin / Realtor.com, click the <i>Grab Listing</i> bookmark (it copies the address, specs and photos), then paste below.</div>'
+    +'<div style="font-size:12px;margin-bottom:8px">Can\'t drag it? <button type="button" class="btn btn-secondary btn-sm" onclick="dcCopyBookmarklet()">Copy bookmark code</button> then in Chrome press <b>Cmd+D</b> on any page, name it <b>Grab Listing</b>, click <b>More</b>/Edit, and paste the code into the URL box.</div>'
+    +'<textarea id="dc-imp" class="form-input" rows="4" placeholder="Paste here (Cmd+V)" oninput="dcImportCheck()"></textarea>'
+    +'<div id="dc-imp-s" style="font-size:12px;color:var(--text3);margin-top:6px"></div>'
+    +'</div><div class="modal-footer"><button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
+    +'<button class="btn btn-primary" onclick="dcImportApply()">Import &amp; Analyze</button></div></div></div>';
+  document.getElementById('dc-bm').setAttribute('href',dcBookmarkletHref());
+  try{ if(navigator.clipboard&&navigator.clipboard.readText) navigator.clipboard.readText().then(function(t){ var el=document.getElementById('dc-imp'); if(el&&/^DCLISTING:/.test(t)){ el.value=t; dcImportCheck(); } },function(){}); }catch(e){}
+}
+function dcUrlToAddr(u){ // Zillow homedetails slug -> address (no request to the site, just reads the pasted link)
+  var m=String(u).match(/homedetails\/([^\/]+)\/\d+_zpid/i); if(!m) return '';
+  var w=m[1].split('-'), zip=/^\d{5}$/.test(w[w.length-1])?w.pop():'', st=/^[A-Za-z]{2}$/.test(w[w.length-1])?w.pop().toUpperCase():'';
+  var suf=/^(st|street|ave|avenue|rd|road|dr|drive|ln|lane|ct|court|pl|place|blvd|way|ter|terrace|cir|circle|pkwy|hwy|trl|trail|pike|sq|loop|row|run|path)$/i, i=-1;
+  for(var k=1;k<w.length;k++){ if(suf.test(w[k])){ i=k; if(k+1<w.length&&/^(ne|nw|se|sw|n|s|e|w)$/i.test(w[k+1])) i=k+1; break; } }
+  var street=(i>=0?w.slice(0,i+1):w).join(' '), city=(i>=0?w.slice(i+1):[]).join(' ');
+  return street+(city?', '+city:'')+(st?', '+st:'')+(zip?' '+zip:'');
+}
+function dcCopyBookmarklet(){ var h=dcBookmarkletHref(); (navigator.clipboard?navigator.clipboard.writeText(h):Promise.reject()).then(function(){ showToast('Bookmark code copied','success'); },function(){ prompt('Copy this code:',h); }); }
+function dcImportParse(t){ t=String(t||'').trim();
+  if(/^https?:\/\//i.test(t)){ var a=dcUrlToAddr(t); return a?{address:a,source:'listing link',url:t,photos:[]}:null; }
+  if(t.indexOf('DCLISTING:')!==0) return null; try{ return JSON.parse(t.slice(10)); }catch(e){ return null; } }
+function dcImportCheck(){ var p=dcImportParse(document.getElementById('dc-imp').value), s=document.getElementById('dc-imp-s');
+  s.textContent=p?('Found: '+(p.address||'(no address)')+' · '+(p.beds||'?')+'bd/'+(p.baths||'?')+'ba · '+(p.sqft||'?')+' sqft · '+(p.photos||[]).length+' photos'+((p.photos||[]).length<3?(p.source==='listing link'?' — link only: add sqft + upload photos in Analyze':' — ⚠ few photos, open the photo gallery first and grab again'):'')):'Waiting for a grabbed listing…'; }
+async function dcImportApply(){
+  var p=dcImportParse(document.getElementById('dc-imp').value);
+  if(!p||!p.address){ showToast('Paste a grabbed listing first','error'); return; }
+  var d=(crmDealCheck||[]).find(function(x){ return dcNormAddr(x.address)===dcNormAddr(p.address); });
+  try{
+    if(!d){ d=await crmDealCheckInsert({address:p.address,sqft:p.sqft||'',beds:p.beds||'',baths:p.baths||'',notes:'Imported from '+(p.source||'listing')}); if(!d) throw new Error('x'); crmDealCheck.unshift(d); }
+    else { if(!d.sqft&&p.sqft) d.sqft=p.sqft; if(!d.beds&&p.beds) d.beds=p.beds; if(!d.baths&&p.baths) d.baths=p.baths; }
+    d.photoUrls=(p.photos||[]).join('\n'); await crmDealCheckUpdate(d);
+  }catch(e){ showToast('Could not import — try again','error'); return; }
+  renderDealCheck(); openDealCheckAnalyze(d.id);
+  // one-click chain: run comps/ARV then rehab automatically when we have what each needs
+  if(dcNum(d.sqft)) await dcRunComps();
+  if((p.photos||[]).length) await dcRunRehab();
+  if(!(p.photos||[]).length) showToast('No photos yet — paste photo links or upload them in Analyze','error');
+}
+// ===================== end Deal Check import =====================
+
 
 // ===================== JV e-signature agreements =====================
 // Agreements live in `jv_agreements` (read via REST). Create + send + sign
@@ -4790,6 +5188,7 @@ function cmtRender(kind, id){
       : '<div class="cmt-body">'+bodyHtml+'</div>';
     var actions = editing ? '' : '<div class="cmt-actions">'
       + (isReply?'':'<button type="button" class="cmt-reply-btn" onclick="cmtStartReply(\''+kind+'\','+id+','+c.id+')">Reply</button>')
+      + ((c.mentions&&c.mentions.length&&!c.notified_at&&me.id)?'<button type="button" class="cmt-reply-btn" style="color:#b45309" onclick="cmtNotify(\''+kind+'\','+id+','+c.id+')">&#128276; Send notification</button>':'')
       + (mine?'<button type="button" class="cmt-reply-btn" onclick="cmtStartEdit(\''+kind+'\','+id+','+c.id+')">Edit</button>':'')
       + ((mine||me.role==='admin')?'<button type="button" class="cmt-reply-btn cmt-del-btn" onclick="cmtDelete(\''+kind+'\','+id+','+c.id+')">Delete</button>':'')
       + '</div>';
@@ -4910,9 +5309,11 @@ async function cmtSubmit(kind, id, notify){
     cmtReplyTo=null; cmtRenderReplyBanner(kind,id);
     cmtMentionUI=null; cmtRenderMentionPicker(kind,id);
     cmtRender(kind,id);
-    if(notify){
-      if(mentions.length===0){ showToast('Posted — no one was @mentioned, so nothing to notify','error'); }
-      else { await cmtNotify(kind, id, data.comment.id, key); }
+    if(mentions.length>0){
+      // Any @mention emails the mentioned people automatically (Notify button is now a plain re-send).
+      await cmtNotify(kind, id, data.comment.id, key);
+    } else if(notify){
+      showToast('Posted — no one was @mentioned, so nothing to notify','error');
     }
   } catch(e){
     showToast('Could not post comment — '+((e&&e.message)||'try again'),'error');
@@ -4921,8 +5322,8 @@ async function cmtSubmit(kind, id, notify){
   }
 }
 
-// Emails everyone @mentioned in a comment (fires only when "Send + Notify" is clicked, or via
-// the one-off backfill) — never automatic. Marks the comment notified_at/notified_by on success.
+// Emails everyone @mentioned in a comment (fires automatically on Send when someone is @mentioned; the Notify
+// button / "Send notification" link re-send). Marks the comment notified_at/notified_by on success.
 async function cmtNotify(kind, id, commentId, key){
   key = key || cmtKey(kind,id);
   try {
@@ -5040,6 +5441,327 @@ function cmtRowDot(kind, id){
   return cmtUnreadSet.has(cmtKey(kind,id)) ? ' <span class="cmt-row-dot" title="New @mention"></span>' : '';
 }
 // =================== end Comment threads ===================
+
+// =================== Team Work (clock in/out + "Today's work") ===================
+// Every non-owner staff login lands on "My Work": a Work Started / Work Ended clock and a
+// "Today's work" list (task + status + finish date). Clock times are written ONLY by the
+// clock_in()/clock_out() server functions (server clock), so staff cannot edit them; the owner
+// sees and can edit everything from the "Team Work" section. Tables: time_clock, team_tasks,
+// app_user_access (migration team_work_clock_and_access).
+const TT_PATH = 'team_tasks';
+const TC_PATH = 'time_clock';
+var teamTasks = null;   // the signed-in user's own tasks (null = not loaded)
+var myClock = null;     // the signed-in user's recent time_clock rows, newest first
+var teamAllTasks = null, teamAllClock = null, teamPeople = null; // owner "Team Work" data
+var twDays = 7, twPerson = '';
+const TT_STATUSES = [
+  ['not_started','Not Started','#64748b','#f1f5f9'],
+  ['stuck','Stuck','#dc2626','#fee2e2'],
+  ['completed','Completed','#059669','#d1fae5'],
+  ['in_process','In Process','#2563eb','#dbeafe']
+];
+function ttStatusMeta(s){ return TT_STATUSES.find(function(x){return x[0]===s;}) || TT_STATUSES[0]; }
+function ttStatusBadge(s){ var m=ttStatusMeta(s); return '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;color:'+m[2]+';background:'+m[3]+'">'+m[1]+'</span>'; }
+function ttFromDb(r){ return {id:r.id,userId:r.user_id,userName:r.user_name||'',text:r.task_text||'',dueDate:r.due_date||'',status:r.status||'not_started',createdAt:r.created_at,updatedAt:r.updated_at}; }
+function tcFromDb(r){ return {id:r.id,userId:r.user_id,userName:r.user_name||'',workDate:r.work_date,clockIn:r.clock_in,clockOut:r.clock_out,editedAt:r.edited_at}; }
+function twLocalDay(d){ var x=new Date(d); return x.getFullYear()+'-'+('0'+(x.getMonth()+1)).slice(-2)+'-'+('0'+x.getDate()).slice(-2); }
+function twFmtTime(iso){ return iso ? new Date(iso).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) : '—'; }
+function twFmtDur(ms){ if(!(ms>0)) return '0h 00m'; var m=Math.round(ms/60000); return Math.floor(m/60)+'h '+('0'+(m%60)).slice(-2)+'m'; }
+function twClockMs(c){ return c.clockIn ? ((c.clockOut?new Date(c.clockOut):new Date()) - new Date(c.clockIn)) : 0; }
+function twToLocalInput(iso){ if(!iso) return ''; var d=new Date(iso); return twLocalDay(d)+'T'+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+function twErr(e){ var m=(e&&e.message)||String(e); try{ var j=JSON.parse(m); if(j&&j.message) m=j.message; }catch(x){} return m; }
+// Tasks shown on "today's work": everything not finished (carries over day to day) plus
+// anything finished today.
+function twTodayTasks(list){
+  var td=twLocalDay(new Date());
+  return (list||[]).filter(function(t){ return t.status!=='completed' || (t.updatedAt && twLocalDay(t.updatedAt)===td); });
+}
+
+async function workLoadMine(){
+  var uid = authProfile && authProfile.id; if(!uid) { teamTasks=teamTasks||[]; myClock=myClock||[]; return; }
+  try{
+    var r = await Promise.all([
+      sbFetch(TT_PATH+'?user_id=eq.'+uid+'&deleted=eq.false&select=*&order=created_at.desc&limit=500'),
+      sbFetch(TC_PATH+'?user_id=eq.'+uid+'&select=*&order=clock_in.desc&limit=14')
+    ]);
+    teamTasks = (r[0]||[]).map(ttFromDb);
+    myClock = (r[1]||[]).map(tcFromDb);
+  } catch(e){ teamTasks=teamTasks||[]; myClock=myClock||[]; showToast('Could not load your work','error'); }
+}
+
+// ---- Clock ----
+async function workClockIn(){
+  try{ await sbFetch('rpc/clock_in','POST',{}); await workLoadMine(); renderMyWork(); showToast('Work started','success'); }
+  catch(e){ showToast(twErr(e),'error'); }
+}
+async function workClockOut(){
+  if(!confirm('End your work day now?\n\nThis time is locked once saved.')) return;
+  try{ await sbFetch('rpc/clock_out','POST',{}); await workLoadMine(); renderMyWork(); showToast('Work ended','success'); }
+  catch(e){ showToast(twErr(e),'error'); }
+}
+var twTimer = null;
+function twTick(){
+  var el = document.getElementById('wk-elapsed');
+  if(!el){ clearInterval(twTimer); twTimer=null; return; }
+  var open = (myClock||[]).find(function(c){return !c.clockOut;});
+  if(open) el.textContent = twFmtDur(twClockMs(open));
+}
+function workClockCardHTML(){
+  var open = (myClock||[]).find(function(c){return !c.clockOut;});
+  var td = twLocalDay(new Date());
+  var todayRow = (myClock||[]).find(function(c){ return twLocalDay(c.clockIn)===td; });
+  var body;
+  if(open){
+    body = '<div style="font-size:13px;color:var(--text3)">Started <b style="color:var(--text1,#111)">'+twFmtTime(open.clockIn)+'</b> &middot; on the clock</div>'
+      + '<div id="wk-elapsed" style="font-size:34px;font-weight:800;margin:6px 0 12px;font-variant-numeric:tabular-nums">'+twFmtDur(twClockMs(open))+'</div>'
+      + '<button class="btn btn-danger" style="font-size:15px;padding:10px 22px" onclick="workClockOut()">&#9632; Work Ended</button>';
+  } else if(todayRow){
+    body = '<div style="font-size:13px;color:var(--text3)">Started <b style="color:var(--text1,#111)">'+twFmtTime(todayRow.clockIn)+'</b> &middot; Ended <b style="color:var(--text1,#111)">'+twFmtTime(todayRow.clockOut)+'</b></div>'
+      + '<div style="font-size:34px;font-weight:800;margin:6px 0 4px">'+twFmtDur(twClockMs(todayRow))+'</div>'
+      + '<div style="font-size:12px;color:var(--text4,#9ca3af)">&#128274; Today&#8217;s time is recorded and locked.</div>';
+  } else {
+    body = '<div style="font-size:13px;color:var(--text3);margin-bottom:12px">You haven&#8217;t started work today.</div>'
+      + '<button class="btn btn-primary" style="font-size:15px;padding:10px 22px;background:#16a34a;border-color:#16a34a" onclick="workClockIn()">&#9654; Work Started</button>';
+  }
+  return '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
+    + '<div style="font-size:15px;font-weight:800;margin-bottom:10px">&#9201;&#65039; Clock In / Clock Out</div>'+body+'</div>';
+}
+function workRecentLogHTML(){
+  var rows = (myClock||[]).slice(0,7);
+  if(!rows.length) return '';
+  return '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
+    + '<div style="font-size:15px;font-weight:800;margin-bottom:8px">&#128197; My Recent Hours</div>'
+    + rows.map(function(c){
+        return '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border,#e5e7eb);font-size:13px;flex-wrap:wrap">'
+          + '<span style="font-weight:600">'+ltFmtDate(c.workDate)+'</span>'
+          + '<span style="color:var(--text3)">'+twFmtTime(c.clockIn)+' &rarr; '+(c.clockOut?twFmtTime(c.clockOut):'still on the clock')+'</span>'
+          + '<span style="font-weight:700">'+twFmtDur(twClockMs(c))+'</span></div>';
+      }).join('')
+    + '</div>';
+}
+
+// ---- Tasks ----
+async function ttPatch(id, fields){
+  try{
+    var f = Object.assign({updated_at:new Date().toISOString()}, fields);
+    await sbFetch(TT_PATH+'?id=eq.'+id,'PATCH',f);
+    [teamTasks,teamAllTasks].forEach(function(arr){
+      var t=(arr||[]).find(function(x){return +x.id===+id;});
+      if(t){ if('status' in fields) t.status=fields.status; if('due_date' in fields) t.dueDate=fields.due_date||''; if('task_text' in fields) t.text=fields.task_text; t.updatedAt=f.updated_at; }
+    });
+    return true;
+  } catch(e){ showToast('Could not save: '+twErr(e),'error'); return false; }
+}
+async function ttSetStatus(id,s){ if(await ttPatch(id,{status:s})) ttRefreshViews(); }
+async function ttSetFinish(id,v){ if(await ttPatch(id,{due_date:v||null})) ttRefreshViews(); }
+async function ttEditText(id){
+  var t=(teamTasks||[]).concat(teamAllTasks||[]).find(function(x){return +x.id===+id;}); if(!t) return;
+  var v=prompt('Edit task',t.text); if(v===null) return; v=v.trim(); if(!v) return;
+  if(await ttPatch(id,{task_text:v})) ttRefreshViews();
+}
+async function ttDelete(id){
+  if(!confirm('Remove this task?')) return;
+  try{
+    await sbFetch(TT_PATH+'?id=eq.'+id,'PATCH',{deleted:true,updated_at:new Date().toISOString()});
+    teamTasks=(teamTasks||[]).filter(function(x){return +x.id!==+id;});
+    teamAllTasks=(teamAllTasks||[]).filter(function(x){return +x.id!==+id;});
+    ttRefreshViews();
+  } catch(e){ showToast('Could not remove task','error'); }
+}
+function ttRefreshViews(){
+  if(activeSection==='mywork') renderMyWork();
+  else if(activeSection==='team') renderTeamWork(true);
+}
+async function ttAddFromForm(){
+  var textEl=document.getElementById('tt-new-text'), stEl=document.getElementById('tt-new-status'), dueEl=document.getElementById('tt-new-due');
+  var text=(textEl?textEl.value:'').trim();
+  if(!text){ showToast('Enter what you are working on first','error'); return; }
+  try{
+    var row={user_id:authProfile.id, user_name:authProfile.name||authProfile.email||'', task_text:text, due_date:(dueEl&&dueEl.value)||null, status:(stEl&&stEl.value)||'not_started'};
+    var r=await sbFetch(TT_PATH,'POST',row);
+    if(r&&r[0]){ teamTasks=teamTasks||[]; teamTasks.unshift(ttFromDb(r[0])); }
+    renderMyWork();
+  } catch(e){ showToast('Could not add task: '+twErr(e),'error'); }
+}
+function ttRowsHTML(tasks){
+  if(!tasks || !tasks.length) return '<div style="padding:12px 0;color:var(--text4,#9ca3af);font-size:13px">Nothing here yet.</div>';
+  var td=twLocalDay(new Date());
+  return tasks.map(function(t){
+    var carried = t.createdAt && twLocalDay(t.createdAt)<td && t.status!=='completed';
+    var overdue = t.dueDate && t.status!=='completed' && t.dueDate<td;
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border,#e5e7eb);flex-wrap:wrap">'
+      + '<div style="flex:1;min-width:180px"><div style="font-size:13px;font-weight:600'+(t.status==='completed'?';text-decoration:line-through;color:var(--text3)':'')+'">'+esc(t.text)+'</div>'
+        + '<div style="font-size:11px;color:var(--text4,#9ca3af)">'+(carried?'Carried over from '+ltFmtDate(twLocalDay(t.createdAt))+' &middot; ':'')+(overdue?'<span style="color:#dc2626;font-weight:700">Past finish date</span>':'')+'</div></div>'
+      + '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap">'
+        + '<select class="form-select" style="font-size:12px;padding:3px 6px" onchange="ttSetStatus('+t.id+',this.value)">'
+          + TT_STATUSES.map(function(s){return '<option value="'+s[0]+'"'+(t.status===s[0]?' selected':'')+'>'+s[1]+'</option>';}).join('')
+        + '</select>'
+        + '<input type="date" class="form-input" style="font-size:12px;padding:3px 6px;width:135px" title="Finish date" value="'+esc(t.dueDate||'')+'" onchange="ttSetFinish('+t.id+',this.value)">'
+        + '<button class="btn btn-secondary btn-sm" style="padding:3px 8px" onclick="ttEditText('+t.id+')" title="Edit">&#9998;</button>'
+        + '<button class="btn btn-secondary btn-sm" style="padding:3px 8px" onclick="ttDelete('+t.id+')" title="Remove">&#10005;</button>'
+      + '</div></div>';
+  }).join('');
+}
+
+// ---- My Work page (non-owner dashboard) ----
+async function renderMyWork(){
+  var host=document.getElementById('section-main'); if(!host) return;
+  if(teamTasks===null || myClock===null){
+    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128188; My Work</h2></div></div><div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading&hellip;</div></div>';
+    await workLoadMine(); if(activeSection!=='mywork') return;
+  }
+  var nm = (authProfile&&authProfile.name)||'';
+  var tasks = twTodayTasks(teamTasks);
+  host.innerHTML =
+    '<div class="lt-wrap">'
+    + '<div class="lt-head"><div><h2>&#128188; My Work</h2><p>'+(nm?'Hi '+esc(nm)+' &mdash; ':'')+new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})+'</p></div></div>'
+    + workClockCardHTML()
+    + '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
+      + '<div style="font-size:15px;font-weight:800;margin-bottom:10px">&#128221; Today&#8217;s Work</div>'
+      + '<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:flex-end">'
+        + '<div style="flex:1;min-width:200px"><label class="form-label" style="font-size:11px">What are you working on?</label><input id="tt-new-text" class="form-input" style="font-size:13px" onkeydown="if(event.key===\'Enter\')ttAddFromForm()"></div>'
+        + '<div><label class="form-label" style="font-size:11px">Status</label><select id="tt-new-status" class="form-select" style="font-size:13px">'+TT_STATUSES.map(function(s){return '<option value="'+s[0]+'">'+s[1]+'</option>';}).join('')+'</select></div>'
+        + '<div><label class="form-label" style="font-size:11px">Finish date</label><input id="tt-new-due" type="date" class="form-input" style="font-size:13px"></div>'
+        + '<button class="btn btn-primary btn-sm" onclick="ttAddFromForm()">+ Add</button>'
+      + '</div>'
+      + ttRowsHTML(tasks)
+      + '<div style="font-size:11px;color:var(--text4,#9ca3af);margin-top:8px">Unfinished tasks carry over to the next day until they are Completed.</div>'
+    + '</div>'
+    + workRecentLogHTML()
+    + '</div>';
+  if(!twTimer && (myClock||[]).some(function(c){return !c.clockOut;})) twTimer=setInterval(twTick,30000);
+}
+
+// ---- Owner: Team Work section ----
+async function renderTeamWork(keepData){
+  var host=document.getElementById('section-main'); if(!host) return;
+  if(!keepData || teamAllClock===null){
+    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128101; Team Work</h2></div></div><div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading&hellip;</div></div>';
+    try{
+      var since = twLocalDay(new Date(Date.now()-twDays*864e5));
+      var r = await Promise.all([
+        sbFetchAll(TT_PATH+'?deleted=eq.false&select=*&order=created_at.desc,id.desc'),
+        sbFetchAll(TC_PATH+'?work_date=gte.'+since+'&select=*&order=work_date.desc,id.desc'),
+        adminUsersCall({action:'list'}).catch(function(){ return {users:[]}; })
+      ]);
+      teamAllTasks=(r[0]||[]).map(ttFromDb); teamAllClock=(r[1]||[]).map(tcFromDb);
+      teamPeople=((r[2]&&r[2].users)||[]).filter(function(u){return u.role!=='recipient' && !u.disabled && !u.is_owner;}).map(function(u){return {id:u.id,name:u.name||u.email};});
+    } catch(e){ showToast('Could not load team work: '+twErr(e),'error'); teamAllTasks=teamAllTasks||[]; teamAllClock=teamAllClock||[]; teamPeople=teamPeople||[]; }
+    if(activeSection!=='team') return;
+  }
+  // people = known staff + anyone who appears in the data
+  var people={}; (teamPeople||[]).forEach(function(p){ people[p.id]=p.name; });
+  teamAllClock.concat(teamAllTasks).forEach(function(x){ if(x.userId && !people[x.userId] && !(authProfile&&x.userId===authProfile.id)) people[x.userId]=x.userName||'(unknown)'; });
+  var ids=Object.keys(people).filter(function(id){ return !twPerson || id===twPerson; });
+  var td=twLocalDay(new Date());
+  var cards = ids.length ? ids.map(function(id){
+    var clk=teamAllClock.filter(function(c){return c.userId===id;});
+    var tks=teamAllTasks.filter(function(t){return t.userId===id;});
+    var todayRow=clk.find(function(c){return twLocalDay(c.clockIn)===td;}) || clk.find(function(c){return !c.clockOut;});
+    var status = !todayRow ? '<span style="color:var(--text4)">Not clocked in today</span>'
+      : (todayRow.clockOut ? 'Today: '+twFmtTime(todayRow.clockIn)+' &rarr; '+twFmtTime(todayRow.clockOut)+' &middot; <b>'+twFmtDur(twClockMs(todayRow))+'</b>'
+        : '<span style="color:#16a34a;font-weight:700">&#9679; On the clock</span> since '+twFmtTime(todayRow.clockIn)+' &middot; <b>'+twFmtDur(twClockMs(todayRow))+'</b>');
+    var total = clk.reduce(function(a,c){return a+twClockMs(c);},0);
+    var logRows = clk.length ? clk.map(function(c){
+      return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border,#e5e7eb);font-size:13px;flex-wrap:wrap">'
+        + '<span style="font-weight:600;min-width:70px">'+ltFmtDate(c.workDate)+'</span>'
+        + '<span style="color:var(--text3);flex:1">'+twFmtTime(c.clockIn)+' &rarr; '+(c.clockOut?twFmtTime(c.clockOut):'<i>still on the clock</i>')+(c.editedAt?' <span style="font-size:10px;color:#b45309" title="Edited by owner">&#9998; edited</span>':'')+'</span>'
+        + '<span style="font-weight:700">'+twFmtDur(twClockMs(c))+'</span>'
+        + '<span><button class="btn btn-secondary btn-sm" style="padding:2px 8px" onclick="twOpenClockEdit('+c.id+')">&#9998;</button></span></div>';
+    }).join('') : '<div style="color:var(--text4,#9ca3af);font-size:13px;padding:6px 0">No clock-ins in this range.</div>';
+    var visTasks = tks.filter(function(t){ return t.status!=='completed' || (t.updatedAt && twLocalDay(t.updatedAt)>=twLocalDay(new Date(Date.now()-twDays*864e5))); });
+    return '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:16px;font-weight:800">'+esc(people[id])+'</div><div style="font-size:12px;color:var(--text3)">'+twDays+'-day total: <b>'+twFmtDur(total)+'</b></div></div>'
+      + '<div style="font-size:13px;margin-bottom:10px">'+status+'</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Time log</div><button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="twOpenClockAdd(\''+id+'\')">+ Add day</button></div>'
+      + logRows
+      + '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin:14px 0 2px">Work &amp; status</div>'
+      + ttRowsHTML(visTasks)
+      + '</div>';
+  }).join('') : '<div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">No staff accounts or activity yet.</div>';
+  host.innerHTML =
+    '<div class="lt-wrap">'
+    + '<div class="lt-head"><div><h2>&#128101; Team Work</h2><p>Clock times and daily work for your team. You can edit anything here.</p></div>'
+      + '<div class="lt-actions">'
+        + '<select class="form-select" style="font-size:12px" onchange="twPerson=this.value;renderTeamWork(true)"><option value="">Everyone</option>'+Object.keys(people).map(function(id){return '<option value="'+id+'"'+(twPerson===id?' selected':'')+'>'+esc(people[id])+'</option>';}).join('')+'</select>'
+        + '<select class="form-select" style="font-size:12px" onchange="twDays=+this.value;teamAllClock=null;renderTeamWork()">'+[7,14,30].map(function(n){return '<option value="'+n+'"'+(twDays===n?' selected':'')+'>Last '+n+' days</option>';}).join('')+'</select>'
+        + '<button class="btn btn-secondary btn-sm" onclick="teamAllClock=null;renderTeamWork()">&#8635; Refresh</button>'
+      + '</div></div>'
+    + cards + '</div>';
+}
+function twPersonName(id){ var p=(teamPeople||[]).find(function(x){return x.id===id;}); if(p) return p.name; var r=(teamAllClock||[]).concat(teamAllTasks||[]).find(function(x){return x.userId===id;}); return r?r.userName:''; }
+function twOpenClockEdit(id){
+  var c=(teamAllClock||[]).find(function(x){return +x.id===+id;}); if(!c) return;
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:420px">'
+    + '<div class="modal-header"><div class="modal-title">&#9998; Edit time &mdash; '+esc(c.userName)+' &middot; '+ltFmtDate(c.workDate)+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<div class="form-field"><label class="form-label">Work started</label><input id="twe-in" type="datetime-local" class="form-input" value="'+twToLocalInput(c.clockIn)+'"></div>'
+      + '<div class="form-field" style="margin-top:8px"><label class="form-label">Work ended <span style="font-weight:400;color:var(--text3)">(blank = still on the clock)</span></label><input id="twe-out" type="datetime-local" class="form-input" value="'+twToLocalInput(c.clockOut)+'"></div>'
+    + '</div>'
+    + '<div class="modal-footer"><button class="btn btn-danger btn-sm" style="margin-right:auto" onclick="twDeleteClock('+c.id+')">Delete day</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button><button class="btn btn-primary btn-sm" onclick="twSaveClock('+c.id+')">Save</button></div>'
+    + '</div></div>';
+}
+async function twSaveClock(id){
+  var a=document.getElementById('twe-in').value, b=document.getElementById('twe-out').value;
+  if(!a){ showToast('Start time is required','error'); return; }
+  if(b && new Date(b)<=new Date(a)){ showToast('End must be after start','error'); return; }
+  try{
+    await sbFetch(TC_PATH+'?id=eq.'+id,'PATCH',{clock_in:new Date(a).toISOString(), clock_out:b?new Date(b).toISOString():null, edited_by:authProfile.id, edited_at:new Date().toISOString()});
+    closeModal(); teamAllClock=null; renderTeamWork(); showToast('Time updated','success');
+  } catch(e){ showToast('Could not save: '+twErr(e),'error'); }
+}
+async function twDeleteClock(id){
+  if(!confirm('Delete this day\'s time entry?')) return;
+  try{ await sbFetch(TC_PATH+'?id=eq.'+id,'DELETE'); closeModal(); teamAllClock=null; renderTeamWork(); }
+  catch(e){ showToast('Could not delete: '+twErr(e),'error'); }
+}
+function twOpenClockAdd(userId){
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:420px">'
+    + '<div class="modal-header"><div class="modal-title">+ Add a day &mdash; '+esc(twPersonName(userId))+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<div class="form-field"><label class="form-label">Date</label><input id="twa-date" type="date" class="form-input" value="'+twLocalDay(new Date())+'"></div>'
+      + '<div class="form-field" style="margin-top:8px"><label class="form-label">Start</label><input id="twa-in" type="time" class="form-input" value="09:00"></div>'
+      + '<div class="form-field" style="margin-top:8px"><label class="form-label">End</label><input id="twa-out" type="time" class="form-input" value="17:00"></div>'
+    + '</div>'
+    + '<div class="modal-footer"><button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button><button class="btn btn-primary btn-sm" onclick="twSaveAdd(\''+userId+'\')">Add</button></div>'
+    + '</div></div>';
+}
+async function twSaveAdd(userId){
+  var d=document.getElementById('twa-date').value, a=document.getElementById('twa-in').value, b=document.getElementById('twa-out').value;
+  if(!d||!a){ showToast('Date and start are required','error'); return; }
+  var ci=new Date(d+'T'+a), co=b?new Date(d+'T'+b):null;
+  if(co && co<=ci){ showToast('End must be after start','error'); return; }
+  try{
+    await sbFetch(TC_PATH,'POST',{user_id:userId,user_name:twPersonName(userId),work_date:d,clock_in:ci.toISOString(),clock_out:co?co.toISOString():null,edited_by:authProfile.id,edited_at:new Date().toISOString()});
+    closeModal(); teamAllClock=null; renderTeamWork(); showToast('Day added','success');
+  } catch(e){ showToast('Could not add: '+twErr(e),'error'); }
+}
+
+// ---- Sidebar access: owner sees everything; staff see My Work + the sections the owner ticked ----
+const SB_STAFF_SECTIONS = ['outreach','lists','probate','fb','dispo','d4d','jv','dealcheck'];
+function isOwner(){ return AUTH_ENABLED && authProfile && authProfile.is_owner===true; }
+function isStaffUser(){ return AUTH_ENABLED && authProfile && authProfile.role!=='recipient' && !authProfile.is_owner; }
+async function loadWorkAccess(){
+  try{
+    await loadAuthProfile();
+    var r = await sbFetch('app_user_access?user_id=eq.'+authProfile.id+'&select=sections');
+    authProfile.sections = (r&&r[0]) ? r[0].sections : null;
+    saveAuthProfile(authProfile);
+  } catch(e){}
+}
+function sbItems(){
+  if(!AUTH_ENABLED || !authProfile) return SB_ITEMS;
+  if(isOwner()){
+    var out=[]; SB_ITEMS.forEach(function(it){ out.push(it); if(it.k==='dashboard') out.push({k:'team',ic:'&#128101;',lb:'Team Work',sl:'Team',soon:false}); });
+    return out;
+  }
+  var allowed = Array.isArray(authProfile.sections) ? authProfile.sections : SB_STAFF_SECTIONS;
+  return [{k:'mywork',ic:'&#128188;',lb:'My Work',sl:'My Work',soon:false}].concat(SB_ITEMS.filter(function(it){ return it.k!=='dashboard' && allowed.indexOf(it.k)>=0; }));
+}
+function sbSectionAllowed(k){ return sbItems().some(function(it){return it.k===k;}); }
+// =================== end Team Work ===================
 
 // =================== Dashboard (KPIs + Follow-up Hub) ===================
 function ltCatCount(cat){ return (crmLists||[]).filter(function(l){ return (l.category||'seller')===cat; }).length; }
@@ -5224,7 +5946,10 @@ function renderDashboard(){
     '<div class="lt-wrap">'
     + '<div class="lt-head"><div><h2>&#128202; Dashboard</h2>'
       + '<p>Your whole pipeline at a glance &mdash; and one place that shows every follow-up due across Outreach, Tasks, Probate, and Lists so nothing slips.</p></div>'
-      + '<div class="lt-actions"><button class="btn btn-secondary btn-sm" onclick="crmLists=null;crmProbate=null;crmBuyers=null;crmProps=null;renderDashboard()">&#8635; Refresh</button></div>'
+      + '<div class="lt-actions">'
+        + (isOwner() ? '<button class="btn btn-secondary btn-sm" onclick="setSection(\'team\')">&#128101; Team Work</button>' : '')
+        + '<button class="btn btn-secondary btn-sm" onclick="crmLists=null;crmProbate=null;crmBuyers=null;crmProps=null;renderDashboard()">&#8635; Refresh</button>'
+      + '</div>'
     + '</div>'
     // ===== Manager Agent briefing (Claude-powered) =====
     + mgrBriefingCardHTML()
@@ -5567,6 +6292,7 @@ function mgrRenderThread(){
 }
 function mgrNewTopic(){ mgrThread=[]; mgrChatHistory=[]; var inp=document.getElementById('ask-input'); if(inp){ inp.value=''; } mgrRenderThread(); if(inp) inp.focus(); }
 function askMount(){
+  if(isStaffUser()) return; // Ask AI reads every table — keep it owner/admin-only
   var root=document.getElementById('ask-root'); if(!root||root.getAttribute('data-mounted')==='1') return;
   root.setAttribute('data-mounted','1');
   root.innerHTML =
@@ -5773,14 +6499,18 @@ function render(){
   }
   // Paint the sidebar shell + the main content container, then fill the active section.
   document.getElementById('app').innerHTML = sidebarHTML() + '<div id="section-main" class="section-main"></div>';
+  if(!sbSectionAllowed(activeSection)){ activeSection = sbItems()[0].k; document.getElementById('app').innerHTML = sidebarHTML() + '<div id="section-main" class="section-main"></div>'; }
   askMount(); // floating "Ask AI" button (mounts once to #ask-root; survives re-renders)
   if(activeSection==='lists'){ renderLists(); return; }
   if(activeSection==='dispo'){ renderDispo(); return; }
   if(activeSection==='jv'){ renderJvAgreements(); return; }
+  if(activeSection==='dealcheck'){ renderDealCheck(); return; }
   if(activeSection==='d4d'){ renderD4DSection(); return; }
   if(activeSection==='fb'){ renderFBSection(); return; }
   if(activeSection==='probate'){ renderProbate(); return; }
   if(activeSection==='dashboard'){ renderDashboard(); return; }
+  if(activeSection==='mywork'){ renderMyWork(); return; }
+  if(activeSection==='team'){ renderTeamWork(); return; }
   if(activeSection!=='outreach'){ renderPlaceholderSection(activeSection); return; }
   renderOutreach();
 }
@@ -7770,6 +8500,7 @@ function renderDetailModal(){
           ${d4dOrigin(l)&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent'?'<button class="btn btn-sm" onclick="d4dSendMailFromModal(\'lead\','+l.id+')" title="Queue this property for a direct-mail postcard/letter — moves it to the ✉️ Send Mail tab" style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>':''}
           <button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal('lead',${l.id})">&#128197; Schedule SMS</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,'lead',${l.id})">&#128231; Send to Team</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleSendSlackMenu(this,'lead',${l.id})">&#128172; Send to Slack</button>
           <button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button>
           <button class="btn btn-primary" onclick="switchToEdit()">&#9999;&#65039; Edit</button>
         </div>
@@ -8629,7 +9360,7 @@ function openJVDetail(id){
     +emailOfferSectionHTML(l,'task')
     +renderAttachmentsSection('task', l.id)
     +renderActivityLog('task', l.id, l.activityLog)
-    +'</div>'+cmtPanelHTML('task', l.id)+'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button>'+(d4dOrigin(l)&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent'?'<button class="btn btn-sm" onclick="d4dSendMailFromModal(\'task\','+l.id+')" title="Queue this property for a direct-mail postcard/letter — moves it out of Tasks/Follow-Ups into the ✉️ Send Mail tab" style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>':'')+'<button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
+    +'</div>'+cmtPanelHTML('task', l.id)+'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button>'+(d4dOrigin(l)&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent'?'<button class="btn btn-sm" onclick="d4dSendMailFromModal(\'task\','+l.id+')" title="Queue this property for a direct-mail postcard/letter — moves it out of Tasks/Follow-Ups into the ✉️ Send Mail tab" style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>':'')+'<button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="toggleSendSlackMenu(this,\'task\','+l.id+')">&#128172; Send to Slack</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
   nciMount('task', l.id);
   mountGhlSms('task', l.id);
   cmtMount('task', l.id);
@@ -9856,6 +10587,91 @@ function toggleSendToTeamMenu(btn, kind, id){
     });
   },0);
 }
+// ---- Send to Slack: a floating dropdown of admin-configured Slack destinations (each backed
+// by a Slack Incoming Webhook URL that never reaches the browser — see send-to-slack edge fn).
+async function toggleSendSlackMenu(btn, kind, id){
+  var existing = document.getElementById('send-slack-menu');
+  if(existing){ existing.remove(); if(existing.dataset.forBtn===btn.dataset.btnId) return; }
+  var menu = document.createElement('div');
+  menu.id = 'send-slack-menu';
+  btn.dataset.btnId = btn.dataset.btnId || ('ssb'+Date.now());
+  menu.dataset.forBtn = btn.dataset.btnId;
+  menu.style.cssText = 'position:absolute;z-index:500;background:#fff;border:1.5px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:220px;max-height:260px;overflow-y:auto;padding:6px';
+  menu.innerHTML = '<div style="padding:8px 10px;font-size:12px;color:var(--text3)">Loading&hellip;</div>';
+  document.body.appendChild(menu);
+  var rect = btn.getBoundingClientRect();
+  menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+  menu.style.left = (rect.left + window.scrollX) + 'px';
+  setTimeout(function(){
+    document.addEventListener('click', function closeMenu(e){
+      if(!menu.contains(e.target) && e.target!==btn){ menu.remove(); document.removeEventListener('click', closeMenu); }
+    });
+  },0);
+  try{
+    var res = await slackCall({action:'list_destinations'});
+    var dests = res.destinations||[];
+    var rows = dests.length
+      ? dests.map(function(d){ return '<div onclick="sendLeadToSlackNow(\''+kind+'\','+id+','+d.id+',this)" style="padding:7px 10px;border-radius:6px;cursor:pointer;font-size:13px" onmouseover="this.style.background=\'var(--surface3)\'" onmouseout="this.style.background=\'\'">'+esc(d.label)+'</div>'; }).join('')
+      : '<div style="padding:8px 10px;font-size:12px;color:var(--text3)">No Slack destinations set up yet.</div>';
+    rows += isAdmin() ? '<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><a href="#" onclick="showSlackDestinations();return false;" style="display:block;padding:6px 10px;font-size:12px;color:var(--accent)">&#9881;&#65039; Manage Slack destinations</a></div>' : '';
+    if(document.getElementById('send-slack-menu')===menu) menu.innerHTML = rows;
+  } catch(e){
+    if(document.getElementById('send-slack-menu')===menu) menu.innerHTML = '<div style="padding:8px 10px;font-size:12px;color:var(--red,#dc2626)">'+esc(e.message)+'</div>';
+  }
+}
+async function sendLeadToSlackNow(kind, id, destId, el){
+  var menu=document.getElementById('send-slack-menu'); if(menu) menu.remove();
+  try{
+    var res = await slackCall({action:'send', kind:kind, id:id, destination_id:destId});
+    showToast('Sent to '+(res.sentTo||'Slack'),'success');
+  } catch(e){ showToast(e.message||'Could not send to Slack','error'); }
+}
+function showSlackDestinations(){
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:480px">'
+    + '<div class="modal-header"><div class="modal-title">&#128172; Slack Destinations</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<p style="font-size:12px;color:var(--text3);margin-bottom:12px">Each destination is a Slack Incoming Webhook URL (Slack &rarr; Settings &amp; administration &rarr; Manage apps &rarr; Incoming Webhooks &rarr; Add to Slack, pick a channel or DM, copy the URL). The URL is stored server-side and never shown again here.</p>'
+      + '<div id="sd-list"><div style="color:var(--text3);font-size:13px">Loading&hellip;</div></div>'
+      + '<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">'
+        + '<input id="sd-new-label" class="form-input" placeholder="Label (e.g. Nati, Team Channel)" style="flex:1;min-width:140px;font-size:12px">'
+        + '<input id="sd-new-url" class="form-input" placeholder="https://hooks.slack.com/services/..." style="flex:2;min-width:220px;font-size:12px">'
+        + '<button class="btn btn-primary btn-sm" onclick="sdCreate()">Add</button>'
+      + '</div>'
+      + '<div id="sd-err" style="color:var(--red,#dc2626);font-size:12px;min-height:16px;margin-top:6px"></div>'
+    + '</div>'
+    + '<div class="modal-footer"><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button></div>'
+    + '</div></div>';
+  sdRefresh();
+}
+async function sdRefresh(){
+  var el=document.getElementById('sd-list'); if(!el) return;
+  try{
+    var res = await slackCall({action:'list_destinations'});
+    var dests = res.destinations||[];
+    el.innerHTML = dests.length ? dests.map(function(d){
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">'
+        + '<span style="font-size:13px;font-weight:600">'+esc(d.label)+'</span>'
+        + '<button class="btn btn-danger btn-sm" style="font-size:11px;padding:3px 8px" onclick="sdDelete('+d.id+')">&#128465; Remove</button>'
+      + '</div>';
+    }).join('') : '<div style="color:var(--text3);font-size:13px">No destinations yet.</div>';
+  } catch(e){ el.innerHTML='<div style="color:var(--red,#dc2626);font-size:12px">'+esc(e.message)+'</div>'; }
+}
+async function sdCreate(){
+  var errEl=document.getElementById('sd-err'); if(errEl) errEl.textContent='';
+  var label=(document.getElementById('sd-new-label')||{}).value||'';
+  var url=(document.getElementById('sd-new-url')||{}).value||'';
+  try{
+    await slackCall({action:'create', label:label, webhook_url:url});
+    document.getElementById('sd-new-label').value=''; document.getElementById('sd-new-url').value='';
+    showToast('Slack destination added','success');
+    sdRefresh();
+  } catch(e){ if(errEl) errEl.textContent=e.message; }
+}
+async function sdDelete(id){
+  try{ await slackCall({action:'delete', id:id}); sdRefresh(); }
+  catch(e){ showToast(e.message||'Could not remove destination','error'); }
+}
 function sendLeadEmailNow(kind, id, memberIdx){
   var members = getTeamMembers();
   var m = members[memberIdx];
@@ -10449,7 +11265,7 @@ async function doAuthLogin(){
   }
 }
 // After a valid session is established, send the user to the right experience.
-function routeByRole(){
+async function routeByRole(){
   if(!authProfile){ renderAuthLogin(); return; }
   if(authProfile.role==='recipient'){
     initRecipientPortal();
@@ -10459,6 +11275,8 @@ function routeByRole(){
     var initials = nm.trim().split(/\s+/).map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase() || 'ME';
     currentUser = { id:authProfile.id, name:nm, role:(authProfile.role==='admin'?'Admin':'Team'), email:authProfile.email, color:(authProfile.role==='admin'?'#1e40af':'#16a34a'), initials:initials };
     localStorage.setItem('crm_user', JSON.stringify(currentUser));
+    await loadWorkAccess();
+    if(isStaffUser()) activeSection='mywork'; // staff land on their My Work dashboard
     initFullApp();
   }
 }
@@ -10721,6 +11539,7 @@ async function showManageTeam(){
               <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mt-emailed" checked> Only leads emailed to them</label>
             </div>
           </div>
+          <div id="mt-sections" class="form-field" style="margin-top:6px;display:none"><label class="form-label">Team member can see these sections <span style="font-weight:400;color:var(--text3);font-size:11px">(they always get My Work)</span></label>${mtSectionsHTML('mts-',null)}</div>
           <div id="mt-err" style="color:var(--red,#dc2626);font-size:12px;min-height:16px;margin-top:6px"></div>
           <button class="btn btn-primary btn-sm" onclick="mtCreate()" style="margin-top:6px">Create Account</button>
         </div>
@@ -10734,6 +11553,22 @@ function mtToggleScope(){
   var role = (document.getElementById('mt-role')||{}).value;
   var sc = document.getElementById('mt-scope');
   if(sc) sc.style.display = (role==='recipient') ? '' : 'none';
+  var ss = document.getElementById('mt-sections');
+  if(ss) ss.style.display = (role==='team' && isOwner()) ? '' : 'none';
+}
+// ---- Which sidebar sections a Team member can see (owner-only; stored in app_user_access) ----
+const MT_SECTION_LABELS = {outreach:'CRM Outreach',lists:'List Tracking',probate:'Probate',fb:'Facebook Scrape',dispo:'Dispo',d4d:'D4D',jv:'JV Agreements',dealcheck:'Deal Check'};
+function mtSectionsHTML(prefix, selected){
+  return '<div style="display:flex;gap:6px 16px;flex-wrap:wrap;font-size:13px">' + SB_STAFF_SECTIONS.map(function(k){
+    var on = selected===null ? true : selected.indexOf(k)>=0;
+    return '<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="'+prefix+k+'" '+(on?'checked':'')+'> '+MT_SECTION_LABELS[k]+'</label>';
+  }).join('') + '</div>';
+}
+function mtReadSections(prefix){ return SB_STAFF_SECTIONS.filter(function(k){ var e=document.getElementById(prefix+k); return e && e.checked; }); }
+async function mtSaveSections(userId, sections){
+  var ex = await sbFetch('app_user_access?user_id=eq.'+userId+'&select=user_id');
+  if(ex && ex[0]) await sbFetch('app_user_access?user_id=eq.'+userId,'PATCH',{sections:sections,updated_at:new Date().toISOString()});
+  else await sbFetch('app_user_access','POST',{user_id:userId,sections:sections});
 }
 async function mtRefresh(){
   var el = document.getElementById('mt-list'); if(!el) return;
@@ -10788,6 +11623,13 @@ async function mtCreate(){
   try {
     var res = await adminUsersCall(body);
     var issuedKey = (res && res.access_key) ? res.access_key : body.access_key;
+    if(body.role==='team' && isOwner()){
+      try{
+        var lst = await adminUsersCall({action:'list'});
+        var nu = (lst.users||[]).find(function(u){ return (u.email||'').toLowerCase()===(body.email||'').trim().toLowerCase(); });
+        if(nu) await mtSaveSections(nu.id, mtReadSections('mts-'));
+      } catch(e2){ showToast('Account created, but section access was not saved — edit the account to set it','error'); }
+    }
     ['mt-name','mt-email','mt-key'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; });
     await mtRefresh();
     if(res && res.access_key){ mtShowKey('Account created', res.access_key); }
@@ -10870,6 +11712,7 @@ function mtEdit(id){
     +     '<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mte-emailed" '+(u.scope_emailed?'checked':'')+'> Only leads emailed to them</label>'
     +   '</div>'
     + '</div>'
+    + '<div id="mte-sections" class="form-field" style="margin-top:6px;display:none"><label class="form-label">Team member can see these sections <span style="font-weight:400;color:var(--text3);font-size:11px">(they always get My Work)</span></label><div id="mte-sec-body" style="font-size:12px;color:var(--text4)">Loading&hellip;</div></div>'
     + '<div id="mte-err" style="color:var(--red,#dc2626);font-size:12px;min-height:16px;margin-top:6px"></div>'
     + '<div style="display:flex;gap:8px;margin-top:8px">'
     +   '<button class="btn btn-primary btn-sm" onclick="mtSaveEdit(\''+u.id+'\')">&#128190; Save changes</button>'
@@ -10877,11 +11720,19 @@ function mtEdit(id){
     +   '<button class="btn btn-secondary btn-sm" onclick="mtToggleDisabled(\''+u.id+'\','+(u.disabled?'false':'true')+')">'+(u.disabled?'Enable login':'Disable login')+'</button>'
     +   '<button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="mtDelete(\''+u.id+'\',\''+esc(u.email)+'\')">Delete account</button>'
     + '</div></div>';
+  window.__mteSecLoaded = false;
+  mtEditToggleScope();
+  if(isOwner()) sbFetch('app_user_access?user_id=eq.'+u.id+'&select=sections').then(function(r){
+    var b=document.getElementById('mte-sec-body'); if(!b) return;
+    b.innerHTML = mtSectionsHTML('mtes-', (r&&r[0]) ? r[0].sections : null); window.__mteSecLoaded = true;
+  }).catch(function(){ var b=document.getElementById('mte-sec-body'); if(b) b.textContent='Could not load.'; });
 }
 function mtEditToggleScope(){
   var role=(document.getElementById('mte-role')||{}).value;
   var sc=document.getElementById('mte-scope');
   if(sc) sc.style.display = (role==='recipient') ? '' : 'none';
+  var ss=document.getElementById('mte-sections');
+  if(ss) ss.style.display = (role==='team' && isOwner()) ? '' : 'none';
 }
 async function mtSaveEdit(id){
   var err=document.getElementById('mte-err'); if(err) err.textContent='';
@@ -10897,7 +11748,11 @@ async function mtSaveEdit(id){
     body.scope_nationwide = !!(document.getElementById('mte-nw')||{}).checked;
     body.scope_emailed = !!(document.getElementById('mte-emailed')||{}).checked;
   }
-  try { await adminUsersCall(body); await mtRefresh(); showToast('Account updated','success'); }
+  try {
+    await adminUsersCall(body);
+    if(role==='team' && isOwner() && window.__mteSecLoaded) await mtSaveSections(id, mtReadSections('mtes-'));
+    await mtRefresh(); showToast('Account updated','success');
+  }
   catch(e){ if(err) err.textContent = e.message; }
 }
 
