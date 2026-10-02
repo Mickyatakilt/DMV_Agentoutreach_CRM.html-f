@@ -5570,7 +5570,7 @@ async function ttDelete(id){
 }
 function ttRefreshViews(){
   if(activeSection==='mywork') renderMyWork();
-  else if(activeSection==='team') renderTeamWork(true);
+  else if(activeSection==='dashboard') renderTeamWork(true);
 }
 async function ttAddFromForm(){
   var textEl=document.getElementById('tt-new-text'), stEl=document.getElementById('tt-new-status'), dueEl=document.getElementById('tt-new-due');
@@ -5593,7 +5593,7 @@ function ttRowsHTML(tasks){
       + '<div style="flex:1;min-width:180px"><div style="font-size:13px;font-weight:600'+(t.status==='completed'?';text-decoration:line-through;color:var(--text3)':'')+'">'+esc(t.text)+'</div>'
         + '<div style="font-size:11px;color:var(--text4,#9ca3af)">'+(carried?'Carried over from '+ltFmtDate(twLocalDay(t.createdAt))+' &middot; ':'')+(overdue?'<span style="color:#dc2626;font-weight:700">Past finish date</span>':'')+'</div></div>'
       + '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap">'
-        + '<select class="form-select" style="font-size:12px;padding:3px 6px" onchange="ttSetStatus('+t.id+',this.value)">'
+        + '<select class="form-select" style="font-size:12px;padding:3px 6px;max-width:130px" onchange="ttSetStatus('+t.id+',this.value)">'
           + TT_STATUSES.map(function(s){return '<option value="'+s[0]+'"'+(t.status===s[0]?' selected':'')+'>'+s[1]+'</option>';}).join('')
         + '</select>'
         + '<input type="date" class="form-input" style="font-size:12px;padding:3px 6px;width:135px" title="Finish date" value="'+esc(t.dueDate||'')+'" onchange="ttSetFinish('+t.id+',this.value)">'
@@ -5632,24 +5632,28 @@ async function renderMyWork(){
   if(!twTimer && (myClock||[]).some(function(c){return !c.clockOut;})) twTimer=setInterval(twTick,30000);
 }
 
-// ---- Owner: Team Work section ----
+// ---- Owner: Team Work card (lives at the top of the owner Dashboard) ----
+var twOpen = true;
+async function twLoadData(){
+  try{
+    var since = twLocalDay(new Date(Date.now()-twDays*864e5));
+    var r = await Promise.all([
+      sbFetchAll(TT_PATH+'?deleted=eq.false&select=*&order=created_at.desc,id.desc'),
+      sbFetchAll(TC_PATH+'?work_date=gte.'+since+'&select=*&order=work_date.desc,id.desc'),
+      adminUsersCall({action:'list'}).catch(function(){ return {users:[]}; })
+    ]);
+    teamAllTasks=(r[0]||[]).map(ttFromDb); teamAllClock=(r[1]||[]).map(tcFromDb);
+    teamPeople=((r[2]&&r[2].users)||[]).filter(function(u){return u.role!=='recipient' && !u.disabled && !u.is_owner;}).map(function(u){return {id:u.id,name:u.name||u.email};});
+  } catch(e){ showToast('Could not load team work: '+twErr(e),'error'); teamAllTasks=teamAllTasks||[]; teamAllClock=teamAllClock||[]; teamPeople=teamPeople||[]; }
+}
+function twToggle(){ twOpen=!twOpen; renderTeamWork(true); }
 async function renderTeamWork(keepData){
-  var host=document.getElementById('section-main'); if(!host) return;
+  var host=document.getElementById('team-work-host'); if(!host) return;
   if(!keepData || teamAllClock===null){
-    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128101; Team Work</h2></div></div><div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading&hellip;</div></div>';
-    try{
-      var since = twLocalDay(new Date(Date.now()-twDays*864e5));
-      var r = await Promise.all([
-        sbFetchAll(TT_PATH+'?deleted=eq.false&select=*&order=created_at.desc,id.desc'),
-        sbFetchAll(TC_PATH+'?work_date=gte.'+since+'&select=*&order=work_date.desc,id.desc'),
-        adminUsersCall({action:'list'}).catch(function(){ return {users:[]}; })
-      ]);
-      teamAllTasks=(r[0]||[]).map(ttFromDb); teamAllClock=(r[1]||[]).map(tcFromDb);
-      teamPeople=((r[2]&&r[2].users)||[]).filter(function(u){return u.role!=='recipient' && !u.disabled && !u.is_owner;}).map(function(u){return {id:u.id,name:u.name||u.email};});
-    } catch(e){ showToast('Could not load team work: '+twErr(e),'error'); teamAllTasks=teamAllTasks||[]; teamAllClock=teamAllClock||[]; teamPeople=teamPeople||[]; }
-    if(activeSection!=='team') return;
+    host.innerHTML='<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px"><div style="font-size:15px;font-weight:800">&#128101; Team Work</div><div style="padding:16px;color:var(--text4);font-size:13px">Loading&hellip;</div></div>';
+    await twLoadData();
+    host=document.getElementById('team-work-host'); if(!host) return;
   }
-  // people = known staff + anyone who appears in the data
   var people={}; (teamPeople||[]).forEach(function(p){ people[p.id]=p.name; });
   teamAllClock.concat(teamAllTasks).forEach(function(x){ if(x.userId && !people[x.userId] && !(authProfile&&x.userId===authProfile.id)) people[x.userId]=x.userName||'(unknown)'; });
   var ids=Object.keys(people).filter(function(id){ return !twPerson || id===twPerson; });
@@ -5670,24 +5674,27 @@ async function renderTeamWork(keepData){
         + '<span><button class="btn btn-secondary btn-sm" style="padding:2px 8px" onclick="twOpenClockEdit('+c.id+')">&#9998;</button></span></div>';
     }).join('') : '<div style="color:var(--text4,#9ca3af);font-size:13px;padding:6px 0">No clock-ins in this range.</div>';
     var visTasks = tks.filter(function(t){ return t.status!=='completed' || (t.updatedAt && twLocalDay(t.updatedAt)>=twLocalDay(new Date(Date.now()-twDays*864e5))); });
-    return '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
-      + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:16px;font-weight:800">'+esc(people[id])+'</div><div style="font-size:12px;color:var(--text3)">'+twDays+'-day total: <b>'+twFmtDur(total)+'</b></div></div>'
+    return '<div style="border:1px solid var(--border,#e5e7eb);border-radius:12px;padding:14px;margin-top:10px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:15px;font-weight:800">'+esc(people[id])+'</div><div style="font-size:12px;color:var(--text3)">'+twDays+'-day total: <b>'+twFmtDur(total)+'</b></div></div>'
       + '<div style="font-size:13px;margin-bottom:10px">'+status+'</div>'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Time log</div><button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="twOpenClockAdd(\''+id+'\')">+ Add day</button></div>'
       + logRows
       + '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin:14px 0 2px">Work &amp; status</div>'
       + ttRowsHTML(visTasks)
       + '</div>';
-  }).join('') : '<div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">No staff accounts or activity yet.</div>';
+  }).join('') : '<div style="padding:20px;text-align:center;color:var(--text4);font-size:13px">No staff accounts or activity yet.</div>';
+  var open = ids.length && teamAllClock.some(function(c){return !c.clockOut;});
   host.innerHTML =
-    '<div class="lt-wrap">'
-    + '<div class="lt-head"><div><h2>&#128101; Team Work</h2><p>Clock times and daily work for your team. You can edit anything here.</p></div>'
-      + '<div class="lt-actions">'
+    '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      + '<div style="font-size:15px;font-weight:800;cursor:pointer" onclick="twToggle()">'+(twOpen?'&#9662;':'&#9656;')+' &#128101; Team Work'+(open?' <span style="font-size:11px;color:#16a34a;font-weight:700">&#9679; someone is on the clock</span>':'')+'</div>'
+      + (twOpen ? '<div style="display:flex;gap:6px;flex-wrap:wrap">'
         + '<select class="form-select" style="font-size:12px" onchange="twPerson=this.value;renderTeamWork(true)"><option value="">Everyone</option>'+Object.keys(people).map(function(id){return '<option value="'+id+'"'+(twPerson===id?' selected':'')+'>'+esc(people[id])+'</option>';}).join('')+'</select>'
         + '<select class="form-select" style="font-size:12px" onchange="twDays=+this.value;teamAllClock=null;renderTeamWork()">'+[7,14,30].map(function(n){return '<option value="'+n+'"'+(twDays===n?' selected':'')+'>Last '+n+' days</option>';}).join('')+'</select>'
-        + '<button class="btn btn-secondary btn-sm" onclick="teamAllClock=null;renderTeamWork()">&#8635; Refresh</button>'
-      + '</div></div>'
-    + cards + '</div>';
+        + '<button class="btn btn-secondary btn-sm" onclick="teamAllClock=null;renderTeamWork()">&#8635;</button></div>' : '')
+    + '</div>'
+    + (twOpen ? '<div style="font-size:12px;color:var(--text4,#9ca3af);margin-top:2px">Clock times and daily work. You can edit anything here.</div>'+cards : '')
+    + '</div>';
 }
 function twPersonName(id){ var p=(teamPeople||[]).find(function(x){return x.id===id;}); if(p) return p.name; var r=(teamAllClock||[]).concat(teamAllTasks||[]).find(function(x){return x.userId===id;}); return r?r.userName:''; }
 function twOpenClockEdit(id){
@@ -5740,7 +5747,8 @@ async function twSaveAdd(userId){
 }
 
 // ---- Sidebar access: owner sees everything; staff see My Work + the sections the owner ticked ----
-const SB_STAFF_SECTIONS = ['outreach','lists','probate','fb','dispo','d4d','jv','dealcheck'];
+const SB_STAFF_SECTIONS = ['dashboard','outreach','lists','probate','fb','dispo','d4d','jv','dealcheck'];
+const SB_STAFF_DEFAULT = ['outreach','lists','probate','fb','dispo','d4d','jv','dealcheck']; // everything but the owner Dashboard
 function isOwner(){ return AUTH_ENABLED && authProfile && authProfile.is_owner===true; }
 function isStaffUser(){ return AUTH_ENABLED && authProfile && authProfile.role!=='recipient' && !authProfile.is_owner; }
 async function loadWorkAccess(){
@@ -5754,11 +5762,10 @@ async function loadWorkAccess(){
 function sbItems(){
   if(!AUTH_ENABLED || !authProfile) return SB_ITEMS;
   if(isOwner()){
-    var out=[]; SB_ITEMS.forEach(function(it){ out.push(it); if(it.k==='dashboard') out.push({k:'team',ic:'&#128101;',lb:'Team Work',sl:'Team',soon:false}); });
-    return out;
+    return SB_ITEMS;
   }
-  var allowed = Array.isArray(authProfile.sections) ? authProfile.sections : SB_STAFF_SECTIONS;
-  return [{k:'mywork',ic:'&#128188;',lb:'My Work',sl:'My Work',soon:false}].concat(SB_ITEMS.filter(function(it){ return it.k!=='dashboard' && allowed.indexOf(it.k)>=0; }));
+  var allowed = Array.isArray(authProfile.sections) ? authProfile.sections : SB_STAFF_DEFAULT;
+  return [{k:'mywork',ic:'&#128188;',lb:'My Work',sl:'My Work',soon:false}].concat(SB_ITEMS.filter(function(it){ return allowed.indexOf(it.k)>=0; }));
 }
 function sbSectionAllowed(k){ return sbItems().some(function(it){return it.k===k;}); }
 // =================== end Team Work ===================
@@ -5947,10 +5954,10 @@ function renderDashboard(){
     + '<div class="lt-head"><div><h2>&#128202; Dashboard</h2>'
       + '<p>Your whole pipeline at a glance &mdash; and one place that shows every follow-up due across Outreach, Tasks, Probate, and Lists so nothing slips.</p></div>'
       + '<div class="lt-actions">'
-        + (isOwner() ? '<button class="btn btn-secondary btn-sm" onclick="setSection(\'team\')">&#128101; Team Work</button>' : '')
         + '<button class="btn btn-secondary btn-sm" onclick="crmLists=null;crmProbate=null;crmBuyers=null;crmProps=null;renderDashboard()">&#8635; Refresh</button>'
       + '</div>'
     + '</div>'
+    + (isOwner() ? '<div id="team-work-host"></div>' : '')
     // ===== Manager Agent briefing (Claude-powered) =====
     + mgrBriefingCardHTML()
     // ===== SMS Marketing Analytics (live from GHL) =====
@@ -6001,6 +6008,7 @@ function renderDashboard(){
     + '</div>'
     + '</div>';
   try{ mgrInjectCSS(); mgrRenderBriefing(false); loadSmsAnalytics(); loadProbateFunnel(); }catch(e){ console.warn('dash analytics', e); }
+  if(isOwner()) renderTeamWork(teamAllClock!==null);
 }
 // =================== end Dashboard ===================
 
@@ -6510,7 +6518,6 @@ function render(){
   if(activeSection==='probate'){ renderProbate(); return; }
   if(activeSection==='dashboard'){ renderDashboard(); return; }
   if(activeSection==='mywork'){ renderMyWork(); return; }
-  if(activeSection==='team'){ renderTeamWork(); return; }
   if(activeSection!=='outreach'){ renderPlaceholderSection(activeSection); return; }
   renderOutreach();
 }
@@ -11554,13 +11561,13 @@ function mtToggleScope(){
   var sc = document.getElementById('mt-scope');
   if(sc) sc.style.display = (role==='recipient') ? '' : 'none';
   var ss = document.getElementById('mt-sections');
-  if(ss) ss.style.display = (role==='team' && isOwner()) ? '' : 'none';
+  if(ss) ss.style.display = ((role==='team'||role==='admin') && isOwner()) ? '' : 'none';
 }
 // ---- Which sidebar sections a Team member can see (owner-only; stored in app_user_access) ----
-const MT_SECTION_LABELS = {outreach:'CRM Outreach',lists:'List Tracking',probate:'Probate',fb:'Facebook Scrape',dispo:'Dispo',d4d:'D4D',jv:'JV Agreements',dealcheck:'Deal Check'};
+const MT_SECTION_LABELS = {dashboard:'Dashboard (owner view)',outreach:'CRM Outreach',lists:'List Tracking',probate:'Probate',fb:'Facebook Scrape',dispo:'Dispo',d4d:'D4D',jv:'JV Agreements',dealcheck:'Deal Check'};
 function mtSectionsHTML(prefix, selected){
   return '<div style="display:flex;gap:6px 16px;flex-wrap:wrap;font-size:13px">' + SB_STAFF_SECTIONS.map(function(k){
-    var on = selected===null ? true : selected.indexOf(k)>=0;
+    var on = selected===null ? SB_STAFF_DEFAULT.indexOf(k)>=0 : selected.indexOf(k)>=0;
     return '<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="'+prefix+k+'" '+(on?'checked':'')+'> '+MT_SECTION_LABELS[k]+'</label>';
   }).join('') + '</div>';
 }
@@ -11623,7 +11630,7 @@ async function mtCreate(){
   try {
     var res = await adminUsersCall(body);
     var issuedKey = (res && res.access_key) ? res.access_key : body.access_key;
-    if(body.role==='team' && isOwner()){
+    if((body.role==='team'||body.role==='admin') && isOwner()){
       try{
         var lst = await adminUsersCall({action:'list'});
         var nu = (lst.users||[]).find(function(u){ return (u.email||'').toLowerCase()===(body.email||'').trim().toLowerCase(); });
@@ -11732,7 +11739,7 @@ function mtEditToggleScope(){
   var sc=document.getElementById('mte-scope');
   if(sc) sc.style.display = (role==='recipient') ? '' : 'none';
   var ss=document.getElementById('mte-sections');
-  if(ss) ss.style.display = (role==='team' && isOwner()) ? '' : 'none';
+  if(ss) ss.style.display = ((role==='team'||role==='admin') && isOwner()) ? '' : 'none';
 }
 async function mtSaveEdit(id){
   var err=document.getElementById('mte-err'); if(err) err.textContent='';
@@ -11750,7 +11757,7 @@ async function mtSaveEdit(id){
   }
   try {
     await adminUsersCall(body);
-    if(role==='team' && isOwner() && window.__mteSecLoaded) await mtSaveSections(id, mtReadSections('mtes-'));
+    if((role==='team'||role==='admin') && isOwner() && window.__mteSecLoaded) await mtSaveSections(id, mtReadSections('mtes-'));
     await mtRefresh(); showToast('Account updated','success');
   }
   catch(e){ if(err) err.textContent = e.message; }
