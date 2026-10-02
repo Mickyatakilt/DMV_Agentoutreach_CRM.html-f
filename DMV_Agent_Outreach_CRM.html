@@ -5607,14 +5607,14 @@ function ttRowsHTML(tasks){
 async function renderMyWork(){
   var host=document.getElementById('section-main'); if(!host) return;
   if(teamTasks===null || myClock===null){
-    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128188; My Work</h2></div></div><div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading&hellip;</div></div>';
+    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128202; Dashboard</h2></div></div><div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading&hellip;</div></div>';
     await workLoadMine(); if(activeSection!=='mywork') return;
   }
   var nm = (authProfile&&authProfile.name)||'';
   var tasks = twTodayTasks(teamTasks);
   host.innerHTML =
     '<div class="lt-wrap">'
-    + '<div class="lt-head"><div><h2>&#128188; My Work</h2><p>'+(nm?'Hi '+esc(nm)+' &mdash; ':'')+new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})+'</p></div></div>'
+    + '<div class="lt-head"><div><h2>&#128202; Dashboard</h2><p>'+(nm?'Hi '+esc(nm)+' &mdash; ':'')+new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})+'</p></div></div>'
     + workClockCardHTML()
     + '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
       + '<div style="font-size:15px;font-weight:800;margin-bottom:10px">&#128221; Today&#8217;s Work</div>'
@@ -5765,7 +5765,7 @@ function sbItems(){
     return SB_ITEMS;
   }
   var allowed = Array.isArray(authProfile.sections) ? authProfile.sections : SB_STAFF_DEFAULT;
-  return [{k:'mywork',ic:'&#128188;',lb:'My Work',sl:'My Work',soon:false}].concat(SB_ITEMS.filter(function(it){ return allowed.indexOf(it.k)>=0; }));
+  return [{k:'mywork',ic:'&#128202;',lb:'Dashboard',sl:'Dashboard',soon:false}].concat(SB_ITEMS.filter(function(it){ return allowed.indexOf(it.k)>=0; }));
 }
 function sbSectionAllowed(k){ return sbItems().some(function(it){return it.k===k;}); }
 // =================== end Team Work ===================
@@ -11546,7 +11546,7 @@ async function showManageTeam(){
               <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mt-emailed" checked> Only leads emailed to them</label>
             </div>
           </div>
-          <div id="mt-sections" class="form-field" style="margin-top:6px;display:none"><label class="form-label">Team member can see these sections <span style="font-weight:400;color:var(--text3);font-size:11px">(they always get My Work)</span></label>${mtSectionsHTML('mts-',null)}</div>
+          <div id="mt-sections" class="form-field" style="margin-top:6px;display:none"><label class="form-label">Team member can see these sections <span style="font-weight:400;color:var(--text3);font-size:11px">(they always get their own Dashboard with clock + daily work)</span></label>${mtSectionsHTML('mts-',null)}</div>
           <div id="mt-err" style="color:var(--red,#dc2626);font-size:12px;min-height:16px;margin-top:6px"></div>
           <button class="btn btn-primary btn-sm" onclick="mtCreate()" style="margin-top:6px">Create Account</button>
         </div>
@@ -11564,7 +11564,7 @@ function mtToggleScope(){
   if(ss) ss.style.display = ((role==='team'||role==='admin') && isOwner()) ? '' : 'none';
 }
 // ---- Which sidebar sections a Team member can see (owner-only; stored in app_user_access) ----
-const MT_SECTION_LABELS = {dashboard:'Dashboard (owner view)',outreach:'CRM Outreach',lists:'List Tracking',probate:'Probate',fb:'Facebook Scrape',dispo:'Dispo',d4d:'D4D',jv:'JV Agreements',dealcheck:'Deal Check'};
+const MT_SECTION_LABELS = {dashboard:'Owner Dashboard (your pipeline view)',outreach:'CRM Outreach',lists:'List Tracking',probate:'Probate',fb:'Facebook Scrape',dispo:'Dispo',d4d:'D4D',jv:'JV Agreements',dealcheck:'Deal Check'};
 function mtSectionsHTML(prefix, selected){
   return '<div style="display:flex;gap:6px 16px;flex-wrap:wrap;font-size:13px">' + SB_STAFF_SECTIONS.map(function(k){
     var on = selected===null ? SB_STAFF_DEFAULT.indexOf(k)>=0 : selected.indexOf(k)>=0;
@@ -11719,7 +11719,7 @@ function mtEdit(id){
     +     '<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mte-emailed" '+(u.scope_emailed?'checked':'')+'> Only leads emailed to them</label>'
     +   '</div>'
     + '</div>'
-    + '<div id="mte-sections" class="form-field" style="margin-top:6px;display:none"><label class="form-label">Team member can see these sections <span style="font-weight:400;color:var(--text3);font-size:11px">(they always get My Work)</span></label><div id="mte-sec-body" style="font-size:12px;color:var(--text4)">Loading&hellip;</div></div>'
+    + '<div id="mte-sections" class="form-field" style="margin-top:6px;display:none"><label class="form-label">Team member can see these sections <span style="font-weight:400;color:var(--text3);font-size:11px">(they always get their own Dashboard with clock + daily work)</span></label><div id="mte-sec-body" style="font-size:12px;color:var(--text4)">Loading&hellip;</div></div>'
     + '<div id="mte-err" style="color:var(--red,#dc2626);font-size:12px;min-height:16px;margin-top:6px"></div>'
     + '<div style="display:flex;gap:8px;margin-top:8px">'
     +   '<button class="btn btn-primary btn-sm" onclick="mtSaveEdit(\''+u.id+'\')">&#128190; Save changes</button>'
