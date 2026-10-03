@@ -1250,6 +1250,18 @@ async function cacheGhlContactId(phone, id){
   } catch(e){}
 }
 
+// Call button: only shown for leads already linked to a GHL contact (i.e. already texted).
+// Opens that contact in GHL on the Phone/Call view and copies the number as a fallback.
+function ghlCallBtn(contactId){
+  contactId=(contactId||'').trim(); if(!contactId) return '';
+  return ' <button type="button" class="btn btn-secondary btn-sm" data-cid="'+esc(contactId)+'" onclick="ghlCall(this.dataset.cid,event)" style="padding:1px 7px;font-size:12px;margin-left:4px;vertical-align:middle" title="Call in GoHighLevel">&#128222; Call</button>';
+}
+function ghlCall(contactId, event){
+  if(event){ event.preventDefault(); event.stopPropagation(); }
+  if(!contactId) return;
+  window.open(GHL_CONTACTS_URL + 'detail/' + contactId + '?call=1', 'ghl_window');
+}
+
 // Clicking a phone opens the exact GHL contact. If we don't have the id yet (e.g. you
 // just created the contact in GHL after adding the lead), look it up right now.
 async function openGHL(phone, contactId, event){
@@ -8070,7 +8082,7 @@ function renderTable(data,start,end){
     <tr style="${selectedLeads.has(l.id)?'background:#eff6ff;':''}">
       <td onclick="event.stopPropagation()"><input type="checkbox" ${selectedLeads.has(l.id)?'checked':''} onchange="toggleSelect(${l.id},this.checked)" style="width:15px;height:15px;cursor:pointer"></td>
       <td onclick="openDetail(${l.id})"><div class="address-cell">${esc(l.address)||''}${cmtRowDot('lead',l.id)}</div></td>
-      <td onclick="openDetail(${l.id})"><div class="phone-cell">${l.phone?`<a href="#" data-phone="${l.phone.split('/')[0].trim()}" data-cid="${l.ghlContactId||''}" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-weight:600" title="${l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel'}">${esc(l.phone.split('/')[0].trim())} &#8599;</a>`:''}</div></td>
+      <td onclick="openDetail(${l.id})"><div class="phone-cell">${l.phone?`<a href="#" data-phone="${l.phone.split('/')[0].trim()}" data-cid="${l.ghlContactId||''}" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-weight:600" title="${l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel'}">${esc(l.phone.split('/')[0].trim())} &#8599;</a>${ghlCallBtn(l.ghlContactId)}`:''}</div></td>
       <td onclick="openDetail(${l.id})"><span class="money-val">${formatMoney(l.offer)}</span></td>
       <td onclick="openDetail(${l.id})"><span class="arv-val">${formatMoney(l.arv)}</span></td>
       <td onclick="openDetail(${l.id})" style="font-size:12px;color:var(--text2)">${esc(l.marketingType)||''}</td>
@@ -8360,7 +8372,7 @@ function buildFollowUpQueueHTML(nationwideOnly){
       + srcBadge(x.type)
       + '<div class="followup-item-addr" style="margin:0">'+esc(title)+'</div>'
       + '</div>'
-      + '<div class="followup-item-meta">'+badge+'<span>'+esc(l.name||'')+'</span>'+(l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>':'')+'</div>'
+      + '<div class="followup-item-meta">'+badge+'<span>'+esc(l.name||'')+'</span>'+(l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):'')+'</div>'
       + '<div class="followup-item-date">'+l.followUpDate+' &middot; '+lbl+'</div>'
       + (l.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+esc((l.notes||'').substring(0,80))+(l.notes&&l.notes.length>80?'&#8230;':'')+'</div>':'')
       + '</div>';
@@ -8471,7 +8483,7 @@ function renderDetailModal(){
           <div class="detail-section"><div class="detail-section-title">Property &amp; Contact</div>
             <div class="detail-grid">
               <div class="detail-item"><span class="detail-label">Agent</span><span class="detail-val">${esc(l.name)||''}</span></div>
-              <div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':''}</span></div>
+              <div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):''}</span></div>
               <div class="detail-item"><span class="detail-label">Offer</span><span class="detail-val" style="color:var(--accent);font-weight:700;font-size:15px">${formatMoney(l.offer)}</span></div>
               <div class="detail-item"><span class="detail-label">ARV</span><span class="detail-val" style="color:var(--green);font-weight:700;font-size:15px">${formatMoney(l.arv)}</span></div>
               <div class="detail-item"><span class="detail-label">Email</span><span class="detail-val">${l.contactEmail?'<a href="mailto:'+esc(l.contactEmail)+'" class="detail-link">'+esc(l.contactEmail)+'</a>':'<span style="color:var(--text4)">&#8212;</span>'}</span></div>
@@ -8936,7 +8948,7 @@ function renderSentOutTab(){
           <td style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" ${sentOutSelected.has(l.kind+':'+l.id)?'checked':''} onclick="sentOutToggleSelect('${l.kind}',${l.id},this.checked)"></td>
           <td>${l.kind==='task'?'<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 5px">TASK</span>':'<span style="font-size:9px;font-weight:900;color:#dc2626;background:#fee2e2;border:1px solid #fca5a5;border-radius:4px;padding:1px 5px">DMV</span>'}</td>
           <td><div class="address-cell">${esc(l.kind==='task'?(l.location||l.name):l.address)||''}</div></td>
-          <td><div class="phone-cell">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>':''}</div></td>
+          <td><div class="phone-cell">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):''}</div></td>
           <td><span class="money-val">${formatMoney(l.kind==='task'?l.askingPrice:l.offer)}</span></td>
           <td>${l.kind==='task'?statusBadge(l.jvStatus):statusBadge(l.status)}</td>
           <td>${leadScoreBadgeHTML(l.score)}</td>
@@ -9075,7 +9087,7 @@ function renderNationwideTab(){
       + nwLeads.map(l=>`
         <tr onclick="openDetail(${l.id})">
           <td><div class="address-cell">${esc(l.address)||''}</div></td>
-          <td><div class="phone-cell">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>':''}</div></td>
+          <td><div class="phone-cell">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):''}</div></td>
           <td><span class="money-val">${formatMoney(l.offer)}</span></td>
           <td><span class="arv-val">${formatMoney(l.arv)}</span></td>
           <td style="font-size:12px;color:var(--text2)">${esc(l.marketingType)||''}</td>
@@ -9225,7 +9237,7 @@ function renderJVLeadsTab(){
             + '<td onclick="event.stopPropagation()"><input type="checkbox" '+(jvSelectedLeads.has(l.id)?'checked':'')+' onchange="jvToggleSelect('+l.id+',this.checked)" style="width:15px;height:15px;cursor:pointer"></td>'
             + '<td style="font-weight:600">'+esc(l.name||'')+cmtRowDot('task',l.id)+'</td>'
             + '<td style="font-size:12px">'+esc(l.location||l.address||'')+(l.location?'<br><a href="'+buildZillowUrl(l.location)+'" target="_blank" onclick="event.stopPropagation()" class="detail-link" style="font-size:11px">&#127968; Zillow &#8599;</a>':'')+'</td>'
-            + '<td>'+(l.phone&&l.phone!=='No phone -- DM only'?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':esc(l.phone||''))+'</td>'
+            + '<td>'+(l.phone&&l.phone!=='No phone -- DM only'?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):esc(l.phone||''))+'</td>'
             + '<td>'+scoreBadgeHTML(l.score)+'</td>'
             + '<td>'+jvStatusBadge(l.jvStatus||'')+'</td>'
             + '<td style="color:var(--accent);font-weight:600">'+esc(l.askingPrice||'')+'</td>'
@@ -9343,7 +9355,7 @@ function openJVDetail(id){
   var statusOpts=statuses.map(function(s){return '<option value="'+s+'" '+(l.jvStatus===s?'selected':'')+'>'+s+'</option>';}).join('');
   document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal modal-lead-wide"><div class="modal-header"><div><div class="modal-title">'+esc(l.name||'JV Lead')+'</div><div class="modal-subtitle">'+scoreBadgeHTML(l.score)+' &middot; '+esc(l.location||l.address||'')+sentIndicatorHTML(l)+'</div>'+(l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a></div>':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body modal-body-split"><div class="modal-main-col">'
     +'<div class="form-section"><div class="detail-grid">'
-    +'<div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">'+(l.phone?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>':esc(l.phone||''))+(l.location?' <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="crmFindNumber('+l.id+')" title="Find the first wireless number for this address (needs US VPN)">&#128269; Find #</button>':'')+'</span></div>'
+    +'<div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">'+(l.phone?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):esc(l.phone||''))+(l.location?' <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="crmFindNumber('+l.id+')" title="Find the first wireless number for this address (needs US VPN)">&#128269; Find #</button>':'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Email</span><span class="detail-val">'+(l.contactEmail?'<a href="mailto:'+esc(l.contactEmail)+'" class="detail-link">'+esc(l.contactEmail)+'</a>':'<span style="color:var(--text4)">&#8212;</span>')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Asking Price</span><span class="detail-val" style="color:var(--accent);font-weight:700">'+esc(l.askingPrice||'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">ARV</span><span class="detail-val" style="color:var(--green);font-weight:700">'+esc(l.arv||'')+'</span></div>'
