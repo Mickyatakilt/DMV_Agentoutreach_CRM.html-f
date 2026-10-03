@@ -7111,7 +7111,7 @@ function d4dMailRowHTML(item){
     : '<span style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:10px;background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;white-space:nowrap">&#9993; Queued</span>';
   return '<tr>'
     +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>'
-    +'<td onclick="'+openFn+'" style="cursor:pointer">'+typeTag+'<a href="'+esc(mapHref)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;font-weight:600">'+esc(addr)+'</a></td>'
+    +'<td onclick="'+openFn+'" style="cursor:pointer">'+typeTag+'<a href="'+esc(mapHref)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;font-weight:600">'+esc(addr)+'</a> '+pwIcon(addr)+'</td>'
     +'<td style="font-size:12.5px">'+esc(p.city||'&mdash;')+'</td>'
     +'<td style="font-size:12.5px">'+esc(p.state||'&mdash;')+'</td>'
     +'<td style="font-size:12.5px">'+esc(p.zip||'&mdash;')+'</td>'
