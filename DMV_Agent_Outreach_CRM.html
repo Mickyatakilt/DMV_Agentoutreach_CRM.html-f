@@ -6974,7 +6974,7 @@ function rvRowHTML(it){
     ? '<div style="font-weight:700;font-size:13px;color:var(--text1)">'+esc(ownerNmRaw)+'</div>' : '';
   return '<tr id="rrow-'+kind+'-'+l.id+'"'+(isHot?' class="hot-row"':'')+'>'
     +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>'
-    +'<td onclick="'+openFn+'" style="cursor:pointer">'+ownerLine+'<div class="address-cell">'+typeTag+titleHtml+'</div></td>'
+    +'<td onclick="'+openFn+'" style="cursor:pointer">'+ownerLine+'<div style="display:flex;align-items:center;gap:4px"><div class="address-cell">'+typeTag+titleHtml+'</div>'+pwIcon(kind==='task'?(l.location||l.address||''):(l.address||''))+'</div></td>'
     +'<td style="font-size:13px">'+phoneHtml+'</td>'
     +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
     +'<td style="font-size:11px;color:var(--text3);white-space:nowrap">'+sentAt+'</td>'
@@ -7078,6 +7078,10 @@ function propwireLookup(addr, ev){
   try{ navigator.clipboard.writeText(addr).then(done,function(){ showToast('Could not copy: '+addr,'error'); }); }
   catch(e){ showToast('Could not copy: '+addr,'error'); }
   window.open('https://propwire.com/','_blank');
+}
+function pwIcon(addr){
+  addr=(addr||'').trim(); if(!addr) return '';
+  return '<button type="button" data-addr="'+esc(addr)+'" onclick="propwireLookup(this.dataset.addr,event)" title="Look up on Propwire (copies the address)" style="flex:none;border:1px solid var(--border,#e5e7eb);background:var(--card,#fff);border-radius:6px;padding:1px 5px;font-size:11px;cursor:pointer">&#128270;</button>';
 }
 function pwBtn(addr){
   addr=(addr||'').trim(); if(!addr) return '';
@@ -8154,7 +8158,7 @@ function renderTable(data,start,end){
   const rows=data.slice(start,end).map(l=>`
     <tr style="${selectedLeads.has(l.id)?'background:#eff6ff;':''}">
       <td onclick="event.stopPropagation()"><input type="checkbox" ${selectedLeads.has(l.id)?'checked':''} onchange="toggleSelect(${l.id},this.checked)" style="width:15px;height:15px;cursor:pointer"></td>
-      <td onclick="openDetail(${l.id})"><div class="address-cell">${esc(l.address)||''}${cmtRowDot('lead',l.id)}</div></td>
+      <td onclick="openDetail(${l.id})"><div style="display:flex;align-items:center;gap:4px"><div class="address-cell">${esc(l.address)||''}${cmtRowDot('lead',l.id)}</div>${pwIcon(l.address)}</div></td>
       <td onclick="openDetail(${l.id})"><div class="phone-cell">${l.phone?`<a href="#" data-phone="${l.phone.split('/')[0].trim()}" data-cid="${l.ghlContactId||''}" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-weight:600" title="${l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel'}">${esc(l.phone.split('/')[0].trim())} &#8599;</a>${ghlCallBtn(l.ghlContactId)}`:''}</div></td>
       <td onclick="openDetail(${l.id})"><span class="money-val">${formatMoney(l.offer)}</span></td>
       <td onclick="openDetail(${l.id})"><span class="arv-val">${formatMoney(l.arv)}</span></td>
@@ -9021,7 +9025,7 @@ function renderSentOutTab(){
         <tr onclick="${l.kind==='task'?'openJVDetail('+l.id+')':'openDetail('+l.id+')'}">
           <td style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" ${sentOutSelected.has(l.kind+':'+l.id)?'checked':''} onclick="sentOutToggleSelect('${l.kind}',${l.id},this.checked)"></td>
           <td>${l.kind==='task'?'<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 5px">TASK</span>':'<span style="font-size:9px;font-weight:900;color:#dc2626;background:#fee2e2;border:1px solid #fca5a5;border-radius:4px;padding:1px 5px">DMV</span>'}</td>
-          <td><div class="address-cell">${esc(l.kind==='task'?(l.location||l.name):l.address)||''}</div></td>
+          <td><div style="display:flex;align-items:center;gap:4px"><div class="address-cell">${esc(l.kind==='task'?(l.location||l.name):l.address)||''}</div>${pwIcon(l.kind==='task'?(l.location||l.name):l.address)}</div></td>
           <td><div class="phone-cell">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):''}</div></td>
           <td><span class="money-val">${formatMoney(l.kind==='task'?l.askingPrice:l.offer)}</span></td>
           <td>${l.kind==='task'?statusBadge(l.jvStatus):statusBadge(l.status)}</td>
@@ -9160,7 +9164,7 @@ function renderNationwideTab(){
       +'</tr></thead><tbody>'
       + nwLeads.map(l=>`
         <tr onclick="openDetail(${l.id})">
-          <td><div class="address-cell">${esc(l.address)||''}</div></td>
+          <td><div style="display:flex;align-items:center;gap:4px"><div class="address-cell">${esc(l.address)||''}</div>${pwIcon(l.address)}</div></td>
           <td><div class="phone-cell">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):''}</div></td>
           <td><span class="money-val">${formatMoney(l.offer)}</span></td>
           <td><span class="arv-val">${formatMoney(l.arv)}</span></td>
