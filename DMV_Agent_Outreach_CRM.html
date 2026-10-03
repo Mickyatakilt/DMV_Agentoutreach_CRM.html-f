@@ -2787,8 +2787,11 @@ function openDealCheckEditModal(id){
 function openDealCheckPropwire(){
   var a=(document.getElementById('dc-address').value||'').trim();
   if(!a){ showToast('Enter an address first','error'); return; }
-  var w=window.open('https://propwire.com/search?q='+encodeURIComponent(a),'_blank');
+  // Propwire ignores ?q= (it just lands on its home page), so copy the address to paste into its search bar.
+  try{ navigator.clipboard.writeText(a); }catch(e){}
+  var w=window.open('https://propwire.com/','_blank');
   if(!w) showToast('Popup blocked — allow popups for this page and click again','error');
+  else showToast('Address copied — paste it into Propwire's search bar (Ctrl/Cmd+V)','success');
 }
 function dcReadForm(){
   return {
