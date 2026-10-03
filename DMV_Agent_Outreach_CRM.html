@@ -5664,53 +5664,85 @@ async function twLoadData(){
   } catch(e){ showToast('Could not load team work: '+twErr(e),'error'); teamAllTasks=teamAllTasks||[]; teamAllClock=teamAllClock||[]; teamPeople=teamPeople||[]; }
 }
 function twToggle(){ twOpen=!twOpen; renderTeamWork(true); }
+var twOpenRows = {};
+function twToggleRow(id){ twOpenRows[id]=!twOpenRows[id]; renderTeamWork(true); }
 async function renderTeamWork(keepData){
   var host=document.getElementById('team-work-host'); if(!host) return;
+  var card='background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;';
   if(!keepData || teamAllClock===null){
-    host.innerHTML='<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px"><div style="font-size:15px;font-weight:800">&#128101; Team Work</div><div style="padding:16px;color:var(--text4);font-size:13px">Loading&hellip;</div></div>';
+    host.innerHTML='<div style="'+card+'padding:24px;margin-top:10px;text-align:center;color:var(--text4);font-size:13px">Loading team&hellip;</div>';
     await twLoadData();
     host=document.getElementById('team-work-host'); if(!host) return;
   }
   var people={}; (teamPeople||[]).forEach(function(p){ people[p.id]=p.name; });
   teamAllClock.concat(teamAllTasks).forEach(function(x){ if(x.userId && !people[x.userId] && !(authProfile&&x.userId===authProfile.id)) people[x.userId]=x.userName||'(unknown)'; });
-  var ids=Object.keys(people).filter(function(id){ return !twPerson || id===twPerson; });
   var td=twLocalDay(new Date());
-  var cards = ids.length ? ids.map(function(id){
+  var rows=Object.keys(people).map(function(id){
     var clk=teamAllClock.filter(function(c){return c.userId===id;});
     var tks=teamAllTasks.filter(function(t){return t.userId===id;});
-    var todayRow=clk.find(function(c){return twLocalDay(c.clockIn)===td;}) || clk.find(function(c){return !c.clockOut;});
-    var status = !todayRow ? '<span style="color:var(--text4)">Not clocked in today</span>'
-      : (todayRow.clockOut ? 'Today: '+twFmtTime(todayRow.clockIn)+' &rarr; '+twFmtTime(todayRow.clockOut)+' &middot; <b>'+twFmtDur(twClockMs(todayRow))+'</b>'
-        : '<span style="color:#16a34a;font-weight:700">&#9679; On the clock</span> since '+twFmtTime(todayRow.clockIn)+' &middot; <b>'+twFmtDur(twClockMs(todayRow))+'</b>');
-    var total = clk.reduce(function(a,c){return a+twClockMs(c);},0);
-    var logRows = clk.length ? clk.map(function(c){
+    var live=clk.find(function(c){return !c.clockOut;});
+    var todayMs=clk.filter(function(c){return c.workDate===td;}).reduce(function(a,c){return a+twClockMs(c);},0);
+    var totalMs=clk.reduce(function(a,c){return a+twClockMs(c);},0);
+    var open=tks.filter(function(t){return t.status!=='completed';});
+    var cnt=function(s){return tks.filter(function(t){return t.status===s;}).length;};
+    var overdue=open.filter(function(t){return t.dueDate && t.dueDate<td;}).length;
+    var dueToday=open.filter(function(t){return t.dueDate===td;}).length;
+    return {id:id,name:people[id],clk:clk,tks:tks,live:live,todayMs:todayMs,totalMs:totalMs,open:open.length,inproc:cnt('in_process'),notst:cnt('not_started'),stuck:cnt('stuck'),done:cnt('completed'),overdue:overdue,dueToday:dueToday};
+  });
+  rows.sort(function(a,b){ return (b.live?1:0)-(a.live?1:0) || a.name.localeCompare(b.name); });
+  var on=rows.filter(function(r){return r.live;});
+  function stat(n,l,color){ return '<div style="flex:1;min-width:130px;'+card+'padding:12px 14px"><div style="font-size:22px;font-weight:800'+(color?';color:'+color:'')+'">'+n+'</div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;font-weight:700">'+l+'</div></div>'; }
+  var sum=rows.reduce(function(a,r){a.ms+=r.totalMs;a.open+=r.open;a.over+=r.overdue;a.stuck+=r.stuck;return a;},{ms:0,open:0,over:0,stuck:0});
+  var th='padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);text-align:left;font-weight:800;border-bottom:1px solid var(--border,#e5e7eb)';
+  var td_='padding:11px 10px;font-size:13px;border-bottom:1px solid var(--border,#e5e7eb);vertical-align:middle';
+  function pill(n,label,c,bg){ return n? '<span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;margin:1px 3px 1px 0;color:'+c+';background:'+bg+'">'+n+' '+label+'</span>' : ''; }
+  var body = rows.length ? rows.map(function(r){
+    var open=!!twOpenRows[r.id];
+    var status = r.live ? '<span style="color:#16a34a;font-weight:700">&#9679; On the clock</span><div style="font-size:11px;color:var(--text4)">since '+twFmtTime(r.live.clockIn)+'</div>'
+      : '<span style="color:var(--text4)">Off the clock</span>';
+    var tasksCell = pill(r.inproc,'in process','#2563eb','#dbeafe')+pill(r.notst,'not started','#64748b','#f1f5f9')+pill(r.stuck,'stuck','#dc2626','#fee2e2')+pill(r.done,'done','#059669','#d1fae5') || '<span style="color:var(--text4)">No tasks</span>';
+    var dueCell = (r.overdue?'<span style="color:#dc2626;font-weight:700">'+r.overdue+' overdue</span>':'') + (r.overdue&&r.dueToday?' &middot; ':'') + (r.dueToday?'<span style="color:#d97706;font-weight:700">'+r.dueToday+' due today</span>':'') || '<span style="color:var(--text4)">&mdash;</span>';
+    var main='<tr style="cursor:pointer'+(open?';background:var(--bg2,#f8fafc)':'')+'" onclick="twToggleRow(\''+r.id+'\')">'
+      +'<td style="'+td_+';font-weight:800">'+(open?'&#9662;':'&#9656;')+' '+esc(r.name)+'</td>'
+      +'<td style="'+td_+'">'+status+'</td>'
+      +'<td style="'+td_+';font-weight:700">'+twFmtDur(r.todayMs)+'</td>'
+      +'<td style="'+td_+';font-weight:700">'+twFmtDur(r.totalMs)+'</td>'
+      +'<td style="'+td_+'">'+tasksCell+'</td>'
+      +'<td style="'+td_+'">'+dueCell+'</td></tr>';
+    if(!open) return main;
+    var logRows = r.clk.length ? r.clk.map(function(c){
       return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border,#e5e7eb);font-size:13px;flex-wrap:wrap">'
-        + '<span style="font-weight:600;min-width:70px">'+ltFmtDate(c.workDate)+'</span>'
-        + '<span style="color:var(--text3);flex:1">'+twFmtTime(c.clockIn)+' &rarr; '+(c.clockOut?twFmtTime(c.clockOut):'<i>still on the clock</i>')+(c.editedAt?' <span style="font-size:10px;color:#b45309" title="Edited by owner">&#9998; edited</span>':'')+'</span>'
-        + '<span style="font-weight:700">'+twFmtDur(twClockMs(c))+'</span>'
-        + '<span><button class="btn btn-secondary btn-sm" style="padding:2px 8px" onclick="twOpenClockEdit('+c.id+')">&#9998;</button></span></div>';
-    }).join('') : '<div style="color:var(--text4,#9ca3af);font-size:13px;padding:6px 0">No clock-ins in this range.</div>';
-    var visTasks = tks.filter(function(t){ return t.status!=='completed' || (t.updatedAt && twLocalDay(t.updatedAt)>=twLocalDay(new Date(Date.now()-twDays*864e5))); });
-    return '<div style="border:1px solid var(--border,#e5e7eb);border-radius:12px;padding:14px;margin-top:10px">'
-      + '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px"><div style="font-size:15px;font-weight:800">'+esc(people[id])+'</div><div style="font-size:12px;color:var(--text3)">'+twDays+'-day total: <b>'+twFmtDur(total)+'</b></div></div>'
-      + '<div style="font-size:13px;margin-bottom:10px">'+status+'</div>'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Time log</div><button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="twOpenClockAdd(\''+id+'\')">+ Add day</button></div>'
-      + logRows
-      + '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin:14px 0 2px">Work &amp; status</div>'
-      + ttRowsHTML(visTasks)
-      + '</div>';
-  }).join('') : '<div style="padding:20px;text-align:center;color:var(--text4);font-size:13px">No staff accounts or activity yet.</div>';
-  var open = ids.length && teamAllClock.some(function(c){return !c.clockOut;});
+        +'<span style="font-weight:600;min-width:80px">'+ltFmtDate(c.workDate)+'</span>'
+        +'<span style="color:var(--text3);flex:1">'+twFmtTime(c.clockIn)+' &rarr; '+(c.clockOut?twFmtTime(c.clockOut):'<i>still on the clock</i>')+(c.editedAt?' <span style="font-size:10px;color:#b45309">&#9998; edited</span>':'')+'</span>'
+        +'<span style="font-weight:700">'+twFmtDur(twClockMs(c))+'</span>'
+        +'<button class="btn btn-secondary btn-sm" style="padding:2px 8px" onclick="twOpenClockEdit('+c.id+')">&#9998;</button></div>';
+    }).join('') : '<div style="color:var(--text4);font-size:13px;padding:6px 0">No clock-ins in this range.</div>';
+    var since=twLocalDay(new Date(Date.now()-twDays*864e5));
+    var vis=r.tks.filter(function(t){ return t.status!=='completed' || (t.updatedAt && twLocalDay(t.updatedAt)>=since); });
+    vis.sort(function(a,b){ var ac=a.status==='completed'?1:0, bc=b.status==='completed'?1:0; return ac-bc || (a.dueDate||'9999').localeCompare(b.dueDate||'9999'); });
+    var detail='<tr><td colspan="6" style="padding:4px 16px 16px 28px;border-bottom:1px solid var(--border,#e5e7eb);background:var(--bg2,#f8fafc)">'
+      +'<div style="display:flex;gap:24px;flex-wrap:wrap">'
+      +'<div style="flex:1;min-width:300px"><div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Clock in / out</div><button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="twOpenClockAdd(\''+r.id+'\')">+ Add day</button></div>'+logRows+'</div>'
+      +'<div style="flex:1.4;min-width:340px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin:10px 0 2px">Tasks &mdash; status &amp; finish date</div>'+ttRowsHTML(vis)+'</div>'
+      +'</div></td></tr>';
+    return main+detail;
+  }).join('') : '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4);font-size:13px">No staff accounts or activity yet.</td></tr>';
   host.innerHTML =
-    '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
-      + '<div style="font-size:15px;font-weight:800;cursor:pointer" onclick="twToggle()">'+(twOpen?'&#9662;':'&#9656;')+' &#128101; Team Work'+(open?' <span style="font-size:11px;color:#16a34a;font-weight:700">&#9679; someone is on the clock</span>':'')+'</div>'
-      + (twOpen ? '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-        + '<select class="form-select" style="font-size:12px" onchange="twPerson=this.value;renderTeamWork(true)"><option value="">Everyone</option>'+Object.keys(people).map(function(id){return '<option value="'+id+'"'+(twPerson===id?' selected':'')+'>'+esc(people[id])+'</option>';}).join('')+'</select>'
-        + '<select class="form-select" style="font-size:12px" onchange="twDays=+this.value;teamAllClock=null;renderTeamWork()">'+[7,14,30].map(function(n){return '<option value="'+n+'"'+(twDays===n?' selected':'')+'>Last '+n+' days</option>';}).join('')+'</select>'
-        + '<button class="btn btn-secondary btn-sm" onclick="teamAllClock=null;renderTeamWork()">&#8635;</button></div>' : '')
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">'
+      + stat(on.length?on.map(function(r){return esc(r.name);}).join(', '):'Nobody','On the clock now',on.length?'#16a34a':'')
+      + stat(twFmtDur(sum.ms),'Team hours ('+twDays+'d)')
+      + stat(sum.open,'Open tasks')
+      + stat(sum.over,'Overdue',sum.over?'#dc2626':'')
+      + stat(sum.stuck,'Stuck',sum.stuck?'#dc2626':'')
     + '</div>'
-    + (twOpen ? '<div style="font-size:12px;color:var(--text4,#9ca3af);margin-top:2px">Clock times and daily work. You can edit anything here.</div>'+cards : '')
+    + '<div style="'+card+'margin-top:12px;padding:6px 6px 10px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px">'
+        + '<div style="font-size:12px;color:var(--text4)">Click a person to see their time log and tasks. You can edit anything.</div>'
+        + '<select class="form-select" style="font-size:12px" onchange="twDays=+this.value;teamAllClock=null;renderTeamWork()">'+[7,14,30].map(function(n){return '<option value="'+n+'"'+(twDays===n?' selected':'')+'>Last '+n+' days</option>';}).join('')+'</select>'
+      + '</div>'
+      + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'
+        + '<th style="'+th+'">Person</th><th style="'+th+'">Status</th><th style="'+th+'">Today</th><th style="'+th+'">'+twDays+'-day hours</th><th style="'+th+'">Tasks</th><th style="'+th+'">Due</th>'
+      + '</tr></thead><tbody>'+body+'</tbody></table></div>'
     + '</div>';
 }
 function twPersonName(id){ var p=(teamPeople||[]).find(function(x){return x.id===id;}); if(p) return p.name; var r=(teamAllClock||[]).concat(teamAllTasks||[]).find(function(x){return x.userId===id;}); return r?r.userName:''; }
@@ -5782,7 +5814,7 @@ function sbItems(){
     return SB_ITEMS;
   }
   var allowed = Array.isArray(authProfile.sections) ? authProfile.sections : SB_STAFF_DEFAULT;
-  return [{k:'mywork',ic:'&#128202;',lb:'Dashboard',sl:'Dashboard',soon:false}].concat(SB_ITEMS.filter(function(it){ return allowed.indexOf(it.k)>=0; }));
+  return (authProfile.role==='recipient'?[]:[{k:'mywork',ic:'&#128202;',lb:'Dashboard',sl:'Dashboard',soon:false}]).concat(SB_ITEMS.filter(function(it){ return allowed.indexOf(it.k)>=0; }));
 }
 function sbSectionAllowed(k){ return sbItems().some(function(it){return it.k===k;}); }
 // =================== end Team Work ===================
@@ -5932,8 +5964,23 @@ function smsDateBar(){
 }
 // =================== end SMS Analytics helpers ===================
 
+var dashTab = 'overview';
+function dashTabsHTML(){
+  if(!isOwner()) return '';
+  function tb(k,label){ var on=dashTab===k; return '<button type="button" onclick="dashSetTab(\''+k+'\')" style="padding:8px 18px;border:0;background:none;font-size:14px;font-weight:700;cursor:pointer;border-bottom:3px solid '+(on?'var(--accent,#2563eb)':'transparent')+';color:'+(on?'var(--accent,#2563eb)':'var(--text3,#64748b)')+'">'+label+'</button>'; }
+  return '<div style="display:flex;gap:4px;border-bottom:1px solid var(--border,#e5e7eb);margin:4px 0 6px">'+tb('overview','&#128202; Overview')+tb('team','&#128101; Team')+'</div>';
+}
+function dashSetTab(k){ dashTab=k; renderDashboard(); }
 function renderDashboard(){
   var host=document.getElementById('section-main'); if(!host) return;
+  if(isOwner() && dashTab==='team'){
+    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128202; Dashboard</h2>'
+      +'<p>Your team: who is on the clock, hours, and every task with its status and finish date.</p></div>'
+      +'<div class="lt-actions"><button class="btn btn-secondary btn-sm" onclick="teamAllClock=null;renderTeamWork()">&#8635; Refresh</button></div></div>'
+      + dashTabsHTML() + '<div id="team-work-host"></div></div>';
+    renderTeamWork(teamAllClock!==null);
+    return;
+  }
   // Dashboard reads across every section, so make sure the lazy-loaded tables are in.
   var need=[];
   if(crmLists===null)   need.push(crmListsFetch());
@@ -5974,7 +6021,7 @@ function renderDashboard(){
         + '<button class="btn btn-secondary btn-sm" onclick="crmLists=null;crmProbate=null;crmBuyers=null;crmProps=null;renderDashboard()">&#8635; Refresh</button>'
       + '</div>'
     + '</div>'
-    + (isOwner() ? '<div id="team-work-host"></div>' : '')
+    + dashTabsHTML()
     // ===== Manager Agent briefing (Claude-powered) =====
     + mgrBriefingCardHTML()
     // ===== SMS Marketing Analytics (live from GHL) =====
@@ -6260,33 +6307,49 @@ function askRun(pref){
   var aTurn={role:'assistant', state:'loading'};  // placeholder answer, filled when it returns
   mgrThread.push(aTurn);
   mgrRenderThread();
-  askEnsureData().then(function(){
-    // The SAME deterministic local search feeds the model as GROUND TRUTH, so counts/lists
-    // match the CRM exactly. It also becomes the collapsible "matching records" under the answer.
-    var localHTML='', recCount=0, matched=null;
-    try {
-      var s=askParse(q); var g=askExec(s); localHTML=askRenderResults(g,s,q);
-      var order=['leads','tasks','lists','probate','buyers','deals'], mt={};
-      order.forEach(function(k){ var arr=g[k]||[]; mt[k]={count:arr.length, items:arr.slice(0,25).map(function(r){return {title:r.title,detail:r.sub||'',date:r.date||''};})}; });
-      mt.totalMatches=order.reduce(function(a,k){return a+(g[k]?g[k].length:0);},0);
-      recCount=mt.totalMatches; matched={query:q, results:mt};
+  // The server queries the live database itself; the browser sends only the question + chat history.
+  mgrCall({mode:'ask', question:q, history:mgrChatHistory}).then(function(r){
+    if(r && r.type==='clarify' && r.options && r.options.length){
+      aTurn.state='clarify'; aTurn.question=r.question; aTurn.options=r.options; aTurn.origQ=q;
+      mgrRenderThread(); return;
     }
-    catch(e){ localHTML=''; matched=null; }
-    // History carries the topic so follow-ups ("which of those are in MD?") stay in context.
-    mgrCall({mode:'ask', question:q, matched:matched, history:mgrChatHistory}).then(function(r){
-      if(r && r.type==='clarify' && r.options && r.options.length){
-        aTurn.state='clarify'; aTurn.question=r.question; aTurn.options=r.options; aTurn.origQ=q;
-        mgrRenderThread(); return;
-      }
-      var ans=(r&&r.answer)||'No answer came back.';
-      aTurn.state='answer'; aTurn.html=mgrMd(ans); aTurn.recordsHTML=localHTML||''; aTurn.recCount=recCount;
-      mgrRenderThread();
-      mgrChatHistory.push({role:'user',content:q},{role:'assistant',content:ans});
-      if(mgrChatHistory.length>8) mgrChatHistory=mgrChatHistory.slice(-8);
-    }).catch(function(){
-      aTurn.state='error'; aTurn.html='Couldn\u2019t reach the Manager Agent just now \u2014 try again.'; mgrRenderThread();
-    });
+    var ans=(r&&r.answer)||'No answer came back.';
+    aTurn.state='answer'; aTurn.html=mgrMd(ans);
+    aTurn.recordsHTML=mgrRecordsHTML(r&&r.records); aTurn.recCount=(r&&r.records)?r.records.length:0;
+    aTurn.evidenceHTML=mgrEvidenceHTML(r&&r.evidence);
+    mgrRenderThread();
+    mgrChatHistory.push({role:'user',content:q},{role:'assistant',content:ans});
+    if(mgrChatHistory.length>8) mgrChatHistory=mgrChatHistory.slice(-8);
+  }).catch(function(){
+    aTurn.state='error'; aTurn.html='Couldn\u2019t reach the Manager Agent just now \u2014 try again.'; mgrRenderThread();
   });
+}
+// Clickable record rows — straight from the database rows the answer was built on.
+function mgrRecordsHTML(recs){
+  if(!recs||!recs.length) return '';
+  var labels={lead:'\ud83c\udfe0 Leads',task:'\u2705 Tasks',list:'\ud83d\udcc7 Lists',probate:'\u2696\ufe0f Probate',buyer:'\ud83e\udd1d Buyers',deal:'\ud83c\udff7\ufe0f Deals'};
+  var order=['lead','task','list','probate','buyer','deal'], html='';
+  order.forEach(function(k){
+    var arr=recs.filter(function(r){return r.kind===k;}); if(!arr.length) return;
+    html+='<div class="ask-grp"><div class="ask-grp-h">'+labels[k]+' <span>'+arr.length+'</span></div>';
+    arr.forEach(function(r){
+      html+='<div class="ask-row" onclick="askOpen(\''+r.kind+'\','+(+r.id)+')">'
+        +'<div class="ask-row-t">'+esc(r.title||'')+'</div>'
+        +(r.sub?'<div class="ask-row-s">'+esc(r.sub)+'</div>':'')
+        +(r.date?'<div class="ask-row-d">Due '+ltFmtDate(String(r.date).slice(0,10))+'</div>':'')
+      +'</div>';
+    });
+    html+='</div>';
+  });
+  return html;
+}
+// "Show the data behind this" — the exact queries run, so every number is checkable.
+function mgrEvidenceHTML(ev){
+  if(!ev||!ev.length) return '';
+  return ev.map(function(e,i){
+    return '<div style="margin:6px 0;font-size:11.5px"><b>'+(i+1)+'. '+esc(e.why||'query')+'</b> \u2014 '+(e.error?('<span style="color:#dc2626">error: '+esc(e.error)+'</span>'):(e.rowCount+' row'+(e.rowCount===1?'':'s')))
+      +'<pre style="white-space:pre-wrap;margin:3px 0 0;padding:6px 8px;background:var(--bg2,#f3f4f6);border-radius:6px;font-size:11px">'+esc(e.sql||'')+'</pre></div>';
+  }).join('');
 }
 // Render the whole conversation. Only the LAST turn's clarify options are interactive.
 function mgrRenderThread(){
@@ -6309,7 +6372,8 @@ function mgrRenderThread(){
       }
     } else {
       inner=t.html||'';
-      if(t.recordsHTML) inner+='<details class="mgr-recs"><summary>\ud83d\udcc1 '+(t.recCount||0)+' matching record'+((t.recCount===1)?'':'s')+'</summary>'+t.recordsHTML+'</details>';
+      if(t.recordsHTML) inner+='<details class="mgr-recs" open><summary>\ud83d\udcc1 '+(t.recCount||0)+' record'+((t.recCount===1)?'':'s')+' \u2014 tap to open</summary>'+t.recordsHTML+'</details>';
+      if(t.evidenceHTML) inner+='<details class="mgr-recs"><summary>\ud83d\udd0d Show the data behind this</summary>'+t.evidenceHTML+'</details>';
     }
     return '<div class="mgr-turn"><div class="mgr-ask-lbl">\ud83e\udde0 Manager</div><div class="mgr-answer">'+inner+'</div></div>';
   }).join('');
@@ -6349,7 +6413,7 @@ function askOpen(kind,id){
 // Sends a COMPACT digest of the whole CRM (aggregates + tiny samples, low PII) to the
 // `manager-agent` edge function, which calls the OpenAI API and returns a plain-English answer.
 // Powers: (1) real answers in Ask AI, (2) the proactive Dashboard briefing.
-var MANAGER_URL = SUPABASE_URL + '/functions/v1/manager-agent';
+var MANAGER_URL = SUPABASE_URL + '/functions/v1/manager-agent-v2'; // v2 = database-grounded (queries live data, owner-only)
 var mgrBriefingCache = null;      // {answer, at} — briefing is cached per session to avoid re-spending
 var mgrChatHistory = [];          // rolling [{role,content}] sent to the model for context
 var mgrThread = [];               // visible conversation: [{role:'user',text} | {role:'assistant',state,...}]
@@ -6479,11 +6543,13 @@ function mgrBuildDigest(){
 
 // Call the edge function. Ensures the same lazy tables the dashboard/Ask use are loaded first.
 function mgrCall(payload){
-  return askEnsureData().then(function(){
-    payload.digest = mgrBuildDigest();
+  // The v2 function reads the live database itself (nothing is guessed from a browser digest) and
+  // only answers the signed-in owner, so send the user's session token, refreshed if near expiry.
+  var pre = (AUTH_ENABLED && authSession) ? Promise.resolve().then(function(){ return authRefreshIfNeeded(); }).catch(function(){}) : Promise.resolve();
+  return pre.then(function(){
     return fetch(MANAGER_URL, {
       method:'POST',
-      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY, 'Content-Type':'application/json' },
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' },
       body: JSON.stringify(payload)
     }).then(function(r){ return r.json(); });
   });
@@ -8377,7 +8443,7 @@ function buildFollowUpQueueHTML(nationwideOnly){
       + srcBadge(x.type)
       + '<div class="followup-item-addr" style="margin:0">'+esc(title)+'</div>'
       + '</div>'
-      + '<div class="followup-item-meta">'+badge+'<span>'+esc(l.name||'')+'</span>'+(l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):'')+'</div>'
+      + '<div class="followup-item-meta">'+badge+'<span>'+esc(l.name||'')+'</span>'+(l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>':'')+'</div>'
       + '<div class="followup-item-date">'+l.followUpDate+' &middot; '+lbl+'</div>'
       + (l.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+esc((l.notes||'').substring(0,80))+(l.notes&&l.notes.length>80?'&#8230;':'')+'</div>':'')
       + '</div>';
@@ -10840,11 +10906,13 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal()
 // 4. Auto-refresh every 30 seconds to catch changes from other users
 async function initFullApp() {
   // Step 1: Load local data immediately so UI shows fast
+  var isRecipTabs = !!(authProfile && authProfile.role==='recipient');
   try {
-    var stored = localStorage.getItem('crm_leads');
+    var stored = isRecipTabs ? null : localStorage.getItem('crm_leads');
     if(stored) leads = JSON.parse(stored);
   } catch(e) {}
-  if(!leads || leads.length === 0) {
+  if(isRecipTabs) leads = [];
+  else if(!leads || leads.length === 0) {
     leads = RAW_DATA.map(function(l){ return Object.assign({},l,{followUpDate:l.followUpDate||'',nationwide:l.nationwide||''}); });
   }
   computePendingActivity();
@@ -11292,7 +11360,14 @@ async function doAuthLogin(){
 async function routeByRole(){
   if(!authProfile){ renderAuthLogin(); return; }
   if(authProfile.role==='recipient'){
-    initRecipientPortal();
+    // Recipients the owner gave extra tabs to (Manage Team > Recipient can see) get the full app limited to those tabs.
+    await loadWorkAccess();
+    if(Array.isArray(authProfile.sections) && authProfile.sections.length){
+      var rn = authProfile.name || authProfile.email || 'User';
+      currentUser = { id:authProfile.id, name:rn, role:'Team', email:authProfile.email, color:'#7c3aed', initials:rn.trim().split(/\s+/).map(function(w){return w[0]||'';}).slice(0,2).join('').toUpperCase()||'ME' };
+      activeSection = authProfile.sections[0];
+      initFullApp();
+    } else initRecipientPortal();
   } else {
     // admin or team -> full CRM. Bridge to the legacy currentUser the rest of the app expects.
     var nm = authProfile.name || authProfile.email || 'User';
@@ -11563,7 +11638,7 @@ async function showManageTeam(){
               <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mt-emailed" checked> Only leads emailed to them</label>
             </div>
           </div>
-          <div id="mt-sections" class="form-field" style="margin-top:6px;display:none"><label class="form-label">Team member can see these sections <span style="font-weight:400;color:var(--text3);font-size:11px">(they always get their own Dashboard with clock + daily work)</span></label>${mtSectionsHTML('mts-',null)}</div>
+          <div id="mt-sections" class="form-field" style="margin-top:6px;display:none"><label class="form-label"><span id="mt-sec-title">Team member can see these sections</span> <span style="font-weight:400;color:var(--text3);font-size:11px">(pick &amp; choose tabs)</span></label>${mtSectionsHTML('mts-',null)}</div>
           <div id="mt-err" style="color:var(--red,#dc2626);font-size:12px;min-height:16px;margin-top:6px"></div>
           <button class="btn btn-primary btn-sm" onclick="mtCreate()" style="margin-top:6px">Create Account</button>
         </div>
@@ -11578,7 +11653,11 @@ function mtToggleScope(){
   var sc = document.getElementById('mt-scope');
   if(sc) sc.style.display = (role==='recipient') ? '' : 'none';
   var ss = document.getElementById('mt-sections');
-  if(ss) ss.style.display = ((role==='team'||role==='admin') && isOwner()) ? '' : 'none';
+  if(ss) ss.style.display = isOwner() ? '' : 'none';
+  var tt = document.getElementById('mt-sec-title');
+  if(tt) tt.textContent = role==='recipient' ? 'Recipient can also see these tabs' : 'Team member can see these sections';
+  // Recipients start with NO tabs ticked (leads-only portal); team keeps its defaults.
+  if(window.__mtLastRole!==role){ window.__mtLastRole=role; SB_STAFF_SECTIONS.forEach(function(k){ var e=document.getElementById('mts-'+k); if(e) e.checked = role==='recipient' ? false : SB_STAFF_DEFAULT.indexOf(k)>=0; }); }
 }
 // ---- Which sidebar sections a Team member can see (owner-only; stored in app_user_access) ----
 const MT_SECTION_LABELS = {dashboard:'Owner Dashboard (your pipeline view)',outreach:'CRM Outreach',lists:'List Tracking',probate:'Probate',fb:'Facebook Scrape',dispo:'Dispo',d4d:'D4D',jv:'JV Agreements',dealcheck:'Deal Check'};
@@ -11647,7 +11726,7 @@ async function mtCreate(){
   try {
     var res = await adminUsersCall(body);
     var issuedKey = (res && res.access_key) ? res.access_key : body.access_key;
-    if((body.role==='team'||body.role==='admin') && isOwner()){
+    if(isOwner()){
       try{
         var lst = await adminUsersCall({action:'list'});
         var nu = (lst.users||[]).find(function(u){ return (u.email||'').toLowerCase()===(body.email||'').trim().toLowerCase(); });
@@ -11736,7 +11815,7 @@ function mtEdit(id){
     +     '<label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="mte-emailed" '+(u.scope_emailed?'checked':'')+'> Only leads emailed to them</label>'
     +   '</div>'
     + '</div>'
-    + '<div id="mte-sections" class="form-field" style="margin-top:6px;display:none"><label class="form-label">Team member can see these sections <span style="font-weight:400;color:var(--text3);font-size:11px">(they always get their own Dashboard with clock + daily work)</span></label><div id="mte-sec-body" style="font-size:12px;color:var(--text4)">Loading&hellip;</div></div>'
+    + '<div id="mte-sections" class="form-field" style="margin-top:6px;display:none"><label class="form-label"><span id="mte-sec-title">Team member can see these sections</span> <span style="font-weight:400;color:var(--text3);font-size:11px">(pick &amp; choose tabs)</span></label><div id="mte-sec-body" style="font-size:12px;color:var(--text4)">Loading&hellip;</div></div>'
     + '<div id="mte-err" style="color:var(--red,#dc2626);font-size:12px;min-height:16px;margin-top:6px"></div>'
     + '<div style="display:flex;gap:8px;margin-top:8px">'
     +   '<button class="btn btn-primary btn-sm" onclick="mtSaveEdit(\''+u.id+'\')">&#128190; Save changes</button>'
@@ -11748,7 +11827,7 @@ function mtEdit(id){
   mtEditToggleScope();
   if(isOwner()) sbFetch('app_user_access?user_id=eq.'+u.id+'&select=sections').then(function(r){
     var b=document.getElementById('mte-sec-body'); if(!b) return;
-    b.innerHTML = mtSectionsHTML('mtes-', (r&&r[0]) ? r[0].sections : null); window.__mteSecLoaded = true;
+    b.innerHTML = mtSectionsHTML('mtes-', (r&&r[0]&&Array.isArray(r[0].sections)) ? r[0].sections : (u.role==='recipient' ? [] : null)); window.__mteSecLoaded = true;
   }).catch(function(){ var b=document.getElementById('mte-sec-body'); if(b) b.textContent='Could not load.'; });
 }
 function mtEditToggleScope(){
@@ -11756,7 +11835,9 @@ function mtEditToggleScope(){
   var sc=document.getElementById('mte-scope');
   if(sc) sc.style.display = (role==='recipient') ? '' : 'none';
   var ss=document.getElementById('mte-sections');
-  if(ss) ss.style.display = ((role==='team'||role==='admin') && isOwner()) ? '' : 'none';
+  if(ss) ss.style.display = isOwner() ? '' : 'none';
+  var tt=document.getElementById('mte-sec-title');
+  if(tt) tt.textContent = role==='recipient' ? 'Recipient can also see these tabs' : 'Team member can see these sections';
 }
 async function mtSaveEdit(id){
   var err=document.getElementById('mte-err'); if(err) err.textContent='';
@@ -11774,7 +11855,7 @@ async function mtSaveEdit(id){
   }
   try {
     await adminUsersCall(body);
-    if((role==='team'||role==='admin') && isOwner() && window.__mteSecLoaded) await mtSaveSections(id, mtReadSections('mtes-'));
+    if(isOwner() && window.__mteSecLoaded) await mtSaveSections(id, mtReadSections('mtes-'));
     await mtRefresh(); showToast('Account updated','success');
   }
   catch(e){ if(err) err.textContent = e.message; }
