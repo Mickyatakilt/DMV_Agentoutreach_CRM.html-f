@@ -5957,8 +5957,8 @@ function smsDateBar(){
 var dashTab = 'overview';
 function dashTabsHTML(){
   if(!isOwner()) return '';
-  function tb(k,label){ var on=dashTab===k; return '<button type="button" onclick="dashSetTab(\''+k+'\')" style="padding:8px 18px;border:0;background:none;font-size:14px;font-weight:700;cursor:pointer;border-bottom:3px solid '+(on?'var(--accent,#2563eb)':'transparent')+';color:'+(on?'var(--accent,#2563eb)':'var(--text3,#64748b)')+'">'+label+'</button>'; }
-  return '<div style="display:flex;gap:4px;border-bottom:1px solid var(--border,#e5e7eb);margin:4px 0 6px">'+tb('overview','&#128202; Overview')+tb('team','&#128101; Team')+'</div>';
+  function tb(k,label){ var on=dashTab===k; return '<button type="button" onclick="dashSetTab(\''+k+'\')" style="padding:7px 16px;border:0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:'+(on?'var(--accent,#2563eb)':'transparent')+';color:'+(on?'#fff':'var(--text3,#64748b)')+'">'+label+'</button>'; }
+  return '<div style="display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:var(--card,#fff);margin-right:8px">'+tb('overview','&#128202; Overview')+tb('team','&#128101; Team')+'</div>';
 }
 function dashSetTab(k){ dashTab=k; renderDashboard(); }
 function renderDashboard(){
@@ -5966,8 +5966,8 @@ function renderDashboard(){
   if(isOwner() && dashTab==='team'){
     host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128202; Dashboard</h2>'
       +'<p>Your team: who is on the clock, hours, and every task with its status and finish date.</p></div>'
-      +'<div class="lt-actions"><button class="btn btn-secondary btn-sm" onclick="teamAllClock=null;renderTeamWork()">&#8635; Refresh</button></div></div>'
-      + dashTabsHTML() + '<div id="team-work-host"></div></div>';
+      +'<div class="lt-actions">'+dashTabsHTML()+'<button class="btn btn-secondary btn-sm" onclick="teamAllClock=null;renderTeamWork()">&#8635; Refresh</button></div></div>'
+      + '<div id="team-work-host"></div></div>';
     renderTeamWork(teamAllClock!==null);
     return;
   }
@@ -6008,10 +6008,10 @@ function renderDashboard(){
     + '<div class="lt-head"><div><h2>&#128202; Dashboard</h2>'
       + '<p>Your whole pipeline at a glance &mdash; and one place that shows every follow-up due across Outreach, Tasks, Probate, and Lists so nothing slips.</p></div>'
       + '<div class="lt-actions">'
+        + dashTabsHTML()
         + '<button class="btn btn-secondary btn-sm" onclick="crmLists=null;crmProbate=null;crmBuyers=null;crmProps=null;renderDashboard()">&#8635; Refresh</button>'
       + '</div>'
     + '</div>'
-    + dashTabsHTML()
     // ===== Manager Agent briefing (Claude-powered) =====
     + mgrBriefingCardHTML()
     // ===== SMS Marketing Analytics (live from GHL) =====
