@@ -1601,7 +1601,7 @@ let lastSynced = localStorage.getItem('crm_last_synced') || '';
 let activeTab = 'leads'; // 'leads' | 'followups' | 'nationwide'
 // Phase 1: top-level section that wraps the tab system. 'outreach' = the current CRM (default).
 let activeSection = 'outreach'; // 'dashboard' | 'outreach' | 'lists' | 'probate' | 'dispo'
-let d4dTab = 'leads'; // 'leads' | 'mail' — sub-tabs inside the D4D section
+let d4dTab = 'leads'; // 'leads' | 'hot' | 'mail' — sub-tabs inside the D4D section
 try{ if(localStorage.getItem('crm_sb_collapsed')==='1'){ if(document.body) document.body.classList.add('sb-collapsed'); else document.addEventListener('DOMContentLoaded',function(){document.body.classList.add('sb-collapsed');}); } }catch(e){}
 let sortField = 'month'; let sortDir = 1;
 let leadScoreFilter = '';
@@ -1789,7 +1789,7 @@ function normalizeAddr(a){return(a||'').toLowerCase().trim().replace(/  /g,' ').
 function findDup(addr,excludeId){const n=normalizeAddr(addr); if(!n) return null; return leads.find(l=>!l.deleted&&l.id!==excludeId&&normalizeAddr(l.address)===n)||null;}
 function getNextId(){return leads.length?Math.max(...leads.map(l=>l.id))+1:1;}
 function getFUCounts(){
-  const w=leads.filter(l=>!l.deleted&&l.followUpDate&&l.nationwide!=='Yes'&&l.leadSource!=='D4D Auto-Scan').concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
+  const w=leads.filter(l=>!l.deleted&&l.d4dStatus!=='hot'&&l.followUpDate&&l.nationwide!=='Yes'&&l.leadSource!=='D4D Auto-Scan').concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
   return {overdue:w.filter(l=>getFUStatus(l.followUpDate)==='overdue').length,today:w.filter(l=>getFUStatus(l.followUpDate)==='today').length,soon:w.filter(l=>getFUStatus(l.followUpDate)==='soon').length,total:w.length};
 }
 function getNWFUCounts(){
@@ -6943,6 +6943,7 @@ function rvRowHTML(it){
         ? '<span style="color:#dc2626;font-size:11px;font-weight:600;white-space:nowrap">Number Not Available</span>'
         : '<span style="color:var(--text4);font-size:11px">&#8212;</span>');
   var isHot = kind==='lead' && !!l.d4dHot;
+  var inHotTab = kind==='lead' && activeSection==='d4d' && d4dTab==='hot';
   // 🔥 Hot toggle: click to flag a lead to come back to. When on, the whole row goes red
   // (and the lead floats to the top); the white "Hot" letters stay readable on the red.
   var hotBtn = kind==='lead'
@@ -6981,7 +6982,8 @@ function rvRowHTML(it){
     +'<td>'+note+'</td>'
     +'<td><span class="money-val">'+formatMoney(offer)+'</span></td>'
     +'<td><span class="arv-val">'+formatMoney(l.arv)+'</span></td>'
-    +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
+    +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')
+      +(inHotTab?'<div onclick="event.stopPropagation()" style="margin-top:4px"><input type="date" value="'+esc(l.followUpDate||'')+'" onchange="d4dSetFollowUp('+l.id+',this.value)" title="Set follow-up date" style="font-size:11px;padding:2px 4px;border:1px solid var(--border,#e2e8f0);border-radius:6px"></div>':'')+'</td>'
     +'<td>'+statusBadge(status)+'</td>'
     +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
       +dlBtn
@@ -6990,8 +6992,13 @@ function rvRowHTML(it){
       +propwireBtn
       +mailBtn
       +'<button class="btn btn-secondary btn-sm" onclick="'+openFn+'">Open</button> '
-      +(kind==='lead' ? '<button class="btn btn-sm" onclick="sendLeadToTask('+l.id+')" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button> ' : '')
-      +'<button class="btn btn-green btn-sm" onclick="completeReview(\''+kind+'\','+l.id+')">&#9989; Complete</button> '
+      +(inHotTab
+        ? '<button class="btn btn-secondary btn-sm" onclick="d4dUnhot('+l.id+')" title="Put this lead back in the D4D Leads list" style="font-weight:700">&#8617; Back to Leads</button> '
+          +'<button class="btn btn-sm" onclick="sendLeadToTask('+l.id+')" title="Push this deal into the CRM Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to CRM Task</button> '
+        : (kind==='lead' && isD4D
+            ? '<button class="btn btn-sm" onclick="d4dSendHot('+l.id+')" title="Move this lead to the D4D Hot Leads tab" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-weight:700">&#128293; Send Hot Lead</button> '
+            : (kind==='lead' ? '<button class="btn btn-sm" onclick="sendLeadToTask('+l.id+')" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button> ' : '')))
+      +(inHotTab ? '' : '<button class="btn btn-green btn-sm" onclick="completeReview(\''+kind+'\','+l.id+')">&#9989; Complete</button> ')
       +'<button class="btn btn-danger btn-sm" onclick="removeFromReview(\''+kind+'\','+l.id+')">Remove</button>'
     +'</td>'
     +'</tr>';
@@ -7034,6 +7041,9 @@ function renderD4DSection(){
   var host=document.getElementById('section-main'); if(!host) return;
   var mailN = leads.filter(function(l){ return !l.deleted && l.d4dStatus==='mail_queued'; }).length
     + jvLeads.filter(function(l){ return !l.deleted && l.d4dStatus==='mail_queued'; }).length;
+  var hotLeads = d4dHotList();
+  var hotN = hotLeads.length;
+  var hotOver = hotLeads.filter(function(l){ return l.followUpDate && getFUStatus(l.followUpDate)==='overdue'; }).length;
   host.innerHTML = '<div class="lt-wrap">'
     +'<div class="lt-head"><div><h2>&#128663; Driving for Dollars</h2>'
     +'<p>Distress leads found automatically by the Driving-for-Dollars robot (facade graded from Street View). Click &#9889; Scan Now to find more &mdash; new hot leads land here in ~5-10 minutes. Address links open the exact graded Street View. Use &#128100; Find Owner (Propwire) where the owner name is blank, or &#9993; Send Mail to queue a property for a direct-mail postcard/letter — it moves to the Send Mail tab and off your other lists.</p></div>'
@@ -7041,18 +7051,89 @@ function renderD4DSection(){
     +d4dScanBannerHTML()+d4dLimitBannerHTML()
     +'<div class="tabs" style="position:static;margin:0 0 14px;padding:0">'
       +'<div class="tab '+(d4dTab==='leads'?'active':'')+'" onclick="d4dSetTab(\'leads\')">&#128663; Leads</div>'
+      +'<div class="tab '+(d4dTab==='hot'?'active':'')+'" onclick="d4dSetTab(\'hot\')">&#128293; Hot Leads'
+        +(hotN?' <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">'+hotN+'</span>':'')
+        +(hotOver?' <span title="Overdue follow-ups" style="background:#dc2626;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">'+hotOver+' overdue</span>':'')
+      +'</div>'
       +'<div class="tab '+(d4dTab==='mail'?'active':'')+'" onclick="d4dSetTab(\'mail\')">&#9993; Send Mail'
         +(mailN?' <span style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">'+mailN+'</span>':'')
       +'</div>'
     +'</div>'
-    +(d4dTab==='mail' ? renderD4DMailTabHTML() : renderD4DLeadsTabHTML())
+    +(d4dTab==='mail' ? renderD4DMailTabHTML() : d4dTab==='hot' ? renderD4DHotTabHTML() : renderD4DLeadsTabHTML())
     +'</div>';
   rvUpdateBar();
 }
 function renderD4DLeadsTabHTML(){
-  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && isD4DLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'; }).map(function(l){ return {kind:'lead', l:l}; })
+  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && isD4DLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && l.d4dStatus!=='hot'; }).map(function(l){ return {kind:'lead', l:l}; })
     .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
   return rvBulkBarHTML(items)+rvTableHTML(items,'&#128663;','No D4D leads yet — click &#9889; Scan Now');
+}
+// 🔥 Hot Leads sub-tab: D4D leads the team marked "Send Hot Lead". They live ONLY here (and in the
+// D4D follow-up board below) -- never in the CRM Tasks tab or CRM Follow-Ups. Uses the existing
+// d4d_status column (value 'hot'), so no DB migration is needed.
+function d4dHotList(){ return leads.filter(function(l){ return !l.deleted && l.d4dStatus==='hot'; }); }
+async function d4dSendHot(id){
+  var l=leads.find(function(x){return x.id===id;});
+  if(!l){ showToast('Lead not found','error'); return; }
+  l.d4dStatus='hot';
+  l.activityLog=(l.activityLog||[]).concat([{ at:new Date().toISOString(), by:(currentUser&&currentUser.name)||'Me', note:'Sent to D4D Hot Leads', type:'Hot Lead' }]);
+  save(); d4dRefreshTab(); if(activeSection!=='d4d') render();
+  var ok=await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+  else showToast('Moved to the 🔥 Hot Leads tab','success');
+}
+async function d4dUnhot(id){
+  var l=leads.find(function(x){return x.id===id;});
+  if(!l) return;
+  l.d4dStatus='';
+  save(); d4dRefreshTab();
+  var ok=await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+  else showToast('Back in D4D Leads','success');
+}
+async function d4dSetFollowUp(id,val){
+  var l=leads.find(function(x){return x.id===id;});
+  if(!l) return;
+  l.followUpDate=val||'';
+  save(); d4dRefreshTab();
+  var ok=await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+}
+function d4dHotFollowUpHTML(hot){
+  var withFU=hot.filter(function(l){return l.followUpDate;}).sort(function(a,b){return a.followUpDate>b.followUpDate?1:-1;});
+  function item(l){
+    var d=daysDiff(l.followUpDate);
+    var lbl=d<0?Math.abs(d)+'d overdue':d===0?'Today':d===1?'Tomorrow':'In '+d+'d';
+    var ph=l.phone?String(l.phone).split('/')[0].trim():'';
+    return '<div class="followup-item" onclick="openDetail('+l.id+')" style="cursor:pointer">'
+      +'<div class="followup-item-addr" style="margin:0 0 3px">'+esc(l.address||l.name||'&#8212;')+'</div>'
+      +'<div class="followup-item-meta"><span>'+esc(l.name||'')+'</span>'+(ph?'<a href="tel:'+esc(ph.replace(/[^\d+]/g,''))+'" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:none">'+esc(ph)+'</a>':'')+'</div>'
+      +'<div class="followup-item-date">'+l.followUpDate+' &middot; '+lbl+'</div>'
+      +(l.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+esc(l.notes.substring(0,80))+(l.notes.length>80?'&#8230;':'')+'</div>':'')
+      +'</div>';
+  }
+  function card(title,items,hColor,hBg,icon){
+    return '<div class="followup-group"><div class="followup-group-header" style="background:'+hBg+';color:'+hColor+'"><span>'+icon+' '+title+'</span>'
+      +'<span style="background:'+hColor+';color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">'+items.length+'</span></div>'
+      +'<div style="max-height:360px;overflow-y:auto">'+(items.length?items.map(item).join(''):'<div class="followup-empty">None</div>')+'</div></div>';
+  }
+  function by(st){ return withFU.filter(function(l){return getFUStatus(l.followUpDate)===st;}); }
+  return '<div style="font-size:13px;font-weight:700;margin:0 0 10px">&#128197; Hot Lead Follow-Ups</div>'
+    +'<div class="followup-grid" style="margin-bottom:16px">'
+    +card('Overdue',by('overdue'),'#dc2626','#fee2e2','&#128308;')
+    +card('Due Today',by('today'),'#b45309','#fef3c7','&#128993;')
+    +card('Next 3 Days',by('soon'),'#0d9488','#f0fdfa','&#128994;')
+    +'</div>';
+}
+function renderD4DHotTabHTML(){
+  var items=d4dHotList().map(function(l){ return {kind:'lead', l:l}; })
+    .sort(function(a,b){
+      var fa=a.l.followUpDate||'9999', fb=b.l.followUpDate||'9999';
+      return fa>fb?1:fa<fb?-1:0;
+    });
+  return '<p style="font-size:12px;color:var(--text3);margin:-4px 0 12px">Leads you sent with <b>Send Hot Lead</b>. Set a follow-up date on a row (or in Open &rarr; Edit) and it appears in the board below. These stay in D4D &mdash; they do not go to the CRM Tasks or Follow-Ups tabs.</p>'
+    +d4dHotFollowUpHTML(items.map(function(i){return i.l;}))
+    +rvBulkBarHTML(items)+rvTableHTML(items,'&#128293;','No hot leads yet — click &#128293; Send Hot Lead on a D4D lead');
 }
 // ✉️ Send Mail sub-tab: D4D properties (leads AND tasks — a D4D lead can be converted to a Task
 // via Send to Task) queued for a direct-mail postcard/letter. Queueing PULLS the item out of
@@ -8096,9 +8177,9 @@ function renderLeadsTab(){
   const customizeBtn=`<div class="stat-card" onclick="showStatCustomizer()" style="cursor:pointer;justify-content:center;align-items:center;color:var(--text3)" title="Choose which counters show"><div style="font-size:12px;font-weight:700">&#9881;&#65039; Customize</div></div>`;
 
   // DMV Leads page stats mirror the DMV Follow-Up queue: DMV Leads + Tasks only, Nationwide excluded
-  const allFUCount = leads.filter(l=>!l.deleted&&l.followUpDate&&l.nationwide!=='Yes').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate).length;
-  const allOverdue = leads.filter(l=>!l.deleted&&l.followUpDate&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='overdue').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='overdue').length;
-  const allToday = leads.filter(l=>!l.deleted&&l.followUpDate&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='today').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='today').length;
+  const allFUCount = leads.filter(l=>!l.deleted&&l.d4dStatus!=='hot'&&l.followUpDate&&l.nationwide!=='Yes').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate).length;
+  const allOverdue = leads.filter(l=>!l.deleted&&l.d4dStatus!=='hot'&&l.followUpDate&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='overdue').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='overdue').length;
+  const allToday = leads.filter(l=>!l.deleted&&l.d4dStatus!=='hot'&&l.followUpDate&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='today').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='today').length;
   const overdueChip=`<div class="stat-card" onclick="setTab('followups')" style="${allOverdue>0?'border-color:#fca5a5;background:#fee2e2;':''}"><div class="stat-dot" style="background:#dc2626"></div><div><div class="stat-num" style="${allOverdue>0?'color:#dc2626':''}">${allOverdue}</div><div class="stat-label" style="${allOverdue>0?'color:#dc2626':''}">Overdue</div></div></div>`;
   const fuChip=`<div class="stat-card" onclick="setTab('followups')" style="${allToday>0?'border-color:#fcd34d;background:#fef3c7;':'border-color:#5eead4;background:#f0fdfa;'}"><div class="stat-dot" style="background:${allToday>0?'#b45309':'#0d9488'}"></div><div><div class="stat-num" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?allToday:allFUCount}</div><div class="stat-label" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?'Due Today':'Follow-Ups'}</div></div></div>`;
 
@@ -8400,7 +8481,7 @@ function buildFollowUpQueueHTML(nationwideOnly){
     });
   } else {
     leads.forEach(function(l){
-      if(!l.deleted && l.followUpDate && l.nationwide!=='Yes' && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'){
+      if(!l.deleted && l.followUpDate && l.nationwide!=='Yes' && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && l.d4dStatus!=='hot'){
         allFU.push({lead:l, type:'dmv', isTask:false});
       }
     });
@@ -8597,7 +8678,9 @@ function renderDetailModal(){
         <div class="modal-footer">
           <button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>
           <button class="btn btn-secondary btn-sm" onclick="sendToReview('lead',${l.id})">&#128203; Review</button>
-          <button class="btn btn-sm" onclick="sendLeadToTask(${l.id})" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to Task</button>
+          ${d4dOrigin(l)&&l.d4dStatus!=='hot'
+            ? `<button class="btn btn-sm" onclick="closeModal();d4dSendHot(${l.id})" title="Move this lead to the D4D Hot Leads tab" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-weight:700">&#128293; Send Hot Lead</button>`
+            : `<button class="btn btn-sm" onclick="sendLeadToTask(${l.id})" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to ${d4dOrigin(l)?'CRM ':''}Task</button>`}
           ${d4dOrigin(l)&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent'?'<button class="btn btn-sm" onclick="d4dSendMailFromModal(\'lead\','+l.id+')" title="Queue this property for a direct-mail postcard/letter — moves it to the ✉️ Send Mail tab" style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>':''}
           <button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal('lead',${l.id})">&#128197; Schedule SMS</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,'lead',${l.id})">&#128231; Send to Team</button>
