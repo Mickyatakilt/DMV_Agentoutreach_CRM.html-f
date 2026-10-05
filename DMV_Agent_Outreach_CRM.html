@@ -8308,11 +8308,20 @@ async function completeReview(kind, id){
 }
 function removeFromReview(kind, id){
   if(typeof id==='undefined'){ id=kind; kind='lead'; }
-  // Only takes it off the Review queue -- the lead/task itself stays in its database.
-  if(!confirm('Remove this from the Review queue?\n\nThe lead/task stays in the CRM.')) return;
   var arr = kind==='task' ? jvLeads : leads;
   var l = arr.find(function(x){return x.id===id;});
   if(!l) return;
+  // D4D auto-scan leads: Remove = really remove (soft-delete, recoverable from Trash) so the lead
+  // never lingers in any list and the DB then blocks it from ever being re-added.
+  if(kind==='lead' && isD4DLead(l)){
+    if(!confirm('Remove this D4D lead?\n\n'+(l.address||'')+'\n\nIt is deleted and will not come back (recoverable from Trash).')) return;
+    l.needsReview = false; l.deleted = true; l.deletedAt = new Date().toISOString();
+    save(); render();
+    saveLeadToSupabase(l).then(function(ok){ if(!ok) showToast('Cloud sync failed -- check your connection','error'); });
+    return;
+  }
+  // Only takes it off the Review queue -- the lead/task itself stays in its database.
+  if(!confirm('Remove this from the Review queue?\n\nThe lead/task stays in the CRM.')) return;
   l.needsReview = false;
   if(kind==='task'){ saveJV(); render(); saveJVToSupabase(l).then(function(ok){ if(!ok) showToast('Cloud sync failed -- check your connection','error'); }); return; }
   save(); render();
