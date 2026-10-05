@@ -5469,7 +5469,7 @@ const TT_STATUSES = [
 ];
 function ttStatusMeta(s){ return TT_STATUSES.find(function(x){return x[0]===s;}) || TT_STATUSES[0]; }
 function ttStatusBadge(s){ var m=ttStatusMeta(s); return '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;color:'+m[2]+';background:'+m[3]+'">'+m[1]+'</span>'; }
-function ttFromDb(r){ return {id:r.id,userId:r.user_id,userName:r.user_name||'',text:r.task_text||'',dueDate:r.due_date||'',status:r.status||'not_started',createdAt:r.created_at,updatedAt:r.updated_at}; }
+function ttFromDb(r){ return {id:r.id,userId:r.user_id,userName:r.user_name||'',text:r.task_text||'',dueDate:r.due_date||'',status:r.status||'not_started',createdAt:r.created_at,updatedAt:r.updated_at,attachments:Array.isArray(r.attachments)?r.attachments:[],reviewRequested:!!r.review_requested,reviewStatus:r.review_status||'',reviewNote:r.review_note||'',reviewSentAt:r.review_sent_at||''}; }
 function tcFromDb(r){ return {id:r.id,userId:r.user_id,userName:r.user_name||'',workDate:r.work_date,clockIn:r.clock_in,clockOut:r.clock_out,editedAt:r.edited_at}; }
 function twLocalDay(d){ var x=new Date(d); return x.getFullYear()+'-'+('0'+(x.getMonth()+1)).slice(-2)+'-'+('0'+x.getDate()).slice(-2); }
 function twFmtTime(iso){ return iso ? new Date(iso).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) : '—'; }
@@ -5493,6 +5493,7 @@ async function workLoadMine(){
     ]);
     teamTasks = (r[0]||[]).map(ttFromDb);
     myClock = (r[1]||[]).map(tcFromDb);
+    await ttLoadComments();
   } catch(e){ teamTasks=teamTasks||[]; myClock=myClock||[]; showToast('Could not load your work','error'); }
 }
 
@@ -5567,17 +5568,15 @@ async function ttEditText(id){
   if(await ttPatch(id,{task_text:v})) ttRefreshViews();
 }
 async function ttDelete(id){
-  if(!confirm('Remove this task?')) return;
-  try{
-    await sbFetch(TT_PATH+'?id=eq.'+id,'PATCH',{deleted:true,updated_at:new Date().toISOString()});
-    teamTasks=(teamTasks||[]).filter(function(x){return +x.id!==+id;});
-    teamAllTasks=(teamAllTasks||[]).filter(function(x){return +x.id!==+id;});
-    ttRefreshViews();
-  } catch(e){ showToast('Could not remove task','error'); }
+  var t=ttFind(id);
+  if(!confirm('Delete this task'+(t&&t.attachments.length?' and its '+t.attachments.length+' attached file(s)':'')+' for good? This cannot be undone.')) return;
+  await ttHardDelete([id]);
 }
 function ttRefreshViews(){
   if(activeSection==='mywork') renderMyWork();
   else if(activeSection==='dashboard') renderTeamWork(true);
+  else if(activeSection==='outreach' && activeTab==='review') renderReviewTab();
+  ttUpdateReviewBadge();
 }
 async function ttAddFromForm(){
   var textEl=document.getElementById('tt-new-text'), stEl=document.getElementById('tt-new-status'), dueEl=document.getElementById('tt-new-due');
@@ -5596,7 +5595,7 @@ function ttRowsHTML(tasks){
   return tasks.map(function(t){
     var carried = t.createdAt && twLocalDay(t.createdAt)<td && t.status!=='completed';
     var overdue = t.dueDate && t.status!=='completed' && t.dueDate<td;
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border,#e5e7eb);flex-wrap:wrap">'
+    return '<div style="padding:9px 0;border-bottom:1px solid var(--border,#e5e7eb)"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'
       + '<div style="flex:1;min-width:180px"><div style="font-size:13px;font-weight:600'+(t.status==='completed'?';text-decoration:line-through;color:var(--text3)':'')+'">'+esc(t.text)+'</div>'
         + '<div style="font-size:11px;color:var(--text4,#9ca3af)">'+(carried?'Carried over from '+ltFmtDate(twLocalDay(t.createdAt))+' &middot; ':'')+(overdue?'<span style="color:#dc2626;font-weight:700">Past finish date</span>':'')+'</div></div>'
       + '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap">'
@@ -5605,9 +5604,237 @@ function ttRowsHTML(tasks){
         + '</select>'
         + '<input type="date" class="form-input" style="font-size:12px;padding:3px 6px;width:135px" title="Finish date" value="'+esc(t.dueDate||'')+'" onchange="ttSetFinish('+t.id+',this.value)">'
         + '<button class="btn btn-secondary btn-sm" style="padding:3px 8px" onclick="ttEditText('+t.id+')" title="Edit">&#9998;</button>'
-        + '<button class="btn btn-secondary btn-sm" style="padding:3px 8px" onclick="ttDelete('+t.id+')" title="Remove">&#10005;</button>'
-      + '</div></div>';
+        + '<button class="btn btn-secondary btn-sm" style="padding:3px 8px" onclick="ttDelete('+t.id+')" title="Delete task">&#128465;</button>'
+      + '</div></div>'
+      + ttExtrasHTML(t)
+      + '</div>';
   }).join('');
+}
+
+// ---- Attachments / Submit for Review / Comments on daily tasks ----
+// team_tasks.attachments = [{name,path,url,size,type}] (files live in the public "team-files" bucket,
+// removed from storage whenever the attachment or the task is deleted). Submit for Review sets
+// review_requested + review_status='pending'; the owner sees those in Review > Task Reviews.
+// Comments: team_task_comments (per-task thread), team_comment_reads (unread tracking).
+const TEAM_BUCKET = 'team-files';
+var ttComments = [], ttReads = {}, ttPendingCount = 0;
+function ttFind(id){ return (teamTasks||[]).concat(teamAllTasks||[]).find(function(x){return +x.id===+id;}); }
+function ttMe(){ return authProfile && authProfile.id; }
+function ttFmtSize(n){ n=+n||0; return n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB'; }
+function ttFmtStamp(iso){ var d=new Date(iso); return d.toLocaleDateString([], {month:'short',day:'numeric'})+' '+d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
+async function ttLoadComments(){
+  try{
+    var r = await Promise.all([
+      sbFetch('team_task_comments?select=*&order=created_at.desc&limit=1000'),
+      sbFetch('team_comment_reads?select=task_id,last_read_at')
+    ]);
+    ttComments = r[0]||[]; ttReads = {};
+    (r[1]||[]).forEach(function(x){ ttReads[x.task_id]=x.last_read_at; });
+  } catch(e){ ttComments = ttComments||[]; }
+}
+function ttCmts(id){ return ttComments.filter(function(c){return +c.task_id===+id;}).sort(function(a,b){return a.created_at<b.created_at?-1:1;}); }
+function ttUnread(id){
+  var last = ttReads[id] || '';
+  return ttComments.filter(function(c){ return +c.task_id===+id && c.author_id!==ttMe() && c.created_at>last; }).length;
+}
+function ttUnreadTotal(){ var ids={}; ttComments.forEach(function(c){ ids[c.task_id]=1; }); return Object.keys(ids).reduce(function(a,id){return a+ttUnread(id);},0); }
+
+// Attachments
+function ttPickFiles(id){ var i=document.getElementById('tt-file-'+id); if(i) i.click(); }
+async function ttUploadFiles(id, files){
+  files = Array.prototype.slice.call(files||[]); if(!files.length) return;
+  var t = ttFind(id); if(!t) return;
+  await authRefreshIfNeeded();
+  showToast('Uploading '+files.length+' file'+(files.length!==1?'s':'')+'…','info');
+  var list = (t.attachments||[]).slice(), fail = 0;
+  for(var i=0;i<files.length;i++){
+    var f = files[i];
+    if(f.size > 25*1048576){ showToast(f.name+' is over 25 MB','error'); fail++; continue; }
+    try{
+      var clean=(f.name||'file').replace(/[^a-zA-Z0-9._-]/g,'_');
+      var path = id+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,7)+'-'+clean;
+      var r = await fetch(SUPABASE_URL+'/storage/v1/object/'+TEAM_BUCKET+'/'+path, {method:'POST',
+        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':f.type||'application/octet-stream','x-upsert':'true'}, body:f});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      list.push({name:f.name, path:path, url:SUPABASE_URL+'/storage/v1/object/public/'+TEAM_BUCKET+'/'+path, size:f.size, type:f.type||''});
+    } catch(e){ fail++; showToast('Could not upload '+f.name,'error'); }
+  }
+  if(list.length!==(t.attachments||[]).length){
+    try{ await sbFetch(TT_PATH+'?id=eq.'+id,'PATCH',{attachments:list, updated_at:new Date().toISOString()}); t.attachments=list;
+      [teamTasks,teamAllTasks].forEach(function(a){ var x=(a||[]).find(function(y){return +y.id===+id;}); if(x) x.attachments=list; });
+      if(!fail) showToast('Attached','success'); }
+    catch(e){ showToast('Saved files but could not update task: '+twErr(e),'error'); }
+  }
+  ttRefreshViews();
+}
+async function ttStorageRemove(paths){
+  paths = (paths||[]).filter(Boolean); if(!paths.length) return;
+  try{ await fetch(SUPABASE_URL+'/storage/v1/object/'+TEAM_BUCKET, {method:'DELETE',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':'application/json'}, body:JSON.stringify({prefixes:paths})}); }catch(e){}
+}
+async function ttRemoveAttachment(id, idx){
+  var t=ttFind(id); if(!t||!t.attachments[idx]) return;
+  if(!confirm('Remove "'+t.attachments[idx].name+'"? The file is deleted permanently.')) return;
+  var gone=t.attachments[idx], list=t.attachments.filter(function(_,i){return i!==idx;});
+  try{
+    await sbFetch(TT_PATH+'?id=eq.'+id,'PATCH',{attachments:list, updated_at:new Date().toISOString()});
+    await ttStorageRemove([gone.path]);
+    [teamTasks,teamAllTasks].forEach(function(a){ var x=(a||[]).find(function(y){return +y.id===+id;}); if(x) x.attachments=list; });
+    ttRefreshViews();
+  } catch(e){ showToast('Could not remove: '+twErr(e),'error'); }
+}
+// Permanently delete tasks + their files + comments (comments cascade in the DB).
+async function ttHardDelete(ids){
+  try{
+    var paths=[];
+    ids.forEach(function(id){ var t=ttFind(id); if(t) (t.attachments||[]).forEach(function(a){ paths.push(a.path); }); });
+    await sbFetch(TT_PATH+'?id=in.('+ids.join(',')+')','DELETE');
+    await ttStorageRemove(paths);
+    var gone=function(x){ return ids.indexOf(+x.id)<0 && ids.indexOf(x.id)<0; };
+    teamTasks=(teamTasks||[]).filter(gone); teamAllTasks=(teamAllTasks||[]).filter(gone);
+    ttComments=ttComments.filter(function(c){ return ids.indexOf(+c.task_id)<0; });
+    showToast('Deleted','success'); ttRefreshViews();
+  } catch(e){ showToast('Could not delete: '+twErr(e),'error'); }
+}
+async function ttDeleteCompleted(userId){
+  var list=(teamAllTasks||[]).filter(function(t){return t.userId===userId && t.status==='completed';});
+  if(!list.length) return;
+  var files=list.reduce(function(a,t){return a+t.attachments.length;},0);
+  if(!confirm('Permanently delete ALL '+list.length+' completed task(s) for '+twPersonName(userId)+(files?', including '+files+' attached file(s)':'')+', plus their comments?\n\nThis cannot be undone.')) return;
+  await ttHardDelete(list.map(function(t){return +t.id;}));
+}
+
+// Submit for Review
+async function ttToggleReview(id, on){
+  var f = on ? {review_requested:true, review_status:'pending', review_note:null, review_sent_at:new Date().toISOString(), reviewed_at:null}
+             : {review_requested:false, review_status:null, review_sent_at:null};
+  if(await ttPatch(id,f)){
+    var t=ttFind(id); if(t){ t.reviewRequested=!!on; t.reviewStatus=on?'pending':''; t.reviewNote=''; t.reviewSentAt=on?f.review_sent_at:''; }
+    [teamTasks,teamAllTasks].forEach(function(a){ var x=(a||[]).find(function(y){return +y.id===+id;}); if(x){ x.reviewRequested=!!on; x.reviewStatus=on?'pending':''; x.reviewNote=''; x.reviewSentAt=on?f.review_sent_at:''; } });
+    if(on) showToast('Sent to your manager’s Review queue','success');
+    ttRefreshViews();
+  } else ttRefreshViews();
+}
+async function ttReviewDecision(id, decision){
+  var note='';
+  if(decision==='changes'){ note=prompt('What needs to change? (the team member will see this)',''); if(note===null) return; note=note.trim(); }
+  var f={review_status:decision, review_note:note||null, reviewed_at:new Date().toISOString()};
+  if(decision==='changes') f.status='in_process';
+  if(await ttPatch(id,f)){
+    [teamTasks,teamAllTasks].forEach(function(a){ var x=(a||[]).find(function(y){return +y.id===+id;}); if(x){ x.reviewStatus=decision; x.reviewNote=note; if(decision==='changes') x.status='in_process'; } });
+    if(note) await ttPostCommentRaw(id,'Needs changes: '+note);
+    ttRefreshViews();
+  }
+}
+function ttReviewBadge(t){
+  if(t.reviewStatus==='pending') return '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;color:#b45309;background:#fef3c7">&#9203; In review</span>';
+  if(t.reviewStatus==='approved') return '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;color:#059669;background:#d1fae5">&#10003; Approved</span>';
+  if(t.reviewStatus==='changes') return '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;color:#dc2626;background:#fee2e2">&#8634; Changes requested</span>';
+  return '';
+}
+// attachments chips + upload + review box + comments button, rendered under each task row
+function ttExtrasHTML(t){
+  var mine = t.userId===ttMe();
+  var chips = (t.attachments||[]).map(function(a,i){
+    var img=/^image\//.test(a.type||'');
+    return '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--bg2,#f1f5f9);border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:2px 4px 2px 7px;font-size:12px;max-width:230px">'
+      + (img?'<img src="'+esc(a.url)+'" style="width:22px;height:22px;object-fit:cover;border-radius:4px">':'&#128196;')
+      + '<a href="'+esc(a.url)+'" target="_blank" rel="noopener" style="color:#1d4ed8;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(a.name)+' ('+ttFmtSize(a.size)+')">'+esc(a.name)+'</a>'
+      + '<button class="btn btn-secondary btn-sm" style="padding:0 5px;font-size:11px;line-height:16px" title="Remove file" onclick="ttRemoveAttachment('+t.id+','+i+')">&#10005;</button></span>';
+  }).join(' ');
+  var nC=ttCmts(t.id).length, un=ttUnread(t.id);
+  var review = mine
+    ? '<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;cursor:pointer;padding:3px 8px;border:1.5px solid '+(t.reviewRequested?'#f59e0b':'var(--border,#d1d5db)')+';border-radius:8px;background:'+(t.reviewRequested?'#fffbeb':'transparent')+'"><input type="checkbox" '+(t.reviewRequested?'checked':'')+' onchange="ttToggleReview('+t.id+',this.checked)"> Submit for Review</label>'
+    : '';
+  var owner = isOwner() && t.reviewStatus==='pending'
+    ? '<button class="btn btn-sm" style="padding:3px 9px;background:#16a34a;color:#fff;border-color:#16a34a" onclick="ttReviewDecision('+t.id+',\'approved\')">&#10003; Approve</button>'
+      +'<button class="btn btn-secondary btn-sm" style="padding:3px 9px" onclick="ttReviewDecision('+t.id+',\'changes\')">&#8634; Send back</button>' : '';
+  return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:7px">'
+    + chips
+    + (mine||isOwner() ? '<button class="btn btn-secondary btn-sm" style="padding:3px 9px;font-size:12px" onclick="ttPickFiles('+t.id+')">&#128206; Attach files</button><input id="tt-file-'+t.id+'" type="file" multiple style="display:none" onchange="ttUploadFiles('+t.id+',this.files);this.value=\'\'">' : '')
+    + review + ttReviewBadge(t) + owner
+    + '<button class="btn btn-secondary btn-sm" style="padding:3px 9px;font-size:12px'+(un?';border-color:#dc2626;color:#dc2626':'')+'" onclick="ttOpenThread('+t.id+')">&#128172; '+(nC||'')+(un?' <b>('+un+' new)</b>':'')+(nC?'':'Comment')+'</button>'
+    + '</div>'
+    + (t.reviewStatus==='changes' && t.reviewNote ? '<div style="font-size:12px;color:#dc2626;margin-top:5px">&#8634; '+esc(t.reviewNote)+'</div>' : '');
+}
+
+// Comment thread modal (per task) + dashboard feed
+async function ttPostCommentRaw(id, body){
+  var row={task_id:+id, author_id:ttMe(), author_name:(authProfile&&(authProfile.name||authProfile.email))||'', is_owner:isOwner(), body:body};
+  var r=await sbFetch('team_task_comments','POST',row);
+  if(r&&r[0]) ttComments.unshift(r[0]);
+  await ttMarkRead(id);
+}
+async function ttMarkRead(id){
+  var now=new Date().toISOString(), had=!!ttReads[id]; ttReads[id]=now;
+  try{
+    if(had) await sbFetch('team_comment_reads?user_id=eq.'+ttMe()+'&task_id=eq.'+id,'PATCH',{last_read_at:now});
+    else await sbFetch('team_comment_reads','POST',{user_id:ttMe(),task_id:+id,last_read_at:now});
+  }catch(e){}
+}
+function ttThreadHTML(id){
+  var t=ttFind(id), list=ttCmts(id);
+  var body = list.length ? list.map(function(c){
+    var me=c.author_id===ttMe();
+    return '<div style="margin:8px 0;display:flex;flex-direction:column;align-items:'+(me?'flex-end':'flex-start')+'">'
+      + '<div style="font-size:11px;color:var(--text3)">'+esc(c.author_name)+(c.is_owner?' <b style="color:#1d4ed8">(Owner)</b>':'')+' &middot; '+ttFmtStamp(c.created_at)+'</div>'
+      + '<div style="max-width:85%;white-space:pre-wrap;font-size:13px;padding:7px 11px;border-radius:12px;background:'+(me?'#dbeafe':'var(--bg2,#f1f5f9)')+'">'+esc(c.body)
+      + (me||isOwner()?' <a href="#" style="font-size:10px;color:#9ca3af;margin-left:6px" onclick="ttDeleteComment('+c.id+','+id+');return false">delete</a>':'')+'</div></div>';
+  }).join('') : '<div style="color:var(--text4);font-size:13px;padding:10px 0">No comments yet &mdash; start the conversation.</div>';
+  return '<div class="modal-header"><div class="modal-title">&#128172; '+esc(t?t.text:'Task')+(t&&t.userName?' <span style="font-weight:400;font-size:12px;color:var(--text3)">&mdash; '+esc(t.userName)+'</span>':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body"><div id="tt-thread-list" style="max-height:48vh;overflow-y:auto">'+body+'</div>'
+    + '<div style="display:flex;gap:8px;margin-top:10px"><textarea id="tt-thread-in" class="form-input" rows="2" style="flex:1;font-size:13px" placeholder="Write a comment…" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();ttSubmitThread('+id+')}"></textarea><button class="btn btn-primary btn-sm" onclick="ttSubmitThread('+id+')">Send</button></div></div>';
+}
+async function ttOpenThread(id){
+  document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" id="tt-thread-modal" style="max-width:520px">'+ttThreadHTML(id)+'</div></div>';
+  var el=document.getElementById('tt-thread-list'); if(el) el.scrollTop=el.scrollHeight;
+  if(ttUnread(id)){ await ttMarkRead(id); ttRefreshViews(); }
+}
+async function ttSubmitThread(id){
+  var ta=document.getElementById('tt-thread-in'); var v=ta?ta.value.trim():''; if(!v) return;
+  try{ await ttPostCommentRaw(id,v); }catch(e){ showToast('Could not post: '+twErr(e),'error'); return; }
+  var m=document.getElementById('tt-thread-modal'); if(m) m.innerHTML=ttThreadHTML(id);
+  var el=document.getElementById('tt-thread-list'); if(el) el.scrollTop=el.scrollHeight;
+  var n=document.getElementById('tt-thread-in'); if(n) n.focus();
+  ttRefreshViews();
+}
+async function ttDeleteComment(cid, tid){
+  if(!confirm('Delete this comment?')) return;
+  try{ await sbFetch('team_task_comments?id=eq.'+cid,'DELETE'); ttComments=ttComments.filter(function(c){return +c.id!==+cid;});
+    var m=document.getElementById('tt-thread-modal'); if(m) m.innerHTML=ttThreadHTML(tid); ttRefreshViews(); }
+  catch(e){ showToast('Could not delete: '+twErr(e),'error'); }
+}
+// 💬 Comments dashboard card: latest comments across every task you can see; unread highlighted.
+function ttCommentsCardHTML(){
+  var recent = ttComments.slice().sort(function(a,b){return a.created_at<b.created_at?1:-1;}).slice(0,12);
+  var un = ttUnreadTotal();
+  var rows = recent.length ? recent.map(function(c){
+    var t=ttFind(c.task_id), isNew = c.author_id!==ttMe() && c.created_at>(ttReads[c.task_id]||'');
+    return '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border,#e5e7eb);cursor:pointer;'+(isNew?'background:#fffbeb;margin:0 -8px;padding-left:8px;padding-right:8px':'')+'" onclick="ttOpenThread('+c.task_id+')">'
+      + '<div style="flex:1;min-width:0"><div style="font-size:12px;color:var(--text3)"><b style="color:var(--text1,#111)">'+esc(c.author_name)+'</b>'+(c.is_owner?' (Owner)':'')+' on <i>'+esc(t?t.text:'a removed task')+'</i> &middot; '+ttFmtStamp(c.created_at)+(isNew?' <span style="color:#dc2626;font-weight:700">&#9679; new</span>':'')+'</div>'
+      + '<div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.body)+'</div></div></div>';
+  }).join('') : '<div style="color:var(--text4);font-size:13px;padding:8px 0">No comments yet. Use the &#128172; button on any task to start a thread.</div>';
+  return '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
+    + '<div style="font-size:15px;font-weight:800;margin-bottom:6px">&#128172; Comments'+(un?' <span style="background:#dc2626;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">'+un+' new</span>':'')+'</div>'+rows+'</div>';
+}
+
+// Review tab: Task Reviews section (owner only) + tab badge
+async function ttUpdateReviewBadge(){
+  var el=document.getElementById('tt-review-badge'); if(!el || !isOwner()) return;
+  try{ var r=await sbFetch(TT_PATH+'?review_status=eq.pending&select=id'); ttPendingCount=(r||[]).length; }catch(e){}
+  el.style.display = ttPendingCount?'inline':'none'; el.textContent='\u{1F4DD} '+ttPendingCount;
+}
+async function ttRenderReviewSection(){
+  ttUpdateReviewBadge();
+  var host=document.getElementById('tt-review-host'); if(!host || !isOwner()) return;
+  if(teamAllTasks===null || teamAllClock===null){ host.innerHTML='<div style="padding:10px;color:var(--text4);font-size:13px">Loading task reviews…</div>'; await twLoadData(); host=document.getElementById('tt-review-host'); if(!host) return; }
+  var list=(teamAllTasks||[]).filter(function(t){return t.reviewStatus==='pending';}).sort(function(a,b){return (a.reviewSentAt||'')<(b.reviewSentAt||'')?-1:1;});
+  host.innerHTML = '<div style="background:var(--card,#fff);border:1.5px solid '+(list.length?'#fcd34d':'var(--border,#e5e7eb)')+';border-radius:12px;padding:12px 14px;margin-bottom:16px">'
+    + '<div style="font-size:14px;font-weight:800;margin-bottom:4px">&#128221; Task Reviews <span style="font-weight:400;font-size:12px;color:var(--text3)">&mdash; daily tasks your team submitted for review</span></div>'
+    + (list.length ? list.map(function(t){
+        return '<div style="padding:8px 0;border-top:1px solid var(--border,#e5e7eb)"><div style="font-size:13px;font-weight:700">'+esc(t.text)+' <span style="font-weight:400;color:var(--text3)">&mdash; '+esc(t.userName)+(t.reviewSentAt?' &middot; sent '+ttFmtStamp(t.reviewSentAt):'')+'</span></div>'+ttExtrasHTML(t)+'</div>';
+      }).join('') : '<div style="color:var(--text4);font-size:13px;padding:6px 0">Nothing waiting. When someone ticks &ldquo;Submit for Review&rdquo; on a task it shows up here.</div>')
+    + '</div>';
 }
 
 // ---- My Work page (non-owner dashboard) ----
@@ -5634,6 +5861,7 @@ async function renderMyWork(){
       + ttRowsHTML(tasks)
       + '<div style="font-size:11px;color:var(--text4,#9ca3af);margin-top:8px">Unfinished tasks carry over to the next day until they are Completed.</div>'
     + '</div>'
+    + ttCommentsCardHTML()
     + workRecentLogHTML()
     + '</div>';
   if(!twTimer && (myClock||[]).some(function(c){return !c.clockOut;})) twTimer=setInterval(twTick,30000);
@@ -5650,6 +5878,7 @@ async function twLoadData(){
       adminUsersCall({action:'list'}).catch(function(){ return {users:[]}; })
     ]);
     teamAllTasks=(r[0]||[]).map(ttFromDb); teamAllClock=(r[1]||[]).map(tcFromDb);
+    await ttLoadComments();
     teamPeople=((r[2]&&r[2].users)||[]).filter(function(u){return u.role!=='recipient' && !u.disabled && !u.is_owner;}).map(function(u){return {id:u.id,name:u.name||u.email};});
   } catch(e){ showToast('Could not load team work: '+twErr(e),'error'); teamAllTasks=teamAllTasks||[]; teamAllClock=teamAllClock||[]; teamPeople=teamPeople||[]; }
 }
@@ -5713,12 +5942,13 @@ async function renderTeamWork(keepData){
     var detail='<tr><td colspan="6" style="padding:4px 16px 16px 28px;border-bottom:1px solid var(--border,#e5e7eb);background:var(--bg2,#f8fafc)">'
       +'<div style="display:flex;gap:24px;flex-wrap:wrap">'
       +'<div style="flex:1;min-width:300px"><div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Clock in / out</div><button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="twOpenClockAdd(\''+r.id+'\')">+ Add day</button></div>'+logRows+'</div>'
-      +'<div style="flex:1.4;min-width:340px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin:10px 0 2px">Tasks &mdash; status &amp; finish date</div>'+ttRowsHTML(vis)+'</div>'
+      +'<div style="flex:1.4;min-width:340px"><div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Tasks &mdash; status &amp; finish date</div>'+(r.done?'<button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;color:#dc2626" onclick="ttDeleteCompleted(\''+r.id+'\')">&#128465; Delete completed ('+r.done+')</button>':'')+'</div>'+ttRowsHTML(vis)+'</div>'
       +'</div></td></tr>';
     return main+detail;
   }).join('') : '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4);font-size:13px">No staff accounts or activity yet.</td></tr>';
   host.innerHTML =
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">'
+    ttCommentsCardHTML()
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">'
       + stat(on.length?on.map(function(r){return esc(r.name);}).join(', '):'Nobody','On the clock now',on.length?'#16a34a':'')
       + stat(twFmtDur(sum.ms),'Team hours ('+twDays+'d)')
       + stat(sum.open,'Open tasks')
@@ -6629,7 +6859,7 @@ function renderOutreach(){
       <div class="tab ${activeTab==='jvleads'?'active':''}" onclick="setTab('jvleads')">&#9989; Tasks <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${jvLeads.length}</span></div>
       <div class="tab ${activeTab==='nationwide'?'active':''}" onclick="setTab('nationwide')" style="${activeTab==='nationwide'?'':''}">&#127758; Nationwide <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.nationwide==='Yes').length}</span></div>
       <div class="tab ${activeTab==='sentout'?'active':''}" onclick="setTab('sentout')">&#128231; Sent Out <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.shared).length + jvLeads.filter(l=>!l.deleted&&l.shared).length}</span>${(function(){var n=recipientFUAlertCount();return n>0?' <span title="Recipient follow-ups overdue or due today" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">&#10071;'+n+'</span>':'';})()}</div>
-      <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&!isD4DLead(l)&&!isFbBatchLead(l)).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
+      <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span id="tt-review-badge" title="Daily tasks waiting for your review" style="display:none;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700"></span> <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&!isD4DLead(l)&&!isFbBatchLead(l)).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
       <div class="tab ${activeTab==='scheduledsms'?'active':''}" onclick="setTab('scheduledsms')">&#128197; Scheduled</div>
     </div>
     <div id="tab-content"></div>`;
@@ -6640,6 +6870,7 @@ function renderOutreach(){
   else if(activeTab==='review') renderReviewTab();
   else if(activeTab==='scheduledsms') renderScheduledSmsTab();
   else renderNationwideTab();
+  ttUpdateReviewBadge();
 }
 
 function buildTempScoreViewHTML(score){
@@ -7031,8 +7262,10 @@ function renderReviewTab(){
   document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
     +'<div style="margin-bottom:16px"><h2 style="font-size:16px;font-weight:700">&#128269; Review Queue</h2>'
     +'<p style="font-size:12px;color:var(--text3);margin-top:3px">Leads flagged Needs Review (by the team or by a recipient) or added here when sent out. Sent By / Sent shows who flagged it and when; Review Note is their reason. This is a work queue -- leads stay in their database either way. Driving-for-Dollars auto-scan leads are in the &#128663; D4D tab.</p></div>'
+    +'<div id="tt-review-host"></div>'
     +rvBulkBarHTML(items)+rvTableHTML(items,'&#128269;','Nothing needs review')+'</div>';
   rvUpdateBar();
+  ttRenderReviewSection();
 }
 // Dedicated Driving-for-Dollars SECTION (left-sidebar item, not a tab): only D4D auto-scan leads,
 // plus the ⚡ Scan Now button, the Google-budget banner, and the "no qualified leads" messaging.
