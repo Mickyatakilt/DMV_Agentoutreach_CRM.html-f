@@ -1436,7 +1436,7 @@ async function uploadAllToSupabase() {
 
 var pendingSaves = 0; // tracks in-flight Supabase writes so the 30s background poll never overwrites an edit that hasn't synced yet
 async function saveLeadToSupabase(l) {
-  pendingSaves++;
+  pendingSaves++; window.__lastWriteAt=Date.now();
   try {
     await ensureGhlContactId(l);
     var row = toRow(l);
@@ -1448,7 +1448,7 @@ async function saveLeadToSupabase(l) {
     console.error('Save error:', e);
     return false;
   } finally {
-    pendingSaves--;
+    pendingSaves--; window.__lastWriteAt=Date.now();
   }
 }
 
@@ -1500,13 +1500,13 @@ function fromJVRow(r) {
   };
 }
 async function saveJVToSupabase(lead) {
-  pendingSaves++;
+  pendingSaves++; window.__lastWriteAt=Date.now();
   try {
     await ensureGhlContactId(lead);
     var r = await sbAuthedWrite(SUPABASE_URL + '/rest/v1/jv_leads', [toJVRow(lead)]);
     return r.ok;
   } catch(e) { console.error('JV save error:', e); return false; }
-  finally { pendingSaves--; }
+  finally { pendingSaves--; window.__lastWriteAt=Date.now(); }
 }
 async function deleteJVFromSupabase(id) {
   try {
@@ -11259,7 +11259,11 @@ async function initFullApp() {
   setInterval(async function() {
     if(pendingSaves > 0) return; // an edit hasn't finished syncing yet -- don't let this poll stomp it
     try {
+      var __t0 = Date.now();
       var rows = await sbFetchAll('leads?select=*&order=id.asc');
+      // A save started/finished while this download was in flight => rows are stale (they'd bring
+      // back a lead you just removed). Throw them away; the next poll is fresh.
+      if(pendingSaves > 0 || (window.__lastWriteAt||0) >= __t0) return;
       if(rows && rows.length > 0) {
         var newLeads = rows.map(fromRow);
         // Only re-render if data actually changed
@@ -11281,7 +11285,9 @@ async function initFullApp() {
   setInterval(async function() {
     if(pendingSaves > 0) return;
     try {
+      var __t1 = Date.now();
       var jvRows = await sbFetchAll('jv_leads?select=*&order=id.asc');
+      if(pendingSaves > 0 || (window.__lastWriteAt||0) >= __t1) return;
       if(jvRows && jvRows.length > 0) {
         var newJV = jvRows.map(fromJVRow);
         if(JSON.stringify(newJV) !== JSON.stringify(jvLeads)) {
