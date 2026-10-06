@@ -456,13 +456,43 @@
   .pb-wf-f select,.pb-wf-f input{border:1.5px solid var(--border2);border-radius:8px;padding:6px 8px;font-size:12.5px;background:var(--surface);color:var(--text);text-transform:none;font-weight:500;letter-spacing:0;}
   .pb-wf-grow{flex:1;min-width:180px;}
   .pb-wf-grow input{width:100%;}
+  /* ============ Assistance (floating task reminders, every tab) ============ */
+  .asst-fab{position:fixed;right:22px;bottom:22px;z-index:360;display:flex;align-items:center;gap:8px;border:none;cursor:pointer;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;font-weight:800;font-size:14px;padding:12px 18px;border-radius:999px;box-shadow:0 8px 24px rgba(8,145,178,.45);}
+  .asst-badge{position:absolute;top:-8px;right:-4px;min-width:24px;height:24px;border-radius:12px;background:#dc2626;color:#fff;font-size:13px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 6px;border:2px solid #fff;animation:asstpulse 1.8s infinite;}
+  .asst-badge.on{display:flex;}
+  @keyframes asstpulse{0%{box-shadow:0 0 0 0 rgba(220,38,38,.5)}70%{box-shadow:0 0 0 10px rgba(220,38,38,0)}100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}}
+  .asst-panel{position:fixed;right:22px;bottom:84px;z-index:365;width:400px;max-width:calc(100vw - 32px);max-height:74vh;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.3);display:none;flex-direction:column;overflow:hidden;}
+  .asst-panel.open{display:flex;}
+  .asst-head{background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;}
+  .asst-head small{display:block;opacity:.85;font-weight:500;font-size:11px;}
+  .asst-x{background:rgba(255,255,255,.2);border:none;color:#fff;width:28px;height:28px;border-radius:8px;cursor:pointer;}
+  .asst-add{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;background:var(--surface2);}
+  .asst-add input[type=text]{border:1.5px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:14px;width:100%;background:var(--surface);color:var(--text);}
+  .asst-row{display:flex;gap:8px;}
+  .asst-row input[type=date]{flex:1;border:1.5px solid var(--border2);border-radius:9px;padding:8px;font-size:13px;background:var(--surface);color:var(--text);}
+  .asst-row button{background:#0d9488;color:#fff;border:0;border-radius:9px;padding:9px 16px;font-weight:700;cursor:pointer;}
+  .asst-hint{font-size:11px;color:var(--text4);}
+  .asst-list{overflow:auto;padding:6px 10px 12px;}
+  .asst-sec{font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--text3);margin:10px 4px 4px;}
+  .asst-t{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid var(--border);border-radius:11px;margin-bottom:6px;background:var(--surface);}
+  .asst-t.due{border-left:4px solid #dc2626;}
+  .asst-chk{width:22px;height:22px;border:2px solid #94a3b8;border-radius:6px;flex:none;margin-top:1px;cursor:pointer;background:var(--surface);padding:0;}
+  .asst-chk:hover{border-color:#dc2626;background:#fee2e2;}
+  .asst-n{font-size:14px;font-weight:600;word-break:break-word;color:var(--text);}
+  .asst-d{font-size:12px;color:var(--text3);margin-top:2px;}
+  .asst-d.red{color:#dc2626;font-weight:700;}
+  .asst-empty{padding:18px 6px;color:var(--text3);font-size:13px;text-align:center;}
+  .asst-undo{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:380;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;display:none;gap:14px;}
+  .asst-undo.on{display:flex;}
+  .asst-undo b{color:#5eead4;cursor:pointer;}
+  @media(max-width:768px){ .asst-fab{right:14px;bottom:calc(62px + env(safe-area-inset-bottom) + 12px);} .asst-panel{right:8px;left:8px;width:auto;bottom:calc(62px + env(safe-area-inset-bottom) + 70px);max-width:none;} body:has(#modal-container .modal-overlay) .asst-fab{display:none !important;} .asst-undo{bottom:calc(62px + env(safe-area-inset-bottom) + 70px);} }
   /* ============ P5 Ask AI (floating natural-language query) ============ */
   .ask-fab{position:fixed;right:22px;bottom:22px;z-index:360;display:flex;align-items:center;gap:8px;border:none;cursor:pointer;
     background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-weight:800;font-size:14px;padding:12px 18px;border-radius:999px;
     box-shadow:0 8px 24px rgba(79,70,229,.45);transition:transform .12s ease,box-shadow .12s ease;}
   .ask-fab:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(79,70,229,.55);}
   .ask-fab-ic{font-size:16px;line-height:1;}
-  .ask-overlay{position:fixed;inset:0;z-index:365;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);display:none;align-items:flex-end;justify-content:flex-end;padding:0 22px 92px;}
+  .ask-overlay{position:fixed;inset:0;z-index:365;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;padding:0 22px;}
   .ask-overlay.open{display:flex;}
   .ask-panel{width:420px;max-width:calc(100vw - 32px);max-height:74vh;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden;animation:askpop .16s ease;}
   @keyframes askpop{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
@@ -6457,6 +6487,7 @@ function renderDashboard(){
       + '</div>'
     + '</div>'
     // ===== Manager Agent briefing (Claude-powered) =====
+    + askCardHTML()
     + mgrBriefingCardHTML()
     // ===== SMS Marketing Analytics (live from GHL) =====
     + '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:6px">'
@@ -6819,8 +6850,7 @@ function askMount(){
   var root=document.getElementById('ask-root'); if(!root||root.getAttribute('data-mounted')==='1') return;
   root.setAttribute('data-mounted','1');
   root.innerHTML =
-    '<button id="ask-fab" class="ask-fab" onclick="askToggle(true)" title="Ask AI about your CRM"><span class="ask-fab-ic">\u2728</span><span class="ask-fab-tx">Ask AI</span></button>'
-    +'<div id="ask-overlay" class="ask-overlay" onclick="askOverlayClick(event)">'
+    '<div id="ask-overlay" class="ask-overlay" onclick="askOverlayClick(event)">'
       +'<div class="ask-panel">'
         +'<div class="ask-head"><span class="ask-title">\u2728 Ask AI <small>your CRM, in plain English</small></span>'
           +'<span style="display:flex;gap:8px;align-items:center"><button class="mgr-newtopic" onclick="mgrNewTopic()" title="Start a new conversation">\u21ba New topic</button><button class="ask-x" onclick="askToggle(false)">\u2715</button></span></div>'
@@ -6840,6 +6870,90 @@ function askOpen(kind,id){
   if(kind==='buyer'){ setSection('dispo'); setTimeout(function(){ openBuyerEditModal(id); },70); return; }
   if(kind==='deal'){ setSection('dispo'); setTimeout(function(){ dispoEditDeal(id); },70); return; }
   dashOpen(kind,id); // list / probate / task / lead
+}
+// =================== Assistance (task reminders on every tab) ===================
+var asstTasks=[], asstLast=null, asstOpen=false;
+function asstToday(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// Due now = no follow-up date, OR today is AFTER the follow-up date (shows the day after).
+function asstIsDue(t){ return !t.follow_up_date || asstToday() > t.follow_up_date; }
+function asstFmt(d){ var p=d.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+p[1]-1]+' '+(+p[2]); }
+function asstNextDay(d){ var p=d.split('-'); var x=new Date(+p[0],+p[1]-1,+p[2]+1); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
+function asstMount(){
+  if(authProfile && authProfile.role==='recipient') return;
+  if(document.getElementById('asst-root')) return;
+  var root=document.createElement('div'); root.id='asst-root';
+  root.innerHTML='<button id="asst-fab" class="asst-fab" onclick="asstToggle()" title="Assistance"><span>\uD83D\uDDD2\uFE0F</span><span>Assistance</span><span id="asst-badge" class="asst-badge"></span></button>'
+    +'<div id="asst-panel" class="asst-panel">'
+      +'<div class="asst-head"><span><b>\uD83D\uDDD2\uFE0F Assistance</b><small>your day-to-day guide</small></span><button class="asst-x" onclick="asstToggle(false)">\u2715</button></div>'
+      +'<div class="asst-add"><input type="text" id="asst-note" placeholder="Quick note\u2026 e.g. Call Mrs. Johnson back" onkeydown="if(event.key===\'Enter\')asstAdd()">'
+        +'<div class="asst-row"><input type="date" id="asst-date"><button onclick="asstAdd()">Add</button></div>'
+        +'<div class="asst-hint">No date = shows right away. With a date = reminds you the day after.</div></div>'
+      +'<div id="asst-list" class="asst-list"></div>'
+    +'</div>'
+    +'<div id="asst-undo" class="asst-undo"><span>Task removed</span><b onclick="asstUndo()">Undo</b></div>';
+  document.body.appendChild(root);
+  asstLoad();
+  setInterval(function(){ asstRender(); }, 5*60*1000);
+}
+async function asstLoad(){
+  try{ asstTasks=await sbFetch('assistant_tasks?select=*&order=created_at.asc')||[]; }catch(e){ asstTasks=asstTasks||[]; }
+  asstRender();
+}
+function asstToggle(open){
+  asstOpen=(open===undefined)?!asstOpen:open;
+  var p=document.getElementById('asst-panel'); if(p) p.classList.toggle('open',asstOpen);
+  if(asstOpen){ asstLoad(); setTimeout(function(){ var i=document.getElementById('asst-note'); if(i) i.focus(); },50); }
+}
+function asstRender(){
+  var due=asstTasks.filter(asstIsDue), up=asstTasks.filter(function(t){return !asstIsDue(t);});
+  up.sort(function(a,b){return a.follow_up_date.localeCompare(b.follow_up_date);});
+  var b=document.getElementById('asst-badge');
+  if(b){ b.textContent=due.length; b.classList.toggle('on',due.length>0); }
+  var l=document.getElementById('asst-list'); if(!l) return;
+  function row(t,isDue){
+    var d=!t.follow_up_date?'No date \u00b7 added '+asstFmt((t.created_at||'').slice(0,10)||asstToday())
+      :(isDue?'Follow-up was '+asstFmt(t.follow_up_date)+' \u00b7 due now':'Appears '+asstFmt(asstNextDay(t.follow_up_date))+' (follow-up '+asstFmt(t.follow_up_date)+')');
+    return '<div class="asst-t'+(isDue?' due':'')+'"><button class="asst-chk" title="Remove" onclick="asstRemove('+t.id+')"></button><div><div class="asst-n">'+esc(t.note)+'</div><div class="asst-d'+(isDue?' red':'')+'">'+d+'</div></div></div>';
+  }
+  var h='';
+  if(due.length) h+='<div class="asst-sec">\uD83D\uDD34 NEEDS YOU NOW \u00b7 '+due.length+'</div>'+due.map(function(t){return row(t,true);}).join('');
+  if(up.length) h+='<div class="asst-sec">\u23F3 UPCOMING \u00b7 '+up.length+'</div>'+up.map(function(t){return row(t,false);}).join('');
+  if(!h) h='<div class="asst-empty">All clear \u2014 nothing on your plate. \uD83C\uDF89</div>';
+  l.innerHTML=h;
+}
+async function asstAdd(){
+  var n=document.getElementById('asst-note'), d=document.getElementById('asst-date');
+  var note=(n.value||'').trim(); if(!note) return;
+  var body={note:note, follow_up_date:d.value||null};
+  try{ var r=await sbFetch('assistant_tasks','POST',body); if(r&&r[0]) asstTasks.push(r[0]); n.value=''; d.value=''; asstRender(); }
+  catch(e){ alert('Could not save the task: '+(e.message||e)); }
+}
+async function asstRemove(id){
+  var t=asstTasks.find(function(x){return x.id===id;}); if(!t) return;
+  asstTasks=asstTasks.filter(function(x){return x.id!==id;}); asstRender();
+  try{ await sbFetch('assistant_tasks?id=eq.'+id,'DELETE'); }catch(e){ asstTasks.push(t); asstRender(); alert('Could not remove: '+(e.message||e)); return; }
+  asstLast={note:t.note, follow_up_date:t.follow_up_date};
+  var u=document.getElementById('asst-undo'); if(u){ u.classList.add('on'); clearTimeout(asstUndoT); asstUndoT=setTimeout(function(){ u.classList.remove('on'); asstLast=null; },5000); }
+}
+var asstUndoT=null;
+async function asstUndo(){
+  if(!asstLast) return; var t=asstLast; asstLast=null;
+  var u=document.getElementById('asst-undo'); if(u) u.classList.remove('on');
+  try{ var r=await sbFetch('assistant_tasks','POST',t); if(r&&r[0]) asstTasks.push(r[0]); asstRender(); }catch(e){}
+}
+// Dashboard card: Ask AI lives here now
+function askCardHTML(){
+  if(isStaffUser()) return '';
+  return '<div style="background:#1e1b4b;border-radius:14px;padding:16px;margin-bottom:12px;color:#fff">'
+    +'<div style="font-weight:800;font-size:15px;margin-bottom:10px">\u2728 Ask AI <span style="font-weight:400;font-size:12px;opacity:.8">your CRM, in plain English</span></div>'
+    +'<div style="display:flex;gap:8px;background:#fff;border-radius:10px;padding:10px">'
+      +'<input id="ask-card-input" type="text" placeholder="Ask anything\u2026 then ask follow-ups" style="flex:1;border:1.5px solid var(--border2);border-radius:8px;padding:9px 11px;font-size:14px;color:#0f172a" onkeydown="if(event.key===\'Enter\')askFromCard()">'
+      +'<button onclick="askFromCard()" style="background:var(--accent);color:#fff;border:0;border-radius:8px;padding:0 16px;font-weight:700;cursor:pointer">Ask</button></div></div>';
+}
+function askFromCard(){
+  var i=document.getElementById('ask-card-input'); var v=i?i.value.trim():'';
+  askToggle(true);
+  if(v){ i.value=''; setTimeout(function(){ askRun(v); },80); }
 }
 // =================== end Ask AI ===================
 
@@ -7026,6 +7140,7 @@ function render(){
   document.getElementById('app').innerHTML = sidebarHTML() + '<div id="section-main" class="section-main"></div>';
   if(!sbSectionAllowed(activeSection)){ activeSection = sbItems()[0].k; document.getElementById('app').innerHTML = sidebarHTML() + '<div id="section-main" class="section-main"></div>'; }
   askMount(); // floating "Ask AI" button (mounts once to #ask-root; survives re-renders)
+  asstMount(); // floating Assistance task reminders (every tab)
   if(activeSection==='lists'){ renderLists(); return; }
   if(activeSection==='dispo'){ renderDispo(); return; }
   if(activeSection==='jv'){ renderJvAgreements(); return; }
