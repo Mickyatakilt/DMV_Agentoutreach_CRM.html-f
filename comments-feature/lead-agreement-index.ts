@@ -418,13 +418,16 @@ Deno.serve(async (req) => {
         if (mentionIds.length === 0) return json({ error: 'No one was @mentioned in this comment' }, 400);
 
         const { data: mentionedUsers } = await withRetry(() => supa
-          .from('app_users').select('id, name, email').in('id', mentionIds));
-        const recipients = (mentionedUsers || []).filter((u: any) => u.id !== me!.id && u.email);
+          .from('app_users').select('id, name, email, notify_email').in('id', mentionIds));
+        const recipients = (mentionedUsers || [])
+          .filter((u: any) => u.id !== me!.id)
+          .map((u: any) => ({ ...u, to: (u.notify_email || u.email || '').trim() }))
+          .filter((u: any) => u.to);
 
         const propertyLabel = kind === 'task' ? (lead.location || lead.name || 'this deal') : (lead.address || lead.name || 'this deal');
         const link = APP_URL + '?open=' + kind + ':' + leadId;
         await Promise.all(recipients.map((u: any) =>
-          sendMail(u.email, c.author_name + ' mentioned you in a comment — ' + propertyLabel,
+          sendMail(u.to, c.author_name + ' mentioned you in a comment — ' + propertyLabel,
             mentionEmailHtml(c.author_name, propertyLabel, c.body, link))
         ));
 
@@ -434,7 +437,7 @@ Deno.serve(async (req) => {
         return json({
           comment: updated || c,
           notified: recipients.length,
-          recipients: recipients.map((u: any) => ({ name: u.name, email: u.email })),
+          recipients: recipients.map((u: any) => ({ name: u.name, email: u.to })),
         });
       }
 
