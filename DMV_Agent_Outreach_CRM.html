@@ -5461,6 +5461,7 @@ var teamTasks = null;   // the signed-in user's own tasks (null = not loaded)
 var myClock = null;     // the signed-in user's recent time_clock rows, newest first
 var teamAllTasks = null, teamAllClock = null, teamPeople = null; // owner "Team Work" data
 var twDays = 7, twPerson = '';
+var teamCorrections = [];
 const TT_STATUSES = [
   ['not_started','Not Started','#64748b','#f1f5f9'],
   ['stuck','Stuck','#dc2626','#fee2e2'],
@@ -5469,12 +5470,16 @@ const TT_STATUSES = [
 ];
 function ttStatusMeta(s){ return TT_STATUSES.find(function(x){return x[0]===s;}) || TT_STATUSES[0]; }
 function ttStatusBadge(s){ var m=ttStatusMeta(s); return '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;color:'+m[2]+';background:'+m[3]+'">'+m[1]+'</span>'; }
-function ttFromDb(r){ return {id:r.id,userId:r.user_id,userName:r.user_name||'',text:r.task_text||'',dueDate:r.due_date||'',status:r.status||'not_started',createdAt:r.created_at,updatedAt:r.updated_at,attachments:Array.isArray(r.attachments)?r.attachments:[],reviewRequested:!!r.review_requested,reviewStatus:r.review_status||'',reviewNote:r.review_note||'',reviewSentAt:r.review_sent_at||''}; }
-function tcFromDb(r){ return {id:r.id,userId:r.user_id,userName:r.user_name||'',workDate:r.work_date,clockIn:r.clock_in,clockOut:r.clock_out,editedAt:r.edited_at}; }
+function ttFromDb(r){ return {id:r.id,userId:r.user_id,userName:r.user_name||'',text:r.task_text||'',dueDate:r.due_date||'',status:r.status||'not_started',createdAt:r.created_at,updatedAt:r.updated_at,attachments:Array.isArray(r.attachments)?r.attachments:[],reviewRequested:!!r.review_requested,reviewStatus:r.review_status||'',reviewNote:r.review_note||'',reviewSentAt:r.review_sent_at||'',description:r.description||'',priority:r.priority||'medium',category:r.category||'',assignedBy:r.assigned_by||'',assignedByName:r.assigned_by_name||'',history:Array.isArray(r.history)?r.history:[]}; }
+function tcFromDb(r){ return {id:r.id,userId:r.user_id,userName:r.user_name||'',workDate:r.work_date,clockIn:r.clock_in,clockOut:r.clock_out,editedAt:r.edited_at,breaks:Array.isArray(r.breaks)?r.breaks:[]}; }
 function twLocalDay(d){ var x=new Date(d); return x.getFullYear()+'-'+('0'+(x.getMonth()+1)).slice(-2)+'-'+('0'+x.getDate()).slice(-2); }
 function twFmtTime(iso){ return iso ? new Date(iso).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) : '—'; }
 function twFmtDur(ms){ if(!(ms>0)) return '0h 00m'; var m=Math.round(ms/60000); return Math.floor(m/60)+'h '+('0'+(m%60)).slice(-2)+'m'; }
-function twClockMs(c){ return c.clockIn ? ((c.clockOut?new Date(c.clockOut):new Date()) - new Date(c.clockIn)) : 0; }
+function twBreakMs(c){ return (c.breaks||[]).reduce(function(a,b){ return a + (b.s ? ((b.e?new Date(b.e):new Date()) - new Date(b.s)) : 0); },0); }
+function twOnBreak(c){ return !!(c && !c.clockOut && (c.breaks||[]).some(function(b){return b.s && !b.e;})); }
+function twClockMs(c){ return c.clockIn ? Math.max(0,((c.clockOut?new Date(c.clockOut):new Date()) - new Date(c.clockIn)) - twBreakMs(c)) : 0; }
+function twFmtHMS(ms){ ms=Math.max(0,Math.floor(ms/1000)); var h=Math.floor(ms/3600), m=Math.floor(ms%3600/60), s=ms%60; return ('0'+h).slice(-2)+':'+('0'+m).slice(-2)+':'+('0'+s).slice(-2); }
+var TW_LONG_SHIFT_MS = 12*3600*1000; // still clocked in after 12h = forgot to clock out
 function twToLocalInput(iso){ if(!iso) return ''; var d=new Date(iso); return twLocalDay(d)+'T'+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
 function twErr(e){ var m=(e&&e.message)||String(e); try{ var j=JSON.parse(m); if(j&&j.message) m=j.message; }catch(x){} return m; }
 // Tasks shown on "today's work": everything not finished (carries over day to day) plus
@@ -5494,17 +5499,26 @@ async function workLoadMine(){
     teamTasks = (r[0]||[]).map(ttFromDb);
     myClock = (r[1]||[]).map(tcFromDb);
     await ttLoadComments();
+    await workLoadCorrections();
   } catch(e){ teamTasks=teamTasks||[]; myClock=myClock||[]; showToast('Could not load your work','error'); }
 }
 
 // ---- Clock ----
 async function workClockIn(){
-  try{ await sbFetch('rpc/clock_in','POST',{}); await workLoadMine(); renderMyWork(); showToast('Work started','success'); }
+  try{ await sbFetch('rpc/clock_in','POST',{}); await workLoadMine(); renderMyWork(); showToast('Clocked in','success'); }
   catch(e){ showToast(twErr(e),'error'); }
 }
 async function workClockOut(){
-  if(!confirm('End your work day now?\n\nThis time is locked once saved.')) return;
-  try{ await sbFetch('rpc/clock_out','POST',{}); await workLoadMine(); renderMyWork(); showToast('Work ended','success'); }
+  if(!confirm('Clock out now?\n\nThis time is locked once saved. You can clock back in later today if needed.')) return;
+  try{ await sbFetch('rpc/clock_out','POST',{}); await workLoadMine(); renderMyWork(); showToast('Clocked out','success'); }
+  catch(e){ showToast(twErr(e),'error'); }
+}
+async function workBreakStart(){
+  try{ await sbFetch('rpc/break_start','POST',{}); await workLoadMine(); renderMyWork(); showToast('Break started','success'); }
+  catch(e){ showToast(twErr(e),'error'); }
+}
+async function workBreakEnd(){
+  try{ await sbFetch('rpc/break_end','POST',{}); await workLoadMine(); renderMyWork(); showToast('Back to work','success'); }
   catch(e){ showToast(twErr(e),'error'); }
 }
 var twTimer = null;
@@ -5512,60 +5526,208 @@ function twTick(){
   var el = document.getElementById('wk-elapsed');
   if(!el){ clearInterval(twTimer); twTimer=null; return; }
   var open = (myClock||[]).find(function(c){return !c.clockOut;});
-  if(open) el.textContent = twFmtDur(twClockMs(open));
+  if(!open) return;
+  el.textContent = twFmtHMS(twClockMs(open));
+  var br = document.getElementById('wk-break'); if(br && twOnBreak(open)){
+    var ob=(open.breaks||[]).filter(function(b){return b.s&&!b.e;})[0];
+    br.textContent = 'Break: '+twFmtHMS(new Date()-new Date(ob.s));
+  }
 }
+function twStartTimer(){ if(twTimer) clearInterval(twTimer); twTimer=setInterval(twTick,1000); twTick(); }
 function workClockCardHTML(){
   var open = (myClock||[]).find(function(c){return !c.clockOut;});
   var td = twLocalDay(new Date());
-  var todayRow = (myClock||[]).find(function(c){ return twLocalDay(c.clockIn)===td; });
-  var body;
-  if(open){
-    body = '<div style="font-size:13px;color:var(--text3)">Started <b style="color:var(--text1,#111)">'+twFmtTime(open.clockIn)+'</b> &middot; on the clock</div>'
-      + '<div id="wk-elapsed" style="font-size:34px;font-weight:800;margin:6px 0 12px;font-variant-numeric:tabular-nums">'+twFmtDur(twClockMs(open))+'</div>'
-      + '<button class="btn btn-danger" style="font-size:15px;padding:10px 22px" onclick="workClockOut()">&#9632; Work Ended</button>';
-  } else if(todayRow){
-    body = '<div style="font-size:13px;color:var(--text3)">Started <b style="color:var(--text1,#111)">'+twFmtTime(todayRow.clockIn)+'</b> &middot; Ended <b style="color:var(--text1,#111)">'+twFmtTime(todayRow.clockOut)+'</b></div>'
-      + '<div style="font-size:34px;font-weight:800;margin:6px 0 4px">'+twFmtDur(twClockMs(todayRow))+'</div>'
-      + '<div style="font-size:12px;color:var(--text4,#9ca3af)">&#128274; Today&#8217;s time is recorded and locked.</div>';
+  var todayRows = (myClock||[]).filter(function(c){ return twLocalDay(c.clockIn)===td; });
+  var todayMs = todayRows.reduce(function(a,c){return a+twClockMs(c);},0);
+  var dim='font-size:13px;color:var(--text3)', strong='color:var(--text1,#111)';
+  var body, badge;
+  if(open && twOnBreak(open)){
+    badge='<span style="background:#fef3c7;color:#b45309;font-size:11px;font-weight:800;padding:3px 10px;border-radius:10px">&#9749; ON BREAK</span>';
+    var ob=(open.breaks||[]).filter(function(b){return b.s&&!b.e;})[0];
+    body = '<div style="'+dim+'">Clocked in at <b style="'+strong+'">'+twFmtTime(open.clockIn)+'</b> &middot; break since '+twFmtTime(ob.s)+'</div>'
+      + '<div id="wk-elapsed" style="font-size:44px;font-weight:800;margin:6px 0 0;font-variant-numeric:tabular-nums;color:#b45309">'+twFmtHMS(twClockMs(open))+'</div>'
+      + '<div id="wk-break" style="font-size:14px;font-weight:700;color:#b45309;margin-bottom:12px;font-variant-numeric:tabular-nums">Break: '+twFmtHMS(new Date()-new Date(ob.s))+'</div>'
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-primary" style="font-size:15px;padding:10px 22px;background:#16a34a;border-color:#16a34a" onclick="workBreakEnd()">&#9654; End Break</button>'
+      + '<button class="btn btn-danger" style="font-size:15px;padding:10px 22px" onclick="workClockOut()">&#9632; Clock Out</button></div>';
+  } else if(open){
+    var long = (new Date()-new Date(open.clockIn)) > TW_LONG_SHIFT_MS;
+    badge='<span style="background:#dcfce7;color:#15803d;font-size:11px;font-weight:800;padding:3px 10px;border-radius:10px">&#9679; CLOCKED IN</span>';
+    var nb=(open.breaks||[]).length;
+    body = (long?'<div style="background:#fee2e2;color:#b91c1c;border-radius:8px;padding:8px 10px;font-size:13px;font-weight:700;margin-bottom:10px">&#9888;&#65039; You have been clocked in for over 12 hours. Did you forget to clock out? Clock out now, then use &ldquo;Request a correction&rdquo; below to fix your end time.</div>':'')
+      + '<div style="'+dim+'">Clocked in at <b style="'+strong+'">'+twFmtTime(open.clockIn)+'</b>'+(nb?' &middot; '+nb+' break'+(nb>1?'s':'')+' ('+twFmtDur(twBreakMs(open))+')':'')+'</div>'
+      + '<div id="wk-elapsed" style="font-size:44px;font-weight:800;margin:6px 0 12px;font-variant-numeric:tabular-nums">'+twFmtHMS(twClockMs(open))+'</div>'
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-secondary" style="font-size:15px;padding:10px 22px" onclick="workBreakStart()">&#9749; Start Break</button>'
+      + '<button class="btn btn-danger" style="font-size:15px;padding:10px 22px" onclick="workClockOut()">&#9632; Clock Out</button></div>';
+  } else if(todayRows.length){
+    badge='<span style="background:#f1f5f9;color:#64748b;font-size:11px;font-weight:800;padding:3px 10px;border-radius:10px">CLOCKED OUT</span>';
+    var last=todayRows[0];
+    body = '<div style="'+dim+'">Last shift <b style="'+strong+'">'+twFmtTime(last.clockIn)+'</b> &rarr; <b style="'+strong+'">'+twFmtTime(last.clockOut)+'</b></div>'
+      + '<div style="font-size:34px;font-weight:800;margin:6px 0 2px;font-variant-numeric:tabular-nums">'+twFmtDur(todayMs)+'</div>'
+      + '<div style="font-size:12px;color:var(--text4,#9ca3af);margin-bottom:12px">worked today &middot; &#128274; recorded and locked</div>'
+      + '<button class="btn btn-primary" style="font-size:15px;padding:10px 22px;background:#16a34a;border-color:#16a34a" onclick="workClockIn()">&#9654; Clock In Again</button>';
   } else {
-    body = '<div style="font-size:13px;color:var(--text3);margin-bottom:12px">You haven&#8217;t started work today.</div>'
-      + '<button class="btn btn-primary" style="font-size:15px;padding:10px 22px;background:#16a34a;border-color:#16a34a" onclick="workClockIn()">&#9654; Work Started</button>';
+    badge='<span style="background:#f1f5f9;color:#64748b;font-size:11px;font-weight:800;padding:3px 10px;border-radius:10px">NOT CLOCKED IN</span>';
+    body = '<div style="'+dim+';margin-bottom:12px">You haven&#8217;t clocked in today.</div>'
+      + '<button class="btn btn-primary" style="font-size:15px;padding:10px 22px;background:#16a34a;border-color:#16a34a" onclick="workClockIn()">&#9654; Clock In</button>';
   }
   return '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
-    + '<div style="font-size:15px;font-weight:800;margin-bottom:10px">&#9201;&#65039; Clock In / Clock Out</div>'+body+'</div>';
+    + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><div style="font-size:15px;font-weight:800">&#9201;&#65039; Time Clock</div>'+badge+'</div>'+body+'</div>';
+}
+var myCorrections = [];
+async function workLoadCorrections(){
+  try{ myCorrections=(await sbFetch('time_corrections?user_id=eq.'+authProfile.id+'&select=*&order=created_at.desc&limit=20'))||[]; }catch(e){ myCorrections=myCorrections||[]; }
 }
 function workRecentLogHTML(){
-  var rows = (myClock||[]).slice(0,7);
-  if(!rows.length) return '';
-  return '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
-    + '<div style="font-size:15px;font-weight:800;margin-bottom:8px">&#128197; My Recent Hours</div>'
-    + rows.map(function(c){
-        return '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border,#e5e7eb);font-size:13px;flex-wrap:wrap">'
-          + '<span style="font-weight:600">'+ltFmtDate(c.workDate)+'</span>'
-          + '<span style="color:var(--text3)">'+twFmtTime(c.clockIn)+' &rarr; '+(c.clockOut?twFmtTime(c.clockOut):'still on the clock')+'</span>'
-          + '<span style="font-weight:700">'+twFmtDur(twClockMs(c))+'</span></div>';
-      }).join('')
+  var rows = (myClock||[]).slice(0,10);
+  var box='background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px';
+  var corr=(myCorrections||[]).slice(0,5).map(function(r){
+    var c=r.status==='approved'?['#059669','Approved']:r.status==='denied'?['#dc2626','Denied']:['#b45309','Pending'];
+    return '<div style="font-size:12px;padding:4px 0;color:var(--text3)"><b style="color:'+c[0]+'">'+c[1]+'</b> &middot; '+ltFmtDate(r.work_date)+' '+twFmtTime(r.req_in)+' &rarr; '+twFmtTime(r.req_out)+' &middot; '+esc(r.reason||'')+(r.decision_note?' &mdash; <i>'+esc(r.decision_note)+'</i>':'')+'</div>';
+  }).join('');
+  return '<div style="'+box+'">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><div style="font-size:15px;font-weight:800">&#128197; My Recent Hours</div>'
+    + '<button class="btn btn-secondary btn-sm" onclick="workOpenCorrection(0)">&#9998; Request a correction</button></div>'
+    + (rows.length ? rows.map(function(c){
+        var nb=(c.breaks||[]).length;
+        return '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border,#e5e7eb);font-size:13px;flex-wrap:wrap;align-items:center">'
+          + '<span style="font-weight:600;min-width:70px">'+ltFmtDate(c.workDate)+'</span>'
+          + '<span style="color:var(--text3);flex:1">'+twFmtTime(c.clockIn)+' &rarr; '+(c.clockOut?twFmtTime(c.clockOut):'still on the clock')+(nb?' <span style="font-size:11px">&middot; '+twFmtDur(twBreakMs(c))+' break</span>':'')+'</span>'
+          + '<span style="font-weight:700">'+twFmtDur(twClockMs(c))+'</span>'
+          + (c.clockOut?'<button class="btn btn-secondary btn-sm" style="padding:1px 7px;font-size:11px" onclick="workOpenCorrection('+c.id+')" title="Request a correction">&#9998;</button>':'')+'</div>';
+      }).join('') : '<div style="color:var(--text4);font-size:13px;padding:6px 0">No hours yet.</div>')
+    + (corr?'<div style="margin-top:10px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">My correction requests</div>'+corr:'')
     + '</div>';
+}
+function workOpenCorrection(clockId){
+  var c=clockId?(myClock||[]).find(function(x){return +x.id===+clockId;}):null;
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:420px">'
+    + '<div class="modal-header"><div class="modal-title">&#9998; Request a time correction</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Your clock times are locked. Tell your manager what they should be and why &mdash; they&#8217;ll approve or deny.</div>'
+      + '<div class="form-field"><label class="form-label">Date</label><input id="wc-date" type="date" class="form-input" value="'+(c?c.workDate:twLocalDay(new Date()))+'"></div>'
+      + '<div class="form-field" style="margin-top:8px"><label class="form-label">Correct start time</label><input id="wc-in" type="time" class="form-input" value="'+(c?twToLocalInput(c.clockIn).slice(11):'09:00')+'"></div>'
+      + '<div class="form-field" style="margin-top:8px"><label class="form-label">Correct end time</label><input id="wc-out" type="time" class="form-input" value="'+(c&&c.clockOut?twToLocalInput(c.clockOut).slice(11):'17:00')+'"></div>'
+      + '<div class="form-field" style="margin-top:8px"><label class="form-label">Reason</label><textarea id="wc-reason" class="form-input" rows="3" placeholder="e.g. Forgot to clock out at 5pm"></textarea></div>'
+    + '</div>'
+    + '<div class="modal-footer"><button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button><button class="btn btn-primary btn-sm" onclick="workSendCorrection('+(clockId||0)+')">Send request</button></div>'
+    + '</div></div>';
+}
+async function workSendCorrection(clockId){
+  var d=document.getElementById('wc-date').value, a=document.getElementById('wc-in').value, b=document.getElementById('wc-out').value, why=document.getElementById('wc-reason').value.trim();
+  if(!d||!a||!b){ showToast('Date, start and end are required','error'); return; }
+  if(!why){ showToast('Please give a reason','error'); return; }
+  var ci=new Date(d+'T'+a), co=new Date(d+'T'+b);
+  if(co<=ci){ showToast('End must be after start','error'); return; }
+  try{
+    await sbFetch('time_corrections','POST',{user_id:authProfile.id,user_name:authProfile.name||authProfile.email||'',clock_id:clockId||null,work_date:d,req_in:ci.toISOString(),req_out:co.toISOString(),reason:why});
+    closeModal(); await workLoadCorrections(); renderMyWork(); showToast('Request sent to your manager','success');
+  } catch(e){ showToast('Could not send: '+twErr(e),'error'); }
 }
 
 // ---- Tasks ----
+const TT_PRIORITIES = [['high','High','#dc2626','#fee2e2'],['medium','Medium','#d97706','#fef3c7'],['low','Low','#64748b','#f1f5f9']];
+const TT_CATEGORIES = ['Leads','Calls / Texts','Follow-up','Research','Admin','Marketing','Other'];
+function ttPriMeta(p){ return TT_PRIORITIES.find(function(x){return x[0]===p;}) || TT_PRIORITIES[1]; }
+// fields use DB column names; each key maps to the local task property + a label for the edit history
+const TT_FIELD_MAP = {task_text:['text','Task'],description:['description','Notes'],status:['status','Status'],priority:['priority','Priority'],category:['category','Category'],due_date:['dueDate','Finish date'],user_id:['userId','Assigned to']};
+function ttHistVal(k,v){
+  if(k==='status') return ttStatusMeta(v)[1];
+  if(k==='priority') return ttPriMeta(v)[1];
+  if(k==='user_id') return twPersonName(v)||'someone';
+  return (v===null||v===undefined||v==='') ? '(blank)' : String(v).length>60 ? String(v).slice(0,57)+'...' : String(v);
+}
 async function ttPatch(id, fields){
   try{
-    var f = Object.assign({updated_at:new Date().toISOString()}, fields);
+    var t = ttFind(id), now = new Date().toISOString();
+    var f = Object.assign({updated_at:now}, fields);
+    if(t){
+      var hist=[], me=(authProfile&&(authProfile.name||authProfile.email))||'Someone';
+      Object.keys(fields).forEach(function(k){
+        var m=TT_FIELD_MAP[k]; if(!m) return;
+        var oldV=t[m[0]], newV=fields[k];
+        if((oldV||'')===(newV||'')) return;
+        hist.push({at:now,by:me,field:m[1],from:ttHistVal(k,oldV),to:ttHistVal(k,newV)});
+      });
+      if(hist.length) f.history=(t.history||[]).concat(hist).slice(-60);
+    }
     await sbFetch(TT_PATH+'?id=eq.'+id,'PATCH',f);
     [teamTasks,teamAllTasks].forEach(function(arr){
-      var t=(arr||[]).find(function(x){return +x.id===+id;});
-      if(t){ if('status' in fields) t.status=fields.status; if('due_date' in fields) t.dueDate=fields.due_date||''; if('task_text' in fields) t.text=fields.task_text; t.updatedAt=f.updated_at; }
+      var x=(arr||[]).find(function(y){return +y.id===+id;});
+      if(x){
+        Object.keys(fields).forEach(function(k){ var m=TT_FIELD_MAP[k]; if(m) x[m[0]] = (k==='due_date') ? (fields[k]||'') : fields[k]; });
+        if('user_name' in fields) x.userName=fields.user_name;
+        if(f.history) x.history=f.history;
+        x.updatedAt=now;
+      }
     });
     return true;
   } catch(e){ showToast('Could not save: '+twErr(e),'error'); return false; }
 }
 async function ttSetStatus(id,s){ if(await ttPatch(id,{status:s})) ttRefreshViews(); }
 async function ttSetFinish(id,v){ if(await ttPatch(id,{due_date:v||null})) ttRefreshViews(); }
-async function ttEditText(id){
-  var t=(teamTasks||[]).concat(teamAllTasks||[]).find(function(x){return +x.id===+id;}); if(!t) return;
-  var v=prompt('Edit task',t.text); if(v===null) return; v=v.trim(); if(!v) return;
-  if(await ttPatch(id,{task_text:v})) ttRefreshViews();
+function ttEditText(id){ ttOpenForm(id); }
+// Create (id=0) or fully edit a task. The owner can also pick who it is assigned to.
+function ttOpenForm(id, defUser){
+  var t = id ? ttFind(id) : null; if(id && !t) return;
+  var owner = isOwner();
+  var v = t || {text:'',description:'',status:'not_started',priority:'medium',category:'',dueDate:'',userId:defUser||(authProfile&&authProfile.id),history:[]};
+  var people = (teamPeople||[]).slice();
+  var assignHTML = '';
+  if(owner){
+    if(!people.some(function(p){return p.id===v.userId;})) people.unshift({id:v.userId,name:(t&&t.userName)||'Me'});
+    assignHTML = '<div class="form-field" style="margin-top:8px"><label class="form-label">Assigned to</label><select id="ttf-user" class="form-select">'+people.map(function(p){return '<option value="'+p.id+'"'+(p.id===v.userId?' selected':'')+'>'+esc(p.name)+'</option>';}).join('')+'</select></div>';
+  }
+  var hist = (v.history||[]).slice().reverse().map(function(h){
+    return '<div style="font-size:11px;color:var(--text3);padding:3px 0;border-bottom:1px solid var(--border,#e5e7eb)"><b>'+esc(h.by)+'</b> changed <b>'+esc(h.field)+'</b>: '+esc(h.from)+' &rarr; '+esc(h.to)+' <span style="color:var(--text4,#9ca3af)">'+ttFmtStamp(h.at)+'</span></div>';
+  }).join('');
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px">'
+    + '<div class="modal-header"><div class="modal-title">'+(t?'&#9998; Edit task':'+ New task')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    + '<div class="modal-body">'
+      + '<div class="form-field"><label class="form-label">Task</label><input id="ttf-text" class="form-input" value="'+esc(v.text)+'" placeholder="What needs to get done?"></div>'
+      + '<div class="form-field" style="margin-top:8px"><label class="form-label">Notes / details</label><textarea id="ttf-desc" class="form-input" rows="3" placeholder="Optional details, links, instructions">'+esc(v.description||'')+'</textarea></div>'
+      + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
+        + '<div class="form-field" style="flex:1;min-width:130px"><label class="form-label">Status</label><select id="ttf-status" class="form-select">'+TT_STATUSES.map(function(x){return '<option value="'+x[0]+'"'+(v.status===x[0]?' selected':'')+'>'+x[1]+'</option>';}).join('')+'</select></div>'
+        + '<div class="form-field" style="flex:1;min-width:130px"><label class="form-label">Priority</label><select id="ttf-pri" class="form-select">'+TT_PRIORITIES.map(function(x){return '<option value="'+x[0]+'"'+(v.priority===x[0]?' selected':'')+'>'+x[1]+'</option>';}).join('')+'</select></div>'
+      + '</div>'
+      + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'
+        + '<div class="form-field" style="flex:1;min-width:130px"><label class="form-label">Category</label><input id="ttf-cat" class="form-input" list="ttf-cats" value="'+esc(v.category||'')+'" placeholder="Pick or type"><datalist id="ttf-cats">'+TT_CATEGORIES.map(function(c){return '<option value="'+esc(c)+'">';}).join('')+'</datalist></div>'
+        + '<div class="form-field" style="flex:1;min-width:130px"><label class="form-label">Finish date</label><input id="ttf-due" type="date" class="form-input" value="'+esc(v.dueDate||'')+'"></div>'
+      + '</div>'
+      + assignHTML
+      + (hist?'<div style="margin-top:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin-bottom:2px">Edit history</div><div style="max-height:130px;overflow:auto">'+hist+'</div></div>':'')
+    + '</div>'
+    + '<div class="modal-footer">'+(t?'<button class="btn btn-danger btn-sm" style="margin-right:auto" onclick="closeModal();ttDelete('+t.id+')">Delete</button>':'')+'<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button><button class="btn btn-primary btn-sm" onclick="ttSaveForm('+(id||0)+')">'+(t?'Save changes':'Add task')+'</button></div>'
+    + '</div></div>';
+  setTimeout(function(){ var e=document.getElementById('ttf-text'); if(e) e.focus(); },30);
+}
+async function ttSaveForm(id){
+  var g=function(k){var e=document.getElementById(k);return e?e.value:'';};
+  var text=g('ttf-text').trim(); if(!text){ showToast('Enter the task first','error'); return; }
+  var f={task_text:text, description:g('ttf-desc').trim(), status:g('ttf-status')||'not_started', priority:g('ttf-pri')||'medium', category:g('ttf-cat').trim(), due_date:g('ttf-due')||null};
+  var uid=g('ttf-user'); var assignee = isOwner() && uid ? uid : (authProfile&&authProfile.id);
+  if(id){
+    var t=ttFind(id);
+    if(isOwner() && uid && t && uid!==t.userId){ f.user_id=uid; f.user_name=twPersonName(uid); f.assigned_by=authProfile.id; f.assigned_by_name=authProfile.name||authProfile.email||''; }
+    if(await ttPatch(id,f)){
+      closeModal();
+      if(f.user_id && teamTasks) teamTasks=teamTasks.filter(function(x){return +x.id!==+id;});
+      ttRefreshViews(); showToast('Task saved','success');
+    }
+  } else {
+    try{
+      var row=Object.assign({user_id:assignee, user_name:assignee===(authProfile&&authProfile.id)?(authProfile.name||authProfile.email||''):twPersonName(assignee)}, f);
+      if(assignee!==(authProfile&&authProfile.id)){ row.assigned_by=authProfile.id; row.assigned_by_name=authProfile.name||authProfile.email||''; }
+      var r=await sbFetch(TT_PATH,'POST',row);
+      if(r&&r[0]){
+        var nt=ttFromDb(r[0]);
+        if(nt.userId===(authProfile&&authProfile.id)){ teamTasks=teamTasks||[]; teamTasks.unshift(nt); }
+        if(teamAllTasks) teamAllTasks.unshift(nt);
+      }
+      closeModal(); ttRefreshViews(); showToast('Task added','success');
+    } catch(e){ showToast('Could not add task: '+twErr(e),'error'); }
+  }
 }
 async function ttDelete(id){
   var t=ttFind(id);
@@ -5579,36 +5741,55 @@ function ttRefreshViews(){
   ttUpdateReviewBadge();
 }
 async function ttAddFromForm(){
-  var textEl=document.getElementById('tt-new-text'), stEl=document.getElementById('tt-new-status'), dueEl=document.getElementById('tt-new-due');
+  var textEl=document.getElementById('tt-new-text'), stEl=document.getElementById('tt-new-status'), dueEl=document.getElementById('tt-new-due'), prEl=document.getElementById('tt-new-pri');
   var text=(textEl?textEl.value:'').trim();
   if(!text){ showToast('Enter what you are working on first','error'); return; }
   try{
-    var row={user_id:authProfile.id, user_name:authProfile.name||authProfile.email||'', task_text:text, due_date:(dueEl&&dueEl.value)||null, status:(stEl&&stEl.value)||'not_started'};
+    var row={user_id:authProfile.id, user_name:authProfile.name||authProfile.email||'', task_text:text, due_date:(dueEl&&dueEl.value)||null, status:(stEl&&stEl.value)||'not_started', priority:(prEl&&prEl.value)||'medium'};
     var r=await sbFetch(TT_PATH,'POST',row);
     if(r&&r[0]){ teamTasks=teamTasks||[]; teamTasks.unshift(ttFromDb(r[0])); }
     renderMyWork();
   } catch(e){ showToast('Could not add task: '+twErr(e),'error'); }
 }
 function ttRowsHTML(tasks){
-  if(!tasks || !tasks.length) return '<div style="padding:12px 0;color:var(--text4,#9ca3af);font-size:13px">Nothing here yet.</div>';
+  if(!tasks || !tasks.length) return '<div style="padding:18px 0;text-align:center;color:var(--text4,#9ca3af);font-size:13px">Nothing here yet.</div>';
   var td=twLocalDay(new Date());
-  return tasks.map(function(t){
-    var carried = t.createdAt && twLocalDay(t.createdAt)<td && t.status!=='completed';
-    var overdue = t.dueDate && t.status!=='completed' && t.dueDate<td;
-    return '<div style="padding:9px 0;border-bottom:1px solid var(--border,#e5e7eb)"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'
-      + '<div style="flex:1;min-width:180px"><div style="font-size:13px;font-weight:600'+(t.status==='completed'?';text-decoration:line-through;color:var(--text3)':'')+'">'+esc(t.text)+'</div>'
-        + '<div style="font-size:11px;color:var(--text4,#9ca3af)">'+(carried?'Carried over from '+ltFmtDate(twLocalDay(t.createdAt))+' &middot; ':'')+(overdue?'<span style="color:#dc2626;font-weight:700">Past finish date</span>':'')+'</div></div>'
-      + '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap">'
-        + '<select class="form-select" style="font-size:12px;padding:3px 6px;max-width:130px" onchange="ttSetStatus('+t.id+',this.value)">'
-          + TT_STATUSES.map(function(s){return '<option value="'+s[0]+'"'+(t.status===s[0]?' selected':'')+'>'+s[1]+'</option>';}).join('')
-        + '</select>'
-        + '<input type="date" class="form-input" style="font-size:12px;padding:3px 6px;width:135px" title="Finish date" value="'+esc(t.dueDate||'')+'" onchange="ttSetFinish('+t.id+',this.value)">'
-        + '<button class="btn btn-secondary btn-sm" style="padding:3px 8px" onclick="ttEditText('+t.id+')" title="Edit">&#9998;</button>'
-        + '<button class="btn btn-secondary btn-sm" style="padding:3px 8px" onclick="ttDelete('+t.id+')" title="Delete task">&#128465;</button>'
-      + '</div></div>'
+  var rank={high:0,medium:1,low:2};
+  var list=tasks.slice().sort(function(a,b){
+    var ac=a.status==='completed'?1:0, bc=b.status==='completed'?1:0;
+    return ac-bc || (rank[a.priority]||1)-(rank[b.priority]||1) || (a.dueDate||'9999').localeCompare(b.dueDate||'9999');
+  });
+  var chip=function(txt,c,bg){ return '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;color:'+c+';background:'+bg+';white-space:nowrap">'+txt+'</span>'; };
+  return '<div style="display:flex;flex-direction:column;gap:10px">'+list.map(function(t){
+    var done=t.status==='completed';
+    var carried = t.createdAt && twLocalDay(t.createdAt)<td && !done;
+    var overdue = t.dueDate && !done && t.dueDate<td;
+    var dueToday = t.dueDate && !done && t.dueDate===td;
+    var pm=ttPriMeta(t.priority), sm=ttStatusMeta(t.status);
+    var meta=[
+      chip(pm[1]+' priority',pm[2],pm[3]),
+      t.category?chip('&#127991;&#65039; '+esc(t.category),'#475569','#f1f5f9'):'',
+      t.dueDate?chip((overdue?'&#9888;&#65039; Overdue &middot; ':dueToday?'Due today &middot; ':'&#128197; ')+ltFmtDate(t.dueDate),overdue?'#b91c1c':dueToday?'#b45309':'#475569',overdue?'#fee2e2':dueToday?'#fef3c7':'#f1f5f9'):'',
+      t.assignedByName&&t.assignedBy!==t.userId?chip('Assigned by '+esc(t.assignedByName),'#7c3aed','#ede9fe'):'',
+      carried?chip('Carried over from '+ltFmtDate(twLocalDay(t.createdAt)),'#64748b','#f8fafc'):''
+    ].filter(Boolean).join(' ');
+    return '<div style="border:1px solid var(--border,#e5e7eb);border-left:4px solid '+(done?'#10b981':pm[2])+';border-radius:10px;padding:11px 12px;background:var(--card,#fff)'+(done?';opacity:.75':'')+'">'
+      + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">'
+        + '<div style="flex:1;min-width:200px;cursor:pointer" onclick="ttOpenForm('+t.id+')" title="Click to edit">'
+          + '<div style="font-size:14px;font-weight:700'+(done?';text-decoration:line-through;color:var(--text3)':'')+'">'+esc(t.text)+'</div>'
+          + (t.description?'<div style="font-size:12px;color:var(--text3);margin-top:2px;white-space:pre-wrap">'+esc(t.description.length>160?t.description.slice(0,157)+'...':t.description)+'</div>':'')
+        + '</div>'
+        + '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'
+          + '<select style="font-size:12px;font-weight:700;padding:4px 8px;border-radius:14px;border:1px solid transparent;color:'+sm[2]+';background:'+sm[3]+';cursor:pointer" onchange="ttSetStatus('+t.id+',this.value)">'
+            + TT_STATUSES.map(function(s){return '<option value="'+s[0]+'"'+(t.status===s[0]?' selected':'')+'>'+s[1]+'</option>';}).join('')
+          + '</select>'
+          + '<button class="btn btn-secondary btn-sm" style="padding:3px 9px" onclick="ttOpenForm('+t.id+')" title="Edit task">&#9998; Edit</button>'
+        + '</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+meta+'</div>'
       + ttExtrasHTML(t)
       + '</div>';
-  }).join('');
+  }).join('')+'</div>';
 }
 
 // ---- Attachments / Submit for Review / Comments on daily tasks ----
@@ -5852,11 +6033,13 @@ async function renderMyWork(){
     + workClockCardHTML()
     + '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
       + '<div style="font-size:15px;font-weight:800;margin-bottom:10px">&#128221; Today&#8217;s Work</div>'
-      + '<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:flex-end">'
+      + '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:flex-end;background:var(--bg2,#f8fafc);border-radius:10px;padding:10px">'
         + '<div style="flex:1;min-width:200px"><label class="form-label" style="font-size:11px">What are you working on?</label><input id="tt-new-text" class="form-input" style="font-size:13px" onkeydown="if(event.key===\'Enter\')ttAddFromForm()"></div>'
+        + '<div><label class="form-label" style="font-size:11px">Priority</label><select id="tt-new-pri" class="form-select" style="font-size:13px">'+TT_PRIORITIES.map(function(s){return '<option value="'+s[0]+'"'+(s[0]==='medium'?' selected':'')+'>'+s[1]+'</option>';}).join('')+'</select></div>'
         + '<div><label class="form-label" style="font-size:11px">Status</label><select id="tt-new-status" class="form-select" style="font-size:13px">'+TT_STATUSES.map(function(s){return '<option value="'+s[0]+'">'+s[1]+'</option>';}).join('')+'</select></div>'
         + '<div><label class="form-label" style="font-size:11px">Finish date</label><input id="tt-new-due" type="date" class="form-input" style="font-size:13px"></div>'
         + '<button class="btn btn-primary btn-sm" onclick="ttAddFromForm()">+ Add</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="ttOpenForm(0)" title="Add with notes, category and more">More options</button>'
       + '</div>'
       + ttRowsHTML(tasks)
       + '<div style="font-size:11px;color:var(--text4,#9ca3af);margin-top:8px">Unfinished tasks carry over to the next day until they are Completed.</div>'
@@ -5864,7 +6047,7 @@ async function renderMyWork(){
     + ttCommentsCardHTML()
     + workRecentLogHTML()
     + '</div>';
-  if(!twTimer && (myClock||[]).some(function(c){return !c.clockOut;})) twTimer=setInterval(twTick,30000);
+  if((myClock||[]).some(function(c){return !c.clockOut;})) twStartTimer();
 }
 
 // ---- Owner: Team Work card (lives at the top of the owner Dashboard) ----
@@ -5875,8 +6058,10 @@ async function twLoadData(){
     var r = await Promise.all([
       sbFetchAll(TT_PATH+'?deleted=eq.false&select=*&order=created_at.desc,id.desc'),
       sbFetchAll(TC_PATH+'?work_date=gte.'+since+'&select=*&order=work_date.desc,id.desc'),
-      adminUsersCall({action:'list'}).catch(function(){ return {users:[]}; })
+      adminUsersCall({action:'list'}).catch(function(){ return {users:[]}; }),
+      sbFetch('time_corrections?select=*&order=created_at.desc&limit=100').catch(function(){ return []; })
     ]);
+    teamCorrections=r[3]||[];
     teamAllTasks=(r[0]||[]).map(ttFromDb); teamAllClock=(r[1]||[]).map(tcFromDb);
     await ttLoadComments();
     teamPeople=((r[2]&&r[2].users)||[]).filter(function(u){return u.role!=='recipient' && !u.disabled && !u.is_owner;}).map(function(u){return {id:u.id,name:u.name||u.email};});
@@ -5917,7 +6102,8 @@ async function renderTeamWork(keepData){
   function pill(n,label,c,bg){ return n? '<span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;margin:1px 3px 1px 0;color:'+c+';background:'+bg+'">'+n+' '+label+'</span>' : ''; }
   var body = rows.length ? rows.map(function(r){
     var open=!!twOpenRows[r.id];
-    var status = r.live ? '<span style="color:#16a34a;font-weight:700">&#9679; On the clock</span><div style="font-size:11px;color:var(--text4)">since '+twFmtTime(r.live.clockIn)+'</div>'
+    var longLive = r.live && (new Date()-new Date(r.live.clockIn))>TW_LONG_SHIFT_MS;
+    var status = r.live ? (twOnBreak(r.live)?'<span style="color:#b45309;font-weight:700">&#9749; On break</span>':'<span style="color:#16a34a;font-weight:700">&#9679; On the clock</span>')+'<div style="font-size:11px;color:var(--text4)">since '+twFmtTime(r.live.clockIn)+'</div>'+(longLive?'<div style="font-size:11px;color:#dc2626;font-weight:700">&#9888;&#65039; 12h+ &mdash; forgot to clock out?</div>':'')
       : '<span style="color:var(--text4)">Off the clock</span>';
     var tasksCell = pill(r.inproc,'in process','#2563eb','#dbeafe')+pill(r.notst,'not started','#64748b','#f1f5f9')+pill(r.stuck,'stuck','#dc2626','#fee2e2')+pill(r.done,'done','#059669','#d1fae5') || '<span style="color:var(--text4)">No tasks</span>';
     var dueCell = (r.overdue?'<span style="color:#dc2626;font-weight:700">'+r.overdue+' overdue</span>':'') + (r.overdue&&r.dueToday?' &middot; ':'') + (r.dueToday?'<span style="color:#d97706;font-weight:700">'+r.dueToday+' due today</span>':'') || '<span style="color:var(--text4)">&mdash;</span>';
@@ -5932,7 +6118,7 @@ async function renderTeamWork(keepData){
     var logRows = r.clk.length ? r.clk.map(function(c){
       return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border,#e5e7eb);font-size:13px;flex-wrap:wrap">'
         +'<span style="font-weight:600;min-width:80px">'+ltFmtDate(c.workDate)+'</span>'
-        +'<span style="color:var(--text3);flex:1">'+twFmtTime(c.clockIn)+' &rarr; '+(c.clockOut?twFmtTime(c.clockOut):'<i>still on the clock</i>')+(c.editedAt?' <span style="font-size:10px;color:#b45309">&#9998; edited</span>':'')+'</span>'
+        +'<span style="color:var(--text3);flex:1">'+twFmtTime(c.clockIn)+' &rarr; '+(c.clockOut?twFmtTime(c.clockOut):'<i>still on the clock</i>')+(c.breaks&&c.breaks.length?' <span style="font-size:11px">&middot; '+twFmtDur(twBreakMs(c))+' break</span>':'')+(c.editedAt?' <span style="font-size:10px;color:#b45309">&#9998; edited</span>':'')+'</span>'
         +'<span style="font-weight:700">'+twFmtDur(twClockMs(c))+'</span>'
         +'<button class="btn btn-secondary btn-sm" style="padding:2px 8px" onclick="twOpenClockEdit('+c.id+')">&#9998;</button></div>';
     }).join('') : '<div style="color:var(--text4);font-size:13px;padding:6px 0">No clock-ins in this range.</div>';
@@ -5947,7 +6133,8 @@ async function renderTeamWork(keepData){
     return main+detail;
   }).join('') : '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4);font-size:13px">No staff accounts or activity yet.</td></tr>';
   host.innerHTML =
-    ttCommentsCardHTML()
+    twCorrectionsCardHTML()
+    + ttCommentsCardHTML()
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">'
       + stat(on.length?on.map(function(r){return esc(r.name);}).join(', '):'Nobody','On the clock now',on.length?'#16a34a':'')
       + stat(twFmtDur(sum.ms),'Team hours ('+twDays+'d)')
@@ -5958,12 +6145,39 @@ async function renderTeamWork(keepData){
     + '<div style="'+card+'margin-top:12px;padding:6px 6px 10px">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px">'
         + '<div style="font-size:12px;color:var(--text4)">Click a person to see their time log and tasks. You can edit anything.</div>'
+        + '<button class="btn btn-primary btn-sm" onclick="ttOpenForm(0)">+ Assign a task</button>'
         + '<select class="form-select" style="font-size:12px" onchange="twDays=+this.value;teamAllClock=null;renderTeamWork()">'+[7,14,30].map(function(n){return '<option value="'+n+'"'+(twDays===n?' selected':'')+'>Last '+n+' days</option>';}).join('')+'</select>'
       + '</div>'
       + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'
         + '<th style="'+th+'">Person</th><th style="'+th+'">Status</th><th style="'+th+'">Today</th><th style="'+th+'">'+twDays+'-day hours</th><th style="'+th+'">Tasks</th><th style="'+th+'">Due</th>'
       + '</tr></thead><tbody>'+body+'</tbody></table></div>'
     + '</div>';
+}
+function twCorrectionsCardHTML(){
+  var pend=(teamCorrections||[]).filter(function(c){return c.status==='pending';});
+  if(!pend.length) return '';
+  return '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:14px;padding:14px;margin-top:10px">'
+    + '<div style="font-size:14px;font-weight:800;margin-bottom:6px">&#9998; Time correction requests ('+pend.length+')</div>'
+    + pend.map(function(c){
+      var cur=c.clock_id?(teamAllClock||[]).find(function(x){return +x.id===+c.clock_id;}):null;
+      return '<div style="padding:8px 0;border-top:1px solid #fde68a;font-size:13px"><b>'+esc(c.user_name)+'</b> &middot; '+ltFmtDate(c.work_date)
+        + '<div style="color:var(--text3)">'+(cur?'Now '+twFmtTime(cur.clockIn)+' &rarr; '+twFmtTime(cur.clockOut)+' &nbsp;|&nbsp; ':'New day &nbsp;|&nbsp; ')+'Wants <b>'+twFmtTime(c.req_in)+' &rarr; '+twFmtTime(c.req_out)+'</b></div>'
+        + '<div style="font-style:italic;color:var(--text3)">&ldquo;'+esc(c.reason)+'&rdquo;</div>'
+        + '<div style="margin-top:6px;display:flex;gap:6px"><button class="btn btn-primary btn-sm" style="background:#16a34a;border-color:#16a34a" onclick="twDecideCorrection('+c.id+',true)">Approve</button><button class="btn btn-secondary btn-sm" onclick="twDecideCorrection('+c.id+',false)">Deny</button></div></div>';
+    }).join('')+'</div>';
+}
+async function twDecideCorrection(id,ok){
+  var c=(teamCorrections||[]).find(function(x){return +x.id===+id;}); if(!c) return;
+  var note=prompt(ok?'Optional note to '+c.user_name+':':'Why are you denying this? (shown to '+c.user_name+')','');
+  if(note===null) return;
+  try{
+    if(ok){
+      if(c.clock_id) await sbFetch(TC_PATH+'?id=eq.'+c.clock_id,'PATCH',{clock_in:c.req_in,clock_out:c.req_out,edited_by:authProfile.id,edited_at:new Date().toISOString()});
+      else await sbFetch(TC_PATH,'POST',{user_id:c.user_id,user_name:c.user_name,work_date:c.work_date,clock_in:c.req_in,clock_out:c.req_out,edited_by:authProfile.id,edited_at:new Date().toISOString()});
+    }
+    await sbFetch('time_corrections?id=eq.'+id,'PATCH',{status:ok?'approved':'denied',decided_by:authProfile.id,decided_at:new Date().toISOString(),decision_note:(note||'').trim()});
+    teamAllClock=null; renderTeamWork(); showToast(ok?'Approved and time updated':'Denied','success');
+  } catch(e){ showToast('Could not save: '+twErr(e),'error'); }
 }
 function twPersonName(id){ var p=(teamPeople||[]).find(function(x){return x.id===id;}); if(p) return p.name; var r=(teamAllClock||[]).concat(teamAllTasks||[]).find(function(x){return x.userId===id;}); return r?r.userName:''; }
 function twOpenClockEdit(id){
