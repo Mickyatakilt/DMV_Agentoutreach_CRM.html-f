@@ -1932,7 +1932,7 @@ function normalizeAddr(a){return(a||'').toLowerCase().trim().replace(/  /g,' ').
 function findDup(addr,excludeId){const n=normalizeAddr(addr); if(!n) return null; return leads.find(l=>!l.deleted&&l.id!==excludeId&&normalizeAddr(l.address)===n)||null;}
 function getNextId(){return leads.length?Math.max(...leads.map(l=>l.id))+1:1;}
 function getFUCounts(){
-  const w=leads.filter(l=>!l.deleted&&l.d4dStatus!=='hot'&&l.followUpDate&&l.nationwide!=='Yes'&&l.leadSource!=='D4D Auto-Scan').concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
+  const w=leads.filter(l=>!l.deleted&&l.d4dStatus!=='hot'&&l.followUpDate&&l.nationwide!=='Yes'&&!isD4DRow(l)).concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
   return {overdue:w.filter(l=>getFUStatus(l.followUpDate)==='overdue').length,today:w.filter(l=>getFUStatus(l.followUpDate)==='today').length,soon:w.filter(l=>getFUStatus(l.followUpDate)==='soon').length,total:w.length};
 }
 function getNWFUCounts(){
@@ -1944,7 +1944,7 @@ function getFiltered(){
     if(l.deleted) return false;
     // D4D auto-scan leads live ONLY in the Review queue — never in the DMV Leads list.
     // They enter the working pipeline only when the user clicks "Send to Task" (→ Tasks tab).
-    if(l.leadSource==='D4D Auto-Scan') return false;
+    if(isD4DRow(l)) return false;
     // FB scrape batches live ONLY in the Facebook Scrape section — never in DMV Leads.
     if(isFbBatchLead(l)) return false;
     // When searching, include nationwide leads too
@@ -1978,7 +1978,7 @@ function getFiltered(){
   return data;
 }
 function isFbBatchLead(l){ return l.leadSource==='FB Scrape Batch' || l.leadSource==='FB Group Scrape'; }
-function getStats(){const activeLeads=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan'&&!isFbBatchLead(l));return {total:activeLeads.length,...Object.fromEntries(getDropdowns().statuses.map(s=>[s,activeLeads.filter(l=>l.status===s).length]))};}
+function getStats(){const activeLeads=leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbBatchLead(l));return {total:activeLeads.length,...Object.fromEntries(getDropdowns().statuses.map(s=>[s,activeLeads.filter(l=>l.status===s).length]))};}
 
 async function syncLeadToSheet(lead){
   if(!APPS_SCRIPT_URL) return;
@@ -7237,7 +7237,7 @@ function mgrBuildDigest(){
   // Leads. NOTE: "hot" mirrors the CRM's own canonical count (line ~6259):
   // hot leads in Outreach (excluding D4D Auto-Scan) PLUS hot Tasks (jvLeads).
   var isHot=function(x){ return String(x.score||'').toLowerCase()==='hot'; };
-  var isD4D=function(l){ return l.leadSource==='D4D Auto-Scan'; };
+  var isD4D=function(l){ return isD4DRow(l); };
   var hotLeads=Ls.filter(function(l){ return isHot(l)&&!isD4D(l); });
   var hotTasks=Ts.filter(function(t){ return isHot(t); });
   var hot=hotLeads.concat(hotTasks);   // combined = the number Mike sees in the CRM
@@ -7407,7 +7407,7 @@ function buildTempScoreViewHTML(score){
   var typeBg = {DMV:'#eff6ff',Nationwide:'#e0f2fe',Task:'#ede9fe'};
   var items = [];
   leads.forEach(function(l){
-    if(!l.deleted && l.leadSource!=='D4D Auto-Scan' && l.score===score){
+    if(!l.deleted && !isD4DRow(l) && l.score===score){
       items.push({id:l.id,type:l.nationwide==='Yes'?'Nationwide':'DMV',isTask:false,label:l.address||l.name||'Untitled',offer:l.offer,arv:l.arv,followUpDate:l.followUpDate,status:l.status});
     }
   });
@@ -7538,7 +7538,7 @@ async function d4dRefreshGoogleUsage(){
 }
 // Count of D4D auto-scan leads currently in the Review queue (to measure a run's new hot leads).
 function d4dCountReviewLeads(){
-  return leads.filter(function(l){ return !l.deleted && l.needsReview && (l.leadSource==='D4D Auto-Scan'||l.reviewSentBy==='D4D Auto-Scan'); }).length;
+  return leads.filter(function(l){ return !l.deleted && l.needsReview && isD4DRow(l); }).length;
 }
 // Amber/red banner shown in Review while today's Google budget is near or at the cap.
 function d4dLimitBannerHTML(){
@@ -7663,6 +7663,9 @@ function d4dScanBannerHTML(){
 // A D4D auto-scan lead (from the Driving-for-Dollars robot). These now live in their OWN D4D tab,
 // not the Review queue.
 function isD4DLead(l){ return l.leadSource==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan' || l.d4dStatus==='review_sent'; }
+// Robust D4D check for LEADS: negative epoch id is the immutable D4D marker (real CRM leads are positive),
+// so a blanked/edited lead_source tag can never leak a D4D lead into DMV Leads / stats.
+function isD4DRow(l){ return !!l && (isD4DLead(l) || Number(l.id)<0); }
 // Same idea as isD4DLead but also matches a Task that was converted from a D4D lead (Send to
 // Task carries the source onto sourceGroup). Kept as its own function — used by the ✉️ Send Mail
 // feature, which needs to recognize D4D origin on BOTH leads and tasks.
@@ -8988,9 +8991,9 @@ function renderLeadsTab(){
   const overdueChip=`<div class="stat-card" onclick="setTab('followups')" style="${allOverdue>0?'border-color:#fca5a5;background:#fee2e2;':''}"><div class="stat-dot" style="background:#dc2626"></div><div><div class="stat-num" style="${allOverdue>0?'color:#dc2626':''}">${allOverdue}</div><div class="stat-label" style="${allOverdue>0?'color:#dc2626':''}">Overdue</div></div></div>`;
   const fuChip=`<div class="stat-card" onclick="setTab('followups')" style="${allToday>0?'border-color:#fcd34d;background:#fef3c7;':'border-color:#5eead4;background:#f0fdfa;'}"><div class="stat-dot" style="background:${allToday>0?'#b45309':'#0d9488'}"></div><div><div class="stat-num" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?allToday:allFUCount}</div><div class="stat-label" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?'Due Today':'Follow-Ups'}</div></div></div>`;
 
-  const hot=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan'&&l.score==='Hot').length + jvLeads.filter(l=>!l.deleted&&l.score==='Hot').length;
-  const warm=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan'&&l.score==='Warm').length + jvLeads.filter(l=>!l.deleted&&l.score==='Warm').length;
-  const cold=leads.filter(l=>!l.deleted&&l.leadSource!=='D4D Auto-Scan'&&l.score==='Cold').length + jvLeads.filter(l=>!l.deleted&&l.score==='Cold').length;
+  const hot=leads.filter(l=>!l.deleted&&!isD4DRow(l)&&l.score==='Hot').length + jvLeads.filter(l=>!l.deleted&&l.score==='Hot').length;
+  const warm=leads.filter(l=>!l.deleted&&!isD4DRow(l)&&l.score==='Warm').length + jvLeads.filter(l=>!l.deleted&&l.score==='Warm').length;
+  const cold=leads.filter(l=>!l.deleted&&!isD4DRow(l)&&l.score==='Cold').length + jvLeads.filter(l=>!l.deleted&&l.score==='Cold').length;
   const scoreChip=`<div class="stat-card" style="cursor:default"><div style="display:flex;gap:10px;align-items:center;font-size:12px;font-weight:700">
       <span onclick="event.stopPropagation();tempScoreView='Hot';renderLeadsTab()" style="cursor:pointer;color:#dc2626">&#128308; ${hot} Hot</span>
       <span onclick="event.stopPropagation();tempScoreView='Warm';renderLeadsTab()" style="cursor:pointer;color:#b45309">&#128993; ${warm} Warm</span>
@@ -9737,7 +9740,8 @@ async function saveLead(){
   var emEl=document.getElementById('f-email'); if(emEl) l.contactEmail=emEl.value.trim();
   l.offer=document.getElementById('f-offer').value.trim();l.arv=document.getElementById('f-arv').value.trim();
   l.marketingType=document.getElementById('f-mkt').value;l.status=document.getElementById('f-status').value;
-  l.leadSource=document.getElementById('f-src').value;l.month=document.getElementById('f-month').value;
+  if(!isD4DRow(l)) l.leadSource=document.getElementById('f-src').value; // never blank a D4D lead's tag
+  l.month=document.getElementById('f-month').value;
   l.date=document.getElementById('f-date').value;l.followUpDate=document.getElementById('f-followup').value;
   l.webLink=document.getElementById('f-link').value.trim();l.comps=document.getElementById('f-comps').value.trim();
   l.notes=document.getElementById('f-notes').value.trim();
