@@ -575,6 +575,53 @@
      MOBILE APP SHELL (PWA) — phone-only. Every rule below is gated to <=768px or
      an additive class hidden on desktop, so the desktop UI is byte-for-byte the same.
      ============================================================================ */
+
+  /* ============ PHONE REDESIGN (roomy cards) — <=768px only, desktop unchanged ============ */
+  .card-actions{display:none;}
+  @media(max-width:768px){
+    body{font-size:15px;}
+    .cards-container{padding:12px 14px !important;}
+    .cards-grid{grid-template-columns:1fr !important;gap:14px;}
+    .card{padding:16px;border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.08);}
+    .card:hover{transform:none;}
+    .card-address{font-size:16px;line-height:1.35;}
+    .card-phone{font-size:13px;margin-top:4px;}
+    .card-divider{margin:12px 0;}
+    .card-row{gap:12px;margin-top:10px;}
+    .card-field-label{font-size:11px;}
+    .card-field-val{font-size:16px;margin-top:3px;}
+    .card-tags{gap:6px;margin-top:12px;}
+    .card-note{font-size:13px;margin-top:12px;padding-top:12px;}
+    .card input[type=checkbox]{width:20px !important;height:20px !important;}
+    .card-actions{display:flex;gap:8px;margin-top:14px;}
+    .ca-btn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border-radius:10px;border:1.5px solid var(--border2);background:var(--surface);color:var(--text);font-size:14px;font-weight:700;text-decoration:none;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+    .ca-call{background:#0d9488;border-color:#0d9488;color:#fff;}
+    .ca-text{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8;}
+    /* bigger tap targets + breathing room everywhere */
+    .btn{min-height:40px;padding:10px 16px;font-size:14px;}
+    .btn-sm{min-height:38px;padding:8px 12px;font-size:13px;}
+    .tab{padding-top:12px;padding-bottom:12px;font-size:14px;}
+    .toolbar,.stats-bar{padding:12px 14px;gap:10px;}
+    .toolbar{flex-wrap:wrap;height:auto;}
+    .toolbar select{flex:1 1 calc(50% - 6px);min-width:0;min-height:42px;}
+    .toolbar .search-box,.toolbar input[type=text],.toolbar input[type=search]{flex:1 1 100%;min-height:44px;}
+    .crm-bn-item{min-height:58px;font-size:11px;gap:3px;}
+    .crm-bn-item .bn-ic{font-size:23px;}
+    /* lead / task pop-up: one column, roomy, and the SMS conversation comes FIRST */
+    .modal-header{padding:16px 16px 12px;}
+    .modal-title{font-size:17px;line-height:1.3;}
+    .modal-body-split .modal-main-col,.modal-body{padding:16px;}
+    .detail-section{margin-bottom:22px;}
+    .detail-section-title{font-size:13px;margin-bottom:10px;}
+    .detail-grid{grid-template-columns:1fr !important;gap:14px;}
+    .detail-item{padding:2px 0;}
+    .detail-label{font-size:12px;}
+    .detail-val{font-size:15px;}
+    .form-grid,.form-grid.cols-3{gap:14px;}
+    .form-input,.form-select,.form-textarea{padding:12px;border-radius:10px;}
+    .modal-main-col:has(#ghl-sms-slot),.modal-body:not(.modal-body-split):has(#ghl-sms-slot){display:flex;flex-direction:column;}
+    #ghl-sms-slot{order:-1;margin-bottom:6px;}
+  }
   .crm-bottomnav{display:none;}  /* hidden on desktop; shown only on phones */
   @media(max-width:768px){
     /* Never let the page itself scroll sideways; wide content scrolls inside its own box */
@@ -1702,7 +1749,7 @@ try{ if(localStorage.getItem('crm_sb_collapsed')==='1'){ if(document.body) docum
 let sortField = 'month'; let sortDir = 1;
 let leadScoreFilter = '';
 let tempScoreView = ''; // '' | 'Hot' | 'Warm' | 'Cold' -- combined view across DMV+Nationwide+Tasks
-let view = 'table';
+let view = (window.matchMedia && window.matchMedia('(max-width:768px)').matches) ? 'cards' : 'table'; // phones default to roomy cards
 let currentPage = 1; const PAGE_SIZE = 50;
 let filters = {search:'',status:'',month:'',source:''};
 let dmvRecentMonth=false, nwRecentMonth=false, jvRecentMonth=false;
@@ -9212,6 +9259,11 @@ function renderCards(data,start,end){
           ${l.followUpDate?'<div style="margin-top:8px">'+followUpChip(l.followUpDate)+'</div>':''}
           <div class="card-tags"><span class="month-tag">${l.month}</span>${l.marketingType?'<span style="background:var(--surface3);color:var(--gray);padding:2px 7px;border-radius:5px;font-size:10px;font-weight:600">'+esc(l.marketingType)+'</span>':''}</div>
           ${l.notes?'<div class="card-note">'+esc(l.notes).substring(0,100)+(l.notes.length>100?'&#8230;':'')+'</div>':''}
+        </div>
+        <div class="card-actions">
+          ${l.phone&&l.phone.replace(/\D/g,'').length>=7?'<a class="ca-btn ca-call" href="tel:'+esc(l.phone.split('/')[0].replace(/[^\d+]/g,''))+'" onclick="event.stopPropagation()">&#128222; Call</a>':''}
+          <button class="ca-btn ca-text" onclick="event.stopPropagation();openDetail(${l.id})">&#128172; Text</button>
+          <button class="ca-btn" onclick="event.stopPropagation();openDetail(${l.id})">Open</button>
         </div>
       </div>`).join('')+
   '</div></div>';
