@@ -565,6 +565,8 @@
   .nci-del:hover{opacity:1;}
   .nci-del:disabled{opacity:.25;cursor:default;}
   /* Hot-flagged Review row: full red background, text forced white so everything (incl. the "Hot" letters) stays readable. */
+  /* D4D lead sent for admin review: yellow row. */
+  tr.sent-row > td{background:#fef08a !important;}
   tr.hot-row > td{background:#dc2626 !important;}
   tr.hot-row, tr.hot-row td, tr.hot-row .address-cell, tr.hot-row a,
   tr.hot-row .money-val, tr.hot-row .arv-val, tr.hot-row span:not(.badge){color:#fff !important;}
@@ -7296,7 +7298,7 @@ function renderOutreach(){
       <div class="tab ${activeTab==='jvleads'?'active':''}" onclick="setTab('jvleads')">&#9989; Tasks <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${jvLeads.length}</span></div>
       <div class="tab ${activeTab==='nationwide'?'active':''}" onclick="setTab('nationwide')" style="${activeTab==='nationwide'?'':''}">&#127758; Nationwide <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.nationwide==='Yes').length}</span></div>
       <div class="tab ${activeTab==='sentout'?'active':''}" onclick="setTab('sentout')">&#128231; Sent Out <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.shared).length + jvLeads.filter(l=>!l.deleted&&l.shared).length}</span>${(function(){var n=recipientFUAlertCount();return n>0?' <span title="Recipient follow-ups overdue or due today" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">&#10071;'+n+'</span>':'';})()}</div>
-      <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span id="tt-review-badge" title="Daily tasks waiting for your review" style="display:none;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700"></span> <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&!isD4DLead(l)&&!isFbBatchLead(l)).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
+      <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span id="tt-review-badge" title="Daily tasks waiting for your review" style="display:none;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700"></span> <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&(l.d4dStatus==='review_sent'||(!isD4DLead(l)&&!isFbBatchLead(l)))).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
       <div class="tab ${activeTab==='scheduledsms'?'active':''}" onclick="setTab('scheduledsms')">&#128197; Scheduled</div>
     </div>
     <div id="tab-content"></div>`;
@@ -7570,13 +7572,13 @@ function d4dScanBannerHTML(){
 }
 // A D4D auto-scan lead (from the Driving-for-Dollars robot). These now live in their OWN D4D tab,
 // not the Review queue.
-function isD4DLead(l){ return l.leadSource==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan'; }
+function isD4DLead(l){ return l.leadSource==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan' || l.d4dStatus==='review_sent'; }
 // Same idea as isD4DLead but also matches a Task that was converted from a D4D lead (Send to
 // Task carries the source onto sourceGroup). Kept as its own function — used by the ✉️ Send Mail
 // feature, which needs to recognize D4D origin on BOTH leads and tasks.
 function d4dOrigin(l){
   if(!l) return false;
-  return l.leadSource==='D4D Auto-Scan' || l.sourceGroup==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan';
+  return l.leadSource==='D4D Auto-Scan' || l.sourceGroup==='D4D Auto-Scan' || l.reviewSentBy==='D4D Auto-Scan' || l.d4dStatus==='review_sent';
 }
 
 // Shared row builder for the Review + D4D tables (identical layout, different item sets).
@@ -7604,7 +7606,9 @@ function rvRowHTML(it){
   var sentBy = l.reviewSentBy ? esc(l.reviewSentBy) : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
   var sentAt = l.reviewSentAt ? new Date(l.reviewSentAt).toLocaleString() : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
   var note = l.reviewNote ? '<div style="font-size:12px;max-width:240px;white-space:pre-wrap;color:var(--text2)">'+esc(l.reviewNote)+'</div>' : '<span style="color:var(--text4);font-size:11px">&#8212;</span>';
-  var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
+  var isSentRev = kind==='lead' && l.d4dStatus==='review_sent';
+  var d4dTag = isSentRev ? '<span style="font-size:9px;font-weight:900;color:#92400e;background:#fde68a;border:1px solid #f59e0b;border-radius:4px;padding:1px 4px;margin-right:5px">D4D LEAD</span>' : '';
+  var typeTag = d4dTag + (kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '');
   var phoneHtml = l.phone
     ? '<a href="tel:'+esc(String(l.phone).replace(/[^\\d+]/g,''))+'" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;white-space:nowrap;font-weight:600">'+esc(l.phone)+'</a>'
     : (/Skip trace: no cell on file/.test(l.notes||'')
@@ -7641,7 +7645,7 @@ function rvRowHTML(it){
   // Owner name shown ABOVE the address, if we have a real one (not a placeholder / address dup).
   var ownerLine = hasRealOwner
     ? '<div style="font-weight:700;font-size:13px;color:var(--text1)">'+esc(ownerNmRaw)+'</div>' : '';
-  return '<tr id="rrow-'+kind+'-'+l.id+'"'+(isHot?' class="hot-row"':'')+'>'
+  return '<tr id="rrow-'+kind+'-'+l.id+'"'+(isHot?' class="hot-row"':(isSentRev?' class="sent-row"':''))+'>'
     +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>'
     +'<td onclick="'+openFn+'" style="cursor:pointer">'+ownerLine+'<div style="display:flex;align-items:center;gap:4px"><div class="address-cell">'+typeTag+titleHtml+'</div>'+pwIcon(kind==='task'?(l.location||l.address||''):(l.address||''))+'</div></td>'
     +'<td style="font-size:13px">'+phoneHtml+'</td>'
@@ -7655,8 +7659,13 @@ function rvRowHTML(it){
     +'<td>'+statusBadge(status)+'</td>'
     +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
       +dlBtn
-      +hotBtn
+      +(isSentRev ? '' : hotBtn)
       +mailBadge
+      +((kind==='lead' && isD4D && activeSection==='d4d' && d4dTab==='leads')
+        ? (isSentRev
+            ? '<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;background:#fde68a;color:#92400e;border:1px solid #f59e0b;margin-right:6px;white-space:nowrap">&#128232; Sent for review</span>'
+            : '<button class="btn btn-sm" onclick="d4dSendForReview('+l.id+')" title="Send this lead to the admin Review queue" style="margin-right:6px;background:#fef9c3;color:#92400e;border:1px solid #facc15;font-weight:700">&#128232; Send for Review</button>')
+        : '')
       +propwireBtn
       +mailBtn
       +'<button class="btn btn-secondary btn-sm" onclick="'+openFn+'">Open</button> '
@@ -7692,7 +7701,7 @@ function rvBulkBarHTML(items){
 }
 function renderReviewTab(){
   // Review = team/recipient-flagged leads + Tasks. D4D auto-scan leads live in the D4D tab now.
-  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && !isD4DLead(l) && !isFbBatchLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'; }).map(function(l){ return {kind:'lead', l:l}; })
+  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && (l.d4dStatus==='review_sent' || (!isD4DLead(l) && !isFbBatchLead(l))) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'; }).map(function(l){ return {kind:'lead', l:l}; })
     .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview && t.d4dStatus!=='mail_queued' && t.d4dStatus!=='mail_sent'; }).map(function(t){ return {kind:'task', l:t}; }))
     .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
     // Note: Hot rows stay in place (turn red where they are) — no reordering, so clicks never shift the list under you.
@@ -8731,11 +8740,37 @@ async function clearReviewComplete(id){
   var ok = await saveLeadToSupabase(l);
   if(!ok) showToast('Cloud sync failed -- check your connection','error');
 }
+// 📨 D4D team member sends a lead to the admin Review queue: row turns yellow in D4D, and shows in
+// Review (Sent By = who, tagged D4D LEAD). Uses existing d4d_status column (value 'review_sent') -- no migration.
+async function d4dSendForReview(id){
+  var l=leads.find(function(x){return x.id===id;});
+  if(!l){ showToast('Lead not found','error'); return; }
+  l.d4dStatus='review_sent';
+  l.needsReview=true;
+  l.reviewSentBy=(currentUser&&currentUser.name)||'Team';
+  l.reviewSentAt=new Date().toISOString();
+  l.activityLog=(l.activityLog||[]).concat([{ at:l.reviewSentAt, by:l.reviewSentBy, note:'D4D lead sent for admin review', type:'Review' }]);
+  save(); d4dRefreshTab(); if(activeSection!=='d4d') render();
+  var ok=await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+  else showToast('Sent to admin Review','success');
+}
+// Admin finished with a D4D lead sent for review: it drops back to normal (un-yellow) in the D4D list.
+async function d4dReviewDone(id){
+  var l=leads.find(function(x){return x.id===id;});
+  if(!l) return;
+  l.d4dStatus='';
+  l.activityLog=(l.activityLog||[]).concat([{ at:new Date().toISOString(), by:(currentUser&&currentUser.name)||'Admin', note:'Admin review done', type:'Review' }]);
+  save(); render();
+  var ok=await saveLeadToSupabase(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+}
 async function completeReview(kind, id){
   if(typeof id==='undefined'){ id=kind; kind='lead'; } // back-compat if called with just an id
   var arr = kind==='task' ? jvLeads : leads;
   var l = arr.find(function(x){return x.id===id;});
   if(!l) return;
+  if(kind==='lead' && l.d4dStatus==='review_sent'){ return d4dReviewDone(id); }
   l.needsReview = false;
   if(kind==='task'){ saveJV(); render(); var okT = await saveJVToSupabase(l); if(!okT) showToast('Cloud sync failed -- check your connection','error'); return; }
   l.status = l.status || 'Review Complete';
@@ -8750,6 +8785,7 @@ function removeFromReview(kind, id){
   if(!l) return;
   // D4D auto-scan leads: Remove = really remove (soft-delete, recoverable from Trash) so the lead
   // never lingers in any list and the DB then blocks it from ever being re-added.
+  if(kind==='lead' && l.d4dStatus==='review_sent' && activeSection!=='d4d'){ d4dReviewDone(id); return; }
   if(kind==='lead' && isD4DLead(l)){
     if(!confirm('Remove this D4D lead?\n\n'+(l.address||'')+'\n\nIt is deleted and will not come back (recoverable from Trash).')) return;
     l.needsReview = false; l.deleted = true; l.deletedAt = new Date().toISOString();
