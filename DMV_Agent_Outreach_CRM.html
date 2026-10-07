@@ -485,6 +485,12 @@
   .asst-undo{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:380;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;display:none;gap:14px;}
   .asst-undo.on{display:flex;}
   .asst-undo b{color:#5eead4;cursor:pointer;}
+  .asst-grip{cursor:grab;touch-action:none;user-select:none;color:#94a3b8;font-size:16px;line-height:1;padding:2px 4px;flex:none;}
+  .asst-grip:hover{color:#0d9488;}
+  .asst-drag{opacity:.55;box-shadow:0 6px 18px rgba(0,0,0,.25);}
+  .asst-ei{display:flex;gap:6px;align-items:center;}
+  .asst-ei input{flex:1;}
+  .asst-ei button{background:none;border:0;color:#dc2626;cursor:pointer;font-size:14px;}
   .asst-top{display:flex;gap:10px;align-items:flex-start;}
   .asst-body{flex:1;min-width:0;}
   .asst-pen{background:none;border:0;cursor:pointer;font-size:14px;opacity:.55;padding:2px 4px;}
@@ -6887,7 +6893,7 @@ function askOpen(kind,id){
   dashOpen(kind,id); // list / probate / task / lead
 }
 // =================== Assistance (task reminders on every tab) ===================
-var asstTasks=[], asstLast=null, asstOpen=false, asstEditing=null, asstUndoT=null;
+var asstTasks=[], asstLast=null, asstOpen=false, asstEditing=null, asstUndoT=null, asstDraft=null;
 function asstToday(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Due now = no follow-up date, OR today has reached the follow-up date.
 function asstIsDue(t){ return !t.follow_up_date || asstToday() >= t.follow_up_date; }
@@ -6911,7 +6917,7 @@ function asstMount(){
   setInterval(function(){ if(asstEditing===null) asstRender(); }, 5*60*1000);
 }
 async function asstLoad(){
-  try{ asstTasks=await sbFetch('assistant_tasks?select=*&order=created_at.asc')||[]; }catch(e){ asstTasks=asstTasks||[]; }
+  try{ asstTasks=await sbFetch('assistant_tasks?select=*&order=sort_order.asc,created_at.asc')||[]; }catch(e){ asstTasks=asstTasks||[]; }
   asstRender();
 }
 function asstToggle(open){
@@ -6921,32 +6927,35 @@ function asstToggle(open){
 }
 function asstRowHTML(t,isDue){
   if(asstEditing===t.id){
-    return '<div class="asst-edit"><input type="text" id="asst-e-note" value="'+esc(t.note)+'" onkeydown="if(event.key===\'Enter\')asstSaveEdit('+t.id+')">'
-      +'<div class="asst-row"><input type="date" id="asst-e-date" value="'+esc(t.follow_up_date||'')+'" style="flex:1;border:1.5px solid var(--border2);border-radius:8px;padding:8px;font-size:13px"><button onclick="asstSaveEdit('+t.id+')">Save</button><button class="cancel" onclick="asstCancelEdit()">Cancel</button></div>'
-      +asstItems(t).map(function(it,i){ return '<div class="asst-it"><span>'+esc(it.text)+'</span><button class="asst-ix" title="Delete item" onclick="asstDelItem('+t.id+','+i+')">✕</button></div>'; }).join('')
+    var dr=asstDraft||{note:t.note,date:t.follow_up_date||'',items:asstItems(t).map(function(x){return {text:x.text,done:x.done};})};
+    return '<div class="asst-edit"><input type="text" id="asst-e-note" value="'+esc(dr.note)+'" placeholder="Note title">'
+      +'<div class="asst-row"><input type="date" id="asst-e-date" value="'+esc(dr.date||'')+'" style="flex:1;border:1.5px solid var(--border2);border-radius:8px;padding:8px;font-size:13px"></div>'
+      +'<div class="asst-hint">Tasks inside this note:</div>'
+      +dr.items.map(function(it,i){ return '<div class="asst-ei"><input type="text" class="asst-e-it" value="'+esc(it.text)+'"><button title="Delete task" onclick="asstDraftDel('+i+')">✕</button></div>'; }).join('')
+      +'<div class="asst-ei"><input type="text" id="asst-e-new" placeholder="+ Add a task" onkeydown="if(event.key===\'Enter\')asstDraftAdd()"><button style="color:#0d9488" onclick="asstDraftAdd()">Add</button></div>'
+      +'<div class="asst-row"><button onclick="asstSaveEdit('+t.id+')">Save</button><button class="cancel" onclick="asstCancelEdit()">Cancel</button></div>'
       +'</div>';
   }
   var items=asstItems(t), done=items.filter(function(x){return x.done;}).length;
   var d=!t.follow_up_date?'No date · added '+asstFmt((t.created_at||'').slice(0,10)||asstToday())
     :(isDue?'Follow-up '+asstFmt(t.follow_up_date)+' · due now':'Reminds '+asstFmt(t.follow_up_date));
-  return '<div class="asst-t'+(isDue?' due':'')+'" style="flex-direction:column;gap:0">'
-    +'<div class="asst-top"><button class="asst-chk" title="Remove" onclick="asstRemove('+t.id+')"></button>'
+  return '<div class="asst-t'+(isDue?' due':'')+'" data-tid="'+t.id+'" style="flex-direction:column;gap:0">'
+    +'<div class="asst-top"><span class="asst-grip" data-kind="note" title="Drag to reorder">⠇</span><button class="asst-chk" title="Remove" onclick="asstRemove('+t.id+')"></button>'
       +'<div class="asst-body"><div class="asst-n">'+esc(t.note)+'</div><div class="asst-d'+(isDue?' red':'')+'">'+d+'</div>'
       +(items.length?'<div class="asst-prog">'+done+'/'+items.length+' done</div>':'')+'</div>'
-      +'<button class="asst-pen" title="Edit" onclick="asstStartEdit('+t.id+')">✏️</button></div>'
-    +(items.length?'<div class="asst-items">'+items.map(function(it,i){ return '<label class="asst-it'+(it.done?' done':'')+'"><input type="checkbox"'+(it.done?' checked':'')+' onchange="asstToggleItem('+t.id+','+i+')"><span>'+esc(it.text)+'</span></label>'; }).join('')+'</div>':'')
+      +'<button class="asst-pen" title="Edit" onclick="asstStartEdit('+t.id+')">✏️ Edit</button></div>'
+    +(items.length?'<div class="asst-items">'+items.map(function(it,i){ return '<div class="asst-it'+(it.done?' done':'')+'" data-idx="'+i+'"><span class="asst-grip" data-kind="item" title="Drag to reorder">⠇</span><input type="checkbox"'+(it.done?' checked':'')+' onchange="asstToggleItem('+t.id+','+i+')"><span>'+esc(it.text)+'</span></div>'; }).join('')+'</div>':'')
     +'<div class="asst-newit"><input type="text" id="asst-ni-'+t.id+'" placeholder="+ Add a task inside this note" onkeydown="if(event.key===\'Enter\')asstAddItem('+t.id+')"></div>'
   +'</div>';
 }
 function asstRender(){
   var due=asstTasks.filter(asstIsDue), up=asstTasks.filter(function(t){return !asstIsDue(t);});
-  up.sort(function(a,b){return a.follow_up_date.localeCompare(b.follow_up_date);});
   var b=document.getElementById('asst-badge');
   if(b){ b.textContent=due.length; b.classList.toggle('on',due.length>0); }
   var l=document.getElementById('asst-list'); if(!l) return;
   var h='';
-  if(due.length) h+='<div class="asst-sec">🔴 NEEDS YOU NOW · '+due.length+'</div>'+due.map(function(t){return asstRowHTML(t,true);}).join('');
-  if(up.length) h+='<div class="asst-sec">⏳ UPCOMING · '+up.length+'</div>'+up.map(function(t){return asstRowHTML(t,false);}).join('');
+  if(due.length) h+='<div class="asst-sec">🔴 NEEDS YOU NOW · '+due.length+'</div><div class="asst-box">'+due.map(function(t){return asstRowHTML(t,true);}).join('')+'</div>';
+  if(up.length) h+='<div class="asst-sec">⏳ UPCOMING · '+up.length+'</div><div class="asst-box">'+up.map(function(t){return asstRowHTML(t,false);}).join('')+'</div>';
   if(!h) h='<div class="asst-empty">All clear — nothing on your plate. 🎉</div>';
   l.innerHTML=h;
 }
@@ -6956,11 +6965,29 @@ async function asstPatch(id,body){
   try{ await sbFetch('assistant_tasks?id=eq.'+id,'PATCH',body); }
   catch(e){ Object.keys(old).forEach(function(k){ t[k]=old[k]; }); asstRender(); alert('Could not save: '+(e.message||e)); }
 }
-function asstStartEdit(id){ asstEditing=id; asstRender(); var i=document.getElementById('asst-e-note'); if(i) i.focus(); }
-function asstCancelEdit(){ asstEditing=null; asstRender(); }
+function asstSyncDraft(){
+  var n=document.getElementById('asst-e-note'); if(!n||!asstDraft) return;
+  asstDraft.note=n.value; asstDraft.date=document.getElementById('asst-e-date').value;
+  var ins=document.querySelectorAll('.asst-e-it');
+  asstDraft.items=asstDraft.items.map(function(x,i){ return {text:ins[i]?ins[i].value:x.text, done:x.done}; });
+}
+function asstStartEdit(id){
+  var t=asstTasks.find(function(x){return x.id===id;}); if(!t) return;
+  asstEditing=id; asstDraft={note:t.note,date:t.follow_up_date||'',items:asstItems(t).map(function(x){return {text:x.text,done:x.done};})};
+  asstRender(); var i=document.getElementById('asst-e-note'); if(i) i.focus();
+}
+function asstCancelEdit(){ asstEditing=null; asstDraft=null; asstRender(); }
+function asstDraftDel(i){ asstSyncDraft(); asstDraft.items.splice(i,1); asstRender(); }
+function asstDraftAdd(){
+  asstSyncDraft(); var n=document.getElementById('asst-e-new'); var v=n?(n.value||'').trim():''; if(!v) return;
+  asstDraft.items.push({text:v,done:false}); asstRender(); var x=document.getElementById('asst-e-new'); if(x) x.focus();
+}
 function asstSaveEdit(id){
-  var n=(document.getElementById('asst-e-note').value||'').trim(), d=document.getElementById('asst-e-date').value||null;
-  if(!n) return; asstEditing=null; asstPatch(id,{note:n, follow_up_date:d});
+  asstSyncDraft(); var dr=asstDraft; var n=(dr.note||'').trim(); if(!n) return;
+  var nw=document.getElementById('asst-e-new'); var extra=nw?(nw.value||'').trim():'';
+  var items=dr.items.filter(function(x){return (x.text||'').trim();}).map(function(x){return {text:x.text.trim(),done:x.done};});
+  if(extra) items.push({text:extra,done:false});
+  asstEditing=null; asstDraft=null; asstPatch(id,{note:n, follow_up_date:dr.date||null, items:items});
 }
 function asstAddItem(id){
   var i=document.getElementById('asst-ni-'+id); var v=i?(i.value||'').trim():''; if(!v) return;
@@ -6972,12 +6999,6 @@ function asstToggleItem(id,idx){
   var t=asstTasks.find(function(x){return x.id===id;}); if(!t) return;
   var items=asstItems(t).map(function(x,i){ return i===idx?{text:x.text,done:!x.done}:x; });
   asstPatch(id,{items:items});
-}
-function asstDelItem(id,idx){
-  var t=asstTasks.find(function(x){return x.id===id;}); if(!t) return;
-  var keep=asstItems(t).filter(function(x,i){return i!==idx;});
-  var n=(document.getElementById('asst-e-note')||{}).value; 
-  asstPatch(id,{items:keep});
 }
 async function asstAdd(){
   var n=document.getElementById('asst-note'), d=document.getElementById('asst-date');
@@ -6998,6 +7019,36 @@ async function asstUndo(){
   var u=document.getElementById('asst-undo'); if(u) u.classList.remove('on');
   try{ var r=await sbFetch('assistant_tasks','POST',t); if(r&&r[0]) asstTasks.push(r[0]); asstRender(); }catch(e){}
 }
+// ---- drag to reorder (mouse + touch), notes within a section and tasks within a note ----
+document.addEventListener('pointerdown',function(e){
+  var list=document.getElementById('asst-list');
+  var g=e.target.closest&&e.target.closest('.asst-grip'); if(!g||!list||!list.contains(g)) return;
+  var kind=g.getAttribute('data-kind'); var el=g.closest(kind==='note'?'.asst-t':'.asst-it'); if(!el) return;
+  var parent=el.parentNode, cls=kind==='note'?'asst-t':'asst-it';
+  e.preventDefault(); el.classList.add('asst-drag');
+  function move(ev){
+    var y=ev.clientY, sibs=Array.prototype.filter.call(parent.children,function(c){return c.classList.contains(cls)&&c!==el;});
+    for(var i=0;i<sibs.length;i++){ var r=sibs[i].getBoundingClientRect(); if(y<r.top+r.height/2){ parent.insertBefore(el,sibs[i]); return; } }
+    if(sibs.length) parent.appendChild(el);
+  }
+  function up(){
+    document.removeEventListener('pointermove',move); document.removeEventListener('pointerup',up); document.removeEventListener('pointercancel',up);
+    el.classList.remove('asst-drag');
+    var order=Array.prototype.filter.call(parent.children,function(c){return c.classList.contains(cls);});
+    if(kind==='note'){
+      var ids=order.map(function(c){return +c.getAttribute('data-tid');});
+      var slots=ids.map(function(id){return asstTasks.find(function(t){return t.id===id;}).sort_order;}).sort(function(a,b){return a-b;});
+      ids.forEach(function(id,i){ var t=asstTasks.find(function(x){return x.id===id;}); if(t.sort_order!==slots[i]){ t.sort_order=slots[i]; sbFetch('assistant_tasks?id=eq.'+id,'PATCH',{sort_order:slots[i]}).catch(function(){}); } });
+      asstTasks.sort(function(a,b){return a.sort_order-b.sort_order;});
+    } else {
+      var tid=+el.closest('.asst-t').getAttribute('data-tid'), t=asstTasks.find(function(x){return x.id===tid;}), old=asstItems(t);
+      var ni=order.map(function(c){return old[+c.getAttribute('data-idx')];});
+      t.items=ni; sbFetch('assistant_tasks?id=eq.'+tid,'PATCH',{items:ni}).catch(function(){});
+    }
+    asstRender();
+  }
+  document.addEventListener('pointermove',move); document.addEventListener('pointerup',up); document.addEventListener('pointercancel',up);
+});
 // Dashboard card: Ask AI lives here now
 function askCardHTML(){
   if(isStaffUser()) return '';
