@@ -768,7 +768,13 @@ async function authSignOut(){
 // Call the admin-users edge function (admin-gated server-side).
 // Force a token refresh regardless of the local expiry clock — recovers when a call gets 401
 // even though the stored token looked un-expired (a stale or server-rotated session).
+var _authRefreshInflight = null;
 async function authForceRefresh(){
+  if(_authRefreshInflight) return _authRefreshInflight;
+  _authRefreshInflight = _authForceRefreshImpl().finally(function(){ _authRefreshInflight = null; });
+  return _authRefreshInflight;
+}
+async function _authForceRefreshImpl(){
   if(!authSession || !authSession.refresh_token) return false;
   try {
     var r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
@@ -843,6 +849,43 @@ async function slackCall(body){
   if(!r.ok){ throw new Error(data.error || ('Request failed ('+r.status+')')); }
   return data;
 }
+// Global safety net for "JWT expired": every raw fetch to Supabase (REST, storage, edge fns)
+// used to read the stored ~1h token as-is, so any call site that forgot to refresh first failed
+// with {"message":"JWT expired"}. Wrap fetch once: swap in a fresh session token before the call
+// and, if the gateway still answers 401, force-refresh and retry once.
+(function(){
+  if(window.__sbFetchWrapped) return; window.__sbFetchWrapped = true;
+  var origFetch = window.fetch.bind(window);
+  function isSb(u){ return typeof u==='string' && u.indexOf(SUPABASE_URL)===0 && u.indexOf('/auth/v1/')<0; }
+  function setAuth(init, tok){
+    var h = new Headers(init.headers||{}); h.set('Authorization','Bearer '+tok);
+    return Object.assign({}, init, {headers:h});
+  }
+  window.fetch = async function(input, init){
+    var url = (typeof input==='string') ? input : (input && input.url);
+    if(!AUTH_ENABLED || !authSession || !isSb(url) || (typeof input!=='string')) return origFetch(input, init);
+    init = init || {};
+    var hdrs = new Headers(init.headers||{});
+    var auth = hdrs.get('Authorization')||'';
+    // Only touch calls that carry the user's session token (leave anon-key calls alone).
+    var stale = authSession.access_token;
+    if(auth !== 'Bearer '+stale) return origFetch(input, init);
+    try { await authRefreshIfNeeded(); } catch(e){}
+    var r = await origFetch(input, authSession.access_token!==stale ? setAuth(init, authSession.access_token) : init);
+    if(r.status===401){
+      var used = authSession.access_token;
+      if(await authForceRefresh() || authSession.access_token!==used){
+        r = await origFetch(input, setAuth(init, authSession.access_token));
+      }
+    }
+    return r;
+  };
+  // Keep the token fresh in the background and when the tab/PWA wakes up (phones sleep >1h).
+  function tick(){ if(AUTH_ENABLED && authSession){ authRefreshIfNeeded().catch(function(){}); } }
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) tick(); });
+  window.addEventListener('online', tick);
+  setInterval(tick, 5*60*1000);
+})();
 // ===== END AUTH ===================================================================
 
 // -- GoHighLevel Deep Links ---------------------------------------------------
