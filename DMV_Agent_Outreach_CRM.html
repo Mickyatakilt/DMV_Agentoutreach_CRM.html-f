@@ -9493,7 +9493,7 @@ function renderDetailModal(){
         <div class="modal-footer">
           <button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>
           <button class="btn btn-secondary btn-sm" onclick="sendToReview('lead',${l.id})">&#128203; Review</button>
-          ${d4dOrigin(l)&&l.d4dStatus!=='hot'
+          ${d4dOrigin(l)&&!d4dIsHot(l)
             ? `<button class="btn btn-sm" onclick="closeModal();d4dSendHot(${l.id})" title="Move this lead to the D4D Hot Leads tab" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-weight:700">&#128293; Send Hot Lead</button>`
             : `<button class="btn btn-sm" onclick="sendLeadToTask(${l.id})" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to ${d4dOrigin(l)?'CRM ':''}Task</button>`}
           ${d4dOrigin(l)&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent'?'<button class="btn btn-sm" onclick="d4dSendMailFromModal(\'lead\','+l.id+')" title="Queue this property for a direct-mail postcard/letter — moves it to the ✉️ Send Mail tab" style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>':''}
