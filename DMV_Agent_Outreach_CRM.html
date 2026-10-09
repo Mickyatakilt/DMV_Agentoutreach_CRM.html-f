@@ -6401,7 +6401,7 @@ function ltCatCount(cat){ return (crmLists||[]).filter(function(l){ return (l.ca
 // Every follow-up across the whole CRM, unified into {kind,id,date,label,sub}.
 function dashFollowups(){
   var items=[];
-  (leads||[]).forEach(function(l){ if(!l.deleted && l.followUpDate) items.push({kind:'lead',id:l.id,date:l.followUpDate,label:l.address||l.name||('Lead #'+l.id),sub:(l.nationwide==='Yes'?'Nationwide lead':'DMV lead')}); });
+  (leads||[]).forEach(function(l){ if(!l.deleted && !isD4DRow(l) && l.followUpDate) items.push({kind:'lead',id:l.id,date:l.followUpDate,label:l.address||l.name||('Lead #'+l.id),sub:(l.nationwide==='Yes'?'Nationwide lead':'DMV lead')}); });
   (jvLeads||[]).forEach(function(t){ if(!t.deleted && t.followUpDate) items.push({kind:'task',id:t.id,date:t.followUpDate,label:t.name||t.location||('Task #'+t.id),sub:'Task'}); });
   (crmProbate||[]).forEach(function(p){ if(p.followUpDate) items.push({kind:'probate',id:p.id,date:p.followUpDate,label:p.decedentName||p.propertyAddress||('Probate #'+p.id),sub:'Probate'+(p.county?' · '+p.county:'')}); });
   (crmLists||[]).forEach(function(l){ if(l.dueDate) items.push({kind:'list',id:l.id,date:l.dueDate,label:l.name||('List #'+l.id),sub:'List re-outreach'}); });
@@ -6814,7 +6814,7 @@ function askMatchDeal(p,s){
 function askExec(s){
   var g={leads:[],tasks:[],lists:[],probate:[],buyers:[],deals:[]};
   function on(k){ return !s.sections || s.sections.indexOf(k)>=0; }
-  if(on('leads')) (leads||[]).filter(function(l){return !l.deleted;}).forEach(function(l){ if(askMatchLead(l,s)) g.leads.push({kind:'lead',id:l.id,
+  if(on('leads')) (leads||[]).filter(function(l){return !l.deleted && !isD4DRow(l);}).forEach(function(l){ if(askMatchLead(l,s)) g.leads.push({kind:'lead',id:l.id,
     title:l.name||l.phone||('Lead #'+l.id), sub:[l.location,l.jvStatus,(String(l.score||'').toLowerCase()==='hot'?'\ud83d\udd25 Hot':'')].filter(Boolean).join(' \u00b7 '), date:l.followUpDate||''}); });
   if(on('tasks')) (jvLeads||[]).filter(function(t){return !t.deleted;}).forEach(function(tk){ if(askMatchLead(tk,s)) g.tasks.push({kind:'task',id:tk.id,
     title:tk.name||tk.phone||('Task #'+tk.id), sub:[tk.location,tk.jvStatus].filter(Boolean).join(' \u00b7 '), date:tk.followUpDate||''}); });
