@@ -4161,6 +4161,9 @@ function exportBuyersCSV(){
 // case id (source_case_id UNIQUE) so a re-sync never doubles a lead.
 var crmProbate = null;                 // null = not loaded yet
 var pbSearch='', pbState='', pbView='all';   // view: all | unsent | sent | due
+var pbStars={5:false,4:false};   // star filter: none ticked = all stars; tick 5, 4 or both
+function pbToggleStar(n){ pbStars[n]=!pbStars[n]; renderProbate(); }
+function pbStarLabel(){ return pbStars[5]&&pbStars[4]?'4-5star':(pbStars[5]?'5star':(pbStars[4]?'4star':'')); }
 const PB_PATH='crm_probate';
 const PB_STATES=['MD','SC','DC','VA','GA','TX','NC'];   // states offered in the sync dialog
 const PB_STATE_NAMES={MD:'Maryland',SC:'South Carolina',DC:'Washington DC',VA:'Virginia',GA:'Georgia',TX:'Texas',NC:'North Carolina',OH:'Ohio',IN:'Indiana',FL:'Florida'};
@@ -4181,6 +4184,7 @@ function pbFromDb(r){ return {
 function pbToDb(p){ return {
   status:p.status||'New', ghl_tag:p.ghlTag||'', sent_on:p.sentOn||null, sent_tag:p.sentTag||'',
   follow_up_date:p.followUpDate||null, notes:p.notes||'', touches:p.touches||[],
+  score:(p.score===''||p.score==null||isNaN(+p.score))?null:+p.score,
   updated_at:new Date().toISOString() }; }
 
 async function crmProbateFetch(){
@@ -4363,6 +4367,11 @@ function renderProbate(){
     texted:   {solid:'#1e40af', tint:'#dbeafe', text:'#1e40af', border:'#93c5fd'},
     followup: {solid:'#7e22ce', tint:'#f3e8ff', text:'#7e22ce', border:'#d8b4fe'}
   };
+  function starChip(n){
+    var on=!!pbStars[n], cnt=all.filter(function(p){return +p.score===n;}).length;
+    var style=on?'background:#b45309;color:#fff;border:1.5px solid #b45309;font-weight:700':'background:#fffbeb;color:#92400e;border:1.5px solid #fcd34d;font-weight:700';
+    return '<button class="btn btn-sm" style="'+style+';white-space:nowrap" title="Show/download '+n+'-star leads. Tick both for 4 and 5." onclick="pbToggleStar('+n+')">'+(on?'&#9745;':'&#9744;')+' &#9733;'+n+' ('+cnt.toLocaleString()+')</button>';
+  }
   function viewChip(v,label){
     var on=pbView===v, c=PB_VIEW_COLORS[v]||PB_VIEW_COLORS.all;
     var style=on
@@ -4377,7 +4386,7 @@ function renderProbate(){
         + '<p>Probate leads from your scanner, grouped into batches by the day they were pulled and the state. Open a batch to see its leads. Mark each batch skiptraced, set its send-out &amp; follow-up dates, and log where it lives in GHL.</p></div>'
       + '<div class="lt-actions">'
         + '<button class="btn btn-secondary btn-sm" onclick="crmProbate=null;crmProbateBatches=null;renderProbate()">&#8635; Refresh</button>'
-        + '<button class="btn btn-secondary btn-sm" onclick="exportProbateCSV()">&#8682; Export</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="exportProbateCSV()" title="Downloads what you see: honors the state, view, search and star filters (or only ticked leads)">&#8682; Export'+(pbStarLabel()?' ('+pbStarLabel().replace('star','&#9733;')+')':'')+'</button>'
         + '<button class="btn btn-secondary btn-sm" onclick="pbOpenSkiptraceImport()" title="Upload a returned skip-traced file to fill Name/Phone/Address on matching leads">&#8681; Upload Skip-Traced</button>'
         + '<button class="btn btn-primary btn-sm" onclick="openProbateSyncModal()">&#128260; Sync from Scanner</button>'
       + '</div>'
@@ -4394,6 +4403,7 @@ function renderProbate(){
         + '<input id="pb-search" type="text" placeholder="&#128269; Search decedent, address, PR, case #..." oninput="pbSearch=this.value;pbRenderArea()" value="'+esc(pbSearch)+'" style="flex:1;min-width:200px">'
         + '<select onchange="pbState=this.value;pbRenderArea()"><option value="">All states</option>'
           + states.map(function(s){return '<option value="'+esc(s)+'"'+(pbState===s?' selected':'')+'>'+esc(s)+'</option>';}).join('')+'</select>'
+        + starChip(5) + starChip(4)
         + '</div>'
         + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'
           + viewChip('all','All ('+all.length.toLocaleString()+')')
@@ -4419,6 +4429,7 @@ function pbFilteredLeads(){
   var q=pbSearch.trim().toLowerCase();
   return (crmProbate||[]).filter(function(p){
     if(pbState && p.state!==pbState) return false;
+    if(pbStars[5]||pbStars[4]){ var sc=+p.score; if(!((sc===5&&pbStars[5])||(sc===4&&pbStars[4]))) return false; }
     if(pbView==='notscraped' && pbLeadBatchStatus(p)!=='notscraped') return false;
     if(pbView==='scraped' && pbLeadBatchStatus(p)!=='scraped') return false;
     if(pbView==='texted' && pbLeadBatchStatus(p)!=='texted') return false;
@@ -4683,6 +4694,9 @@ function openProbateEdit(id){
         + '<div class="form-field"><label class="form-label">Status</label><select id="pb-e-status" class="form-input">'
           + statuses.map(function(s){return '<option'+(p.status===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select></div>'
         + '<div class="form-field"><label class="form-label">Follow-up date</label><input id="pb-e-fu" type="date" class="form-input" value="'+esc(p.followUpDate)+'"></div>'
+        + '<div class="form-field"><label class="form-label">Star rating</label><select id="pb-e-score" class="form-input">'
+          + [5,4,3,2,1].map(function(n){return '<option value="'+n+'"'+(+p.score===n?' selected':'')+'>'+'&#9733; '+n+(n===5?' (best)':'')+'</option>';}).join('')
+          + (p.score==null||p.score===''||![1,2,3,4,5].includes(+p.score)?'<option value="" selected>&mdash; none</option>':'')+'</select></div>'
       + '</div>'
       + '<div class="form-field"><label class="form-label">GHL Tag <span style="font-weight:400;color:var(--text3)">(defaults to "Probate '+esc(p.state)+'")</span></label><input id="pb-e-tag" class="form-input" value="'+esc(p.ghlTag)+'" placeholder="Probate '+esc(p.state)+'"></div>'
       + '<div class="form-field"><label class="form-label">Notes</label><textarea id="pb-e-notes" class="form-input" rows="3" placeholder="Skip-trace notes, offer, seller contact...">'+esc(p.notes)+'</textarea></div>'
@@ -4696,6 +4710,7 @@ async function saveProbateEdit(id){
   var p=crmProbateById(id); if(!p){ showToast('Lead not found','error'); return; }
   p.status=document.getElementById('pb-e-status').value;
   p.followUpDate=document.getElementById('pb-e-fu').value||'';
+  var scEl=document.getElementById('pb-e-score'); if(scEl && scEl.value!=='') p.score=+scEl.value;
   p.ghlTag=(document.getElementById('pb-e-tag').value||'').trim();
   p.notes=(document.getElementById('pb-e-notes').value||'').trim();
   try{ await crmProbateUpdate(p); showToast('Lead updated','success'); }
@@ -4726,7 +4741,7 @@ function exportProbateCSV(){
   function cell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
   var csv=cols.join(',')+'\n'+rows.map(function(p){ return cols.map(function(c){ return cell(p[c]); }).join(','); }).join('\n');
   var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob);
-  var a=document.createElement('a'); a.href=url; a.download='probate-leads-'+today()+'.csv'; a.click();
+  var a=document.createElement('a'); a.href=url; a.download='probate-leads-'+(pbStarLabel()?pbStarLabel()+'-':'')+today()+'.csv'; a.click();
   setTimeout(function(){ URL.revokeObjectURL(url); },1000);
   showToast('Exported '+rows.length+(pbSel.size?' selected':'')+' lead'+(rows.length!==1?'s':''),'success');
 }
