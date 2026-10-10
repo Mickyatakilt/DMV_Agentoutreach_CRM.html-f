@@ -4386,7 +4386,7 @@ function renderProbate(){
         + '<p>Probate leads from your scanner, grouped into batches by the day they were pulled and the state. Open a batch to see its leads. Mark each batch skiptraced, set its send-out &amp; follow-up dates, and log where it lives in GHL.</p></div>'
       + '<div class="lt-actions">'
         + '<button class="btn btn-secondary btn-sm" onclick="crmProbate=null;crmProbateBatches=null;renderProbate()">&#8635; Refresh</button>'
-        + '<button class="btn btn-secondary btn-sm" onclick="exportProbateCSV()" title="Downloads what you see: honors the state, view, search and star filters (or only ticked leads)">&#8682; Export'+(pbStarLabel()?' ('+pbStarLabel().replace('star','&#9733;')+')':'')+'</button>'
+        + pbStarSelectHTML(null,null)+'<button class="btn btn-secondary btn-sm" onclick="exportProbateCSV()" title="Downloads what you see: honors the state, view, search and star filters (or only ticked leads)">&#8682; Export'+(pbStarLabel()?' ('+pbStarLabel().replace('star','&#9733;')+')':'')+'</button>'
         + '<button class="btn btn-secondary btn-sm" onclick="pbOpenSkiptraceImport()" title="Upload a returned skip-traced file to fill Name/Phone/Address on matching leads">&#8681; Upload Skip-Traced</button>'
         + '<button class="btn btn-primary btn-sm" onclick="openProbateSyncModal()">&#128260; Sync from Scanner</button>'
       + '</div>'
@@ -4583,7 +4583,8 @@ function pbRenderArea(){
         + '<span class="pb-bt-date">'+(dt?ltFmtDate(dt):'')+'</span>'
         + '<span class="pb-bt-cnt">'+arr.length.toLocaleString()+' lead'+(arr.length!==1?'s':'')+'</span>'
         + pbScrapeChip(b.skiptraced)
-        + (meta.done?'':'<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="pbOpenReplaceBatch(\''+esq(dt)+'\',\''+esq(st)+'\')" title="Upload a skip-traced list to replace this batch and mark it Scraped">&#8681; Replace with skip-traced list</button>')
+        + '<span style="margin-left:12px">'+pbStarSelectHTML(st,dt)+'</span>'
+        + (meta.done?'':'<button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="pbOpenReplaceBatch(\''+esq(dt)+'\',\''+esq(st)+'\')" title="Upload a skip-traced list to replace this batch and mark it Scraped">&#8681; Replace with skip-traced list</button>')
         + '<span class="pb-detail-close" onclick="pbToggleOpen(\''+esq(k)+'\')">&#10005; Close</span>'
       + '</div>'
       + '<div class="pb-wf-panel"><div class="pb-wf-title">&#9881;&#65039; Batch workflow &mdash; applies to all '+arr.length.toLocaleString()+' leads</div>'+wf+'</div>'
@@ -4729,7 +4730,29 @@ function deleteProbateLead(id){
   });
 }
 
-// ---- CSV export ----
+// ---- Download by star rating: mode = '5' | '4' | '45'; (st,dt) = one batch, omitted = everything in the current view ----
+function pbStarSelectHTML(st,dt){
+  var q=function(x){ return String(x).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); };
+  var args=(st!=null?"'"+q(st)+"','"+q(dt)+"'":"null,null");
+  return '<select class="form-input" style="width:auto;padding:4px 8px;font-size:12.5px;font-weight:600" title="Download only the 5-star, 4-star, or both" onchange="if(this.value){pbDownloadByStars(this.value,'+args+');} this.selectedIndex=0">'
+    + '<option value="">&#8681; Download by stars&hellip;</option>'
+    + '<option value="5">&#9733;5 only</option><option value="4">&#9733;4 only</option><option value="45">&#9733;4 + &#9733;5 together</option></select>';
+}
+function pbDownloadByStars(mode,st,dt){
+  var want={'5':[5],'4':[4],'45':[4,5]}[mode]; if(!want) return;
+  var base = (st!=null) ? (crmProbate||[]).filter(function(p){ return p.state===st && p.datePulled===dt; }) : pbFilteredLeads();
+  var rows=base.filter(function(p){ return want.indexOf(+p.score)>=0; });
+  if(!rows.length){ showToast('No '+(mode==='45'?'4 or 5':mode)+'-star leads here','error'); return; }
+  var cols=['state','county','caseNumber','estateType','decedentName','dateOfDeath','filingDate',
+    'propertyAddress','propertyCity','propertyZip','assessedValue','prName','prAddress','attorney','score',
+    'skiptraceName','skiptracePhone','skiptraceAddress','status','datePulled','notes'];
+  function cell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+  var csv=cols.join(',')+'\n'+rows.map(function(p){ return cols.map(function(c){ return cell(p[c]); }).join(','); }).join('\n');
+  var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob);
+  var a=document.createElement('a'); a.href=url; a.download='probate-'+(st?st+'-'+dt+'-':'')+(mode==='45'?'4-5star':mode+'star')+'-'+today()+'.csv'; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); },1000);
+  showToast('Downloaded '+rows.length.toLocaleString()+' '+(mode==='45'?'4+5':mode)+'-star lead'+(rows.length!==1?'s':''),'success');
+}
 function exportProbateCSV(){
   // If any leads are checkbox-selected, export ONLY those; otherwise export everything in view.
   var rows=pbFilteredLeads();
