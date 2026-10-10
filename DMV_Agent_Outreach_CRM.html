@@ -4573,7 +4573,8 @@ function pbRenderArea(){
       + '<label class="pb-wf-f"><span>Send-out date</span><input type="date" value="'+esc(b.sendOutDate)+'" onchange="pbbSet('+da+',\'sendOutDate\',this.value)"></label>'
       + '<label class="pb-wf-f"><span>Follow-up date</span><input type="date" value="'+esc(b.followUpDate)+'" onchange="pbbSet('+da+',\'followUpDate\',this.value);pbRenderArea()"></label>'
       + (b.followUpDate?'<div class="pb-wf-f" style="justify-content:flex-end">'+gcalBtn('Probate batch follow-up: '+(b.name||(dt?ltFmtDate(dt):st)),b.followUpDate,'Probate batch follow-up for '+(b.name||(dt?ltFmtDate(dt):''))+' ('+st+') — '+arr.length+' leads.',st,true)+'</div>':'')
-      + '<label class="pb-wf-f pb-wf-grow"><span>GHL list link</span><input type="url" placeholder="paste GHL smart-list URL" value="'+esc(b.ghlLink)+'" onchange="pbbSet('+da+',\'ghlLink\',this.value)"></label>'
+      + '<label class="pb-wf-f"><span>GHL list link</span><input type="url" style="width:190px" placeholder="paste GHL URL" value="'+esc(b.ghlLink)+'" onchange="pbbSet('+da+',\'ghlLink\',this.value)"></label>'
+      + '<label class="pb-wf-f"><span>Download</span>'+pbStarSelectHTML(st,dt)+'</label>'
       + '<label class="pb-wf-f"><span>Placed in GHL as</span><input type="text" placeholder="tag / list name" value="'+esc(b.ghlPlacement)+'" onchange="pbbSet('+da+',\'ghlPlacement\',this.value)"></label>'
       + (b.ghlLink&&/^https?:/i.test(b.ghlLink) ? '<a href="'+esc(b.ghlLink)+'" target="_blank" class="btn btn-secondary btn-sm" style="align-self:flex-end">&#128241; Open&#8599;</a>' : '')
       + '</div>';
@@ -4583,8 +4584,7 @@ function pbRenderArea(){
         + '<span class="pb-bt-date">'+(dt?ltFmtDate(dt):'')+'</span>'
         + '<span class="pb-bt-cnt">'+arr.length.toLocaleString()+' lead'+(arr.length!==1?'s':'')+'</span>'
         + pbScrapeChip(b.skiptraced)
-        + '<span style="margin-left:12px">'+pbStarSelectHTML(st,dt)+'</span>'
-        + (meta.done?'':'<button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="pbOpenReplaceBatch(\''+esq(dt)+'\',\''+esq(st)+'\')" title="Upload a skip-traced list to replace this batch and mark it Scraped">&#8681; Replace with skip-traced list</button>')
+        + (meta.done?'':'<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="pbOpenReplaceBatch(\''+esq(dt)+'\',\''+esq(st)+'\')" title="Upload a skip-traced list to replace this batch and mark it Scraped">&#8681; Replace with skip-traced list</button>')
         + '<span class="pb-detail-close" onclick="pbToggleOpen(\''+esq(k)+'\')">&#10005; Close</span>'
       + '</div>'
       + '<div class="pb-wf-panel"><div class="pb-wf-title">&#9881;&#65039; Batch workflow &mdash; applies to all '+arr.length.toLocaleString()+' leads</div>'+wf+'</div>'
