@@ -8850,11 +8850,20 @@ function __rvSetProgress(txt){
 // Notes -> escaped HTML, with skip-trace backup-cell lines shown bold red (on a white chip so
 // they stay readable inside the pink notes box).
 function notesHTML(raw){
-  return esc(raw).split('\n').map(function(line){
-    return /^\s*(Backup \d+ \(wireless\):|Other cells \(backup\):)/.test(line)
-      ? '<span style="display:inline-block;background:#fff;color:#dc2626;font-weight:700;padding:1px 6px;border-radius:4px;margin:1px 0">'+line+'</span>'
-      : line;
-  }).join('\n');
+  var lines=[];
+  String(raw||'').split('\n').forEach(function(line){
+    // Old format: the best number is already in the Phone column, so hide this repeat line.
+    if(/^\s*Skip trace: .*\(wireless\)/.test(line)) return;
+    // Old format: "Other cells (backup): a, b" -> one "Backup N" line each.
+    var m=line.match(/^\s*Other cells \(backup\):\s*(.+)$/);
+    if(m){ m[1].split(',').forEach(function(n,i){ if(n.trim()) lines.push('Backup '+(i+1)+' (wireless): '+n.trim()); }); return; }
+    lines.push(line);
+  });
+  return lines.map(function(line){
+    return /^\s*Backup \d+ \(wireless\):/.test(line)
+      ? '<div style="background:#fff;color:#dc2626;font-weight:700;padding:2px 8px;border-radius:4px;margin:2px 0">'+esc(line)+'</div>'
+      : esc(line)+'\n';
+  }).join('').replace(/\n$/,'');
 }
 // "Doe, John" or "John Q Doe" -> {first,last}
 function rvParseName(raw){
