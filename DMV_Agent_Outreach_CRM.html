@@ -1501,7 +1501,9 @@ function toRow(l) {
     d4d_hot: l.d4dHot||false, d4d_status: l.d4dStatus||'',
     shared: l.shared||false, shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
     deleted: l.deleted||false, deleted_at: l.deletedAt||'',
-    assigned_to: l.assignedTo||'', assigned_by: l.assignedBy||'', assigned_at: l.assignedAt||''
+    assigned_to: l.assignedTo||'', assigned_by: l.assignedBy||'', assigned_at: l.assignedAt||'',
+    jv_signed: l.jvSigned||'', jv_split: l.jvSplit||'', contract_end: l.contractEnd||'',
+    pictures: l.pictures||[], attachments: l.attachments||[]
   };
 }
 
@@ -1509,6 +1511,8 @@ function fromRow(r) {
   return {
     id: r.id, month: r.month, name: r.name, status: r.status,
     assignedTo: r.assigned_to||'', assignedBy: r.assigned_by||'', assignedAt: r.assigned_at||'',
+    jvSigned: r.jv_signed||'', jvSplit: r.jv_split||'', contractEnd: r.contract_end||'',
+    pictures: Array.isArray(r.pictures)?r.pictures:[], attachments: Array.isArray(r.attachments)?r.attachments:[],
     phone: r.phone, marketingType: r.marketing_type,
     address: r.address, offer: r.offer, arv: r.arv,
     comps: r.comps, notes: r.notes, date: r.date,
@@ -2040,25 +2044,114 @@ function applyAssign(){
   showToast('Assigned to '+l.assignedTo+' · '+to,'success');
 }
 function openAddFb(){ openAdd(); modalLead.leadSource=FB_LEAD_SRC; modalLead.nationwide=''; renderEditModal(); }
+function fbZillowA(addr){ var u=buildZillowUrl(addr); return u?'<a href="'+esc(u)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open on Zillow" style="flex:none;font-size:11px;font-weight:800;color:#0d6efd;border:1px solid #bcd3fb;border-radius:6px;padding:1px 6px;text-decoration:none">Z</a>':''; }
+function fbFileListHTML(l,kind){
+  var arr=(kind==='pic'?l.pictures:l.attachments)||[];
+  if(!arr.length) return '<div style="font-size:12px;color:var(--text3);padding:4px 0">None yet</div>';
+  return '<div style="display:flex;flex-wrap:wrap;gap:8px">'+arr.map(function(f,i){
+    var rm='<button onclick="event.stopPropagation();fbRemoveFile('+l.id+',\''+kind+'\','+i+')" title="Remove" style="border:none;background:#fee2e2;color:#dc2626;border-radius:50%;width:18px;height:18px;line-height:16px;cursor:pointer;font-size:11px;font-weight:800">&times;</button>';
+    if(kind==='pic') return '<div style="position:relative;width:96px"><a href="'+esc(f.url)+'" target="_blank" rel="noopener"><img src="'+esc(f.url)+'" alt="" style="width:96px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--border);display:block;background:#f1f5f9" onerror="this.style.display=\'none\';this.nextSibling.style.display=\'block\'"><span style="display:none;font-size:11px;word-break:break-all;color:var(--accent)">'+esc(f.name||'picture')+' &#8599;</span></a><span style="position:absolute;top:-6px;right:-6px">'+rm+'</span></div>';
+    return '<div style="display:flex;align-items:center;gap:6px;background:var(--surface3);border:1px solid var(--border);border-radius:8px;padding:4px 8px;font-size:12px"><a href="'+esc(f.url)+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600;text-decoration:none;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">&#128206; '+esc(f.name||'file')+'</a>'+rm+'</div>';
+  }).join('')+'</div>';
+}
+function fbSectionHTML(l){
+  function box(kind,title){
+    return '<div style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap"><b style="font-size:12.5px">'+title+'</b>'
+      +'<button class="btn btn-secondary btn-sm" onclick="fbAddLink('+l.id+',\''+kind+'\')">+ Add link</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="document.getElementById(\'fb-up-'+kind+'\').click()">&#11014; Upload</button>'
+      +'<input type="file" id="fb-up-'+kind+'" multiple '+(kind==='pic'?'accept="image/*" ':'')+'style="display:none" onchange="fbUploadFiles('+l.id+',\''+kind+'\',this.files);this.value=\'\'"></div>'
+      +'<div id="fb-list-'+kind+'">'+fbFileListHTML(l,kind)+'</div></div>';
+  }
+  return '<div class="detail-section" id="fb-detail-section"><div class="detail-section-title">&#128172; Wholesaler deal</div>'
+    +'<div class="detail-grid" style="margin-bottom:12px">'
+    +'<div class="detail-item"><span class="detail-label">JV agreement signed</span><span class="detail-val">'+(l.jvSigned?'<b style="color:'+(l.jvSigned==='Yes'?'#16a34a':'#dc2626')+'">'+esc(l.jvSigned)+'</b>':'&#8212;')+'</span></div>'
+    +'<div class="detail-item"><span class="detail-label">JV split %</span><span class="detail-val">'+(l.jvSplit?esc(l.jvSplit)+(String(l.jvSplit).indexOf('%')<0?'%':''):'&#8212;')+'</span></div>'
+    +'<div class="detail-item"><span class="detail-label">Contract end date</span><span class="detail-val">'+(l.contractEnd?esc(l.contractEnd):'&#8212;')+'</span></div></div>'
+    +box('pic','&#128247; Property pictures')+box('att','&#128206; Attachments')+'</div>';
+}
+function fbRefreshLists(id){
+  var l=leads.find(function(x){return x.id===id;}); if(!l) return;
+  ['pic','att'].forEach(function(k){ var e=document.getElementById('fb-list-'+k); if(e) e.innerHTML=fbFileListHTML(l,k); });
+  if(activeSection==='fb') renderFBSection();
+}
+function fbSaveFiles(l){ save(); return saveLeadToSupabase(l); }
+function fbAddLink(id,kind){
+  var l=leads.find(function(x){return x.id===id;}); if(!l) return;
+  var u=(prompt('Paste the link ('+(kind==='pic'?'picture':'file')+'):')||'').trim(); if(!u) return;
+  if(!/^https?:\/\//i.test(u)) u='https://'+u;
+  var name=(kind==='att'?(prompt('Name for this link (optional):')||''):'').trim();
+  var key=kind==='pic'?'pictures':'attachments';
+  (l[key]=l[key]||[]).push({name:name||u.replace(/^https?:\/\//,'').slice(0,40),url:u});
+  fbSaveFiles(l); fbRefreshLists(id);
+}
+async function fbUploadFiles(id,kind,files){
+  var l=leads.find(function(x){return x.id===id;}); files=Array.prototype.slice.call(files||[]); if(!l||!files.length) return;
+  await authRefreshIfNeeded(); showToast('Uploading '+files.length+' file'+(files.length!==1?'s':'')+'…','info');
+  var key=kind==='pic'?'pictures':'attachments', added=0;
+  for(var i=0;i<files.length;i++){
+    var f=files[i];
+    if(f.size>25*1048576){ showToast(f.name+' is over 25 MB','error'); continue; }
+    try{
+      var clean=(f.name||'file').replace(/[^a-zA-Z0-9._-]/g,'_');
+      var path='fb-leads/'+id+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,7)+'-'+clean;
+      var r=await fetch(SUPABASE_URL+'/storage/v1/object/'+TEAM_BUCKET+'/'+path,{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':f.type||'application/octet-stream','x-upsert':'true'},body:f});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      (l[key]=l[key]||[]).push({name:f.name,url:SUPABASE_URL+'/storage/v1/object/public/'+TEAM_BUCKET+'/'+path,path:path}); added++;
+    }catch(e){ showToast('Could not upload '+f.name,'error'); }
+  }
+  if(added){ await fbSaveFiles(l); fbRefreshLists(id); showToast('Added','success'); }
+}
+function fbRemoveFile(id,kind,i){
+  var l=leads.find(function(x){return x.id===id;}); if(!l) return;
+  var key=kind==='pic'?'pictures':'attachments';
+  if(!confirm('Remove this '+(kind==='pic'?'picture':'file')+' from the lead?')) return;
+  (l[key]||[]).splice(i,1); fbSaveFiles(l); fbRefreshLists(id);
+}
+function fbRowHTML(l){
+  return '<tr onclick="openDetail('+l.id+')" style="cursor:pointer">'
+    +'<td><b>'+esc(l.name||'')+'</b></td>'
+    +'<td>'+(l.phone?'<a href="#" data-phone="'+esc(l.phone.split('/')[0].trim())+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);font-weight:600;text-decoration:none" title="Open in GoHighLevel / SMS">'+esc(l.phone)+' &#8599;</a>':'')+'</td>'
+    +'<td><div style="display:flex;align-items:center;gap:4px"><div class="address-cell">'+(esc(l.address)||'')+'</div>'+fbZillowA(l.address)+pwIcon(l.address)+'</div></td>'
+    +'<td>'+((l.pictures||[]).length?'<span title="Property pictures">&#128247; '+l.pictures.length+'</span>':'<span style="color:var(--text4)">&#8212;</span>')+((l.attachments||[]).length?' <span title="Attachments">&#128206; '+l.attachments.length+'</span>':'')+'</td>'
+    +'<td>'+(l.jvSigned?'<b style="color:'+(l.jvSigned==='Yes'?'#16a34a':'#dc2626')+'">'+esc(l.jvSigned)+'</b>':'<span style="color:var(--text4)">&#8212;</span>')+'</td>'
+    +'<td>'+(l.jvSplit?esc(l.jvSplit)+(String(l.jvSplit).indexOf('%')<0?'%':''):'<span style="color:var(--text4)">&#8212;</span>')+'</td>'
+    +'<td style="white-space:nowrap;font-size:12px">'+(l.contractEnd?esc(l.contractEnd):'<span style="color:var(--text4)">&#8212;</span>')+'</td>'
+    +'<td style="white-space:nowrap;font-size:12px">'+esc(l.date||'')+'</td>'
+    +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
+    +'<td onclick="event.stopPropagation()">'+assignBtnHTML(l)+'</td></tr>';
+}
+function fbLeadsList(){ return leads.filter(function(l){return !l.deleted&&isFbLead(l);}); }
+function fbFollowUpDashHTML(){
+  var all=fbLeadsList().filter(function(l){return l.followUpDate;}).sort(function(a,b){return a.followUpDate>b.followUpDate?1:-1;});
+  function item(l){
+    var d=daysDiff(l.followUpDate), lbl=d<0?Math.abs(d)+'d overdue':d===0?'Today':d===1?'Tomorrow':'In '+d+'d';
+    return '<div class="followup-item" onclick="openDetail('+l.id+')" style="cursor:pointer">'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><div class="followup-item-addr" style="margin:0">'+esc(l.name||l.address||'&#8212;')+'</div>'
+      +(l.assignedTo?'<span style="font-size:10px;font-weight:800;color:#6d28d9;background:#ede9fe;border:1px solid #c4b5fd;border-radius:10px;padding:1px 7px">&#128100; '+esc(l.assignedTo)+'</span>':'')+'</div>'
+      +'<div class="followup-item-meta">'+(l.address?'<span>'+esc(l.address)+'</span>':'')+(l.phone?'<a href="#" data-phone="'+esc(l.phone.split('/')[0].trim())+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);font-weight:600;text-decoration:none">'+esc(l.phone)+' &#8599;</a>':'')+'</div>'
+      +'<div class="followup-item-date">'+l.followUpDate+' &middot; '+lbl+'</div>'
+      +(l.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+esc(l.notes.substring(0,80))+(l.notes.length>80?'&#8230;':'')+'</div>':'')+'</div>';
+  }
+  function card(title,items,c,bg,ic){
+    return '<div class="followup-group"><div class="followup-group-header" style="background:'+bg+';color:'+c+'"><span>'+ic+' '+title+'</span><span style="background:'+c+';color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">'+items.length+'</span></div>'
+      +'<div style="max-height:320px;overflow-y:auto">'+(items.length?items.map(item).join(''):'<div class="followup-empty">None</div>')+'</div></div>';
+  }
+  function st(x){return getFUStatus(x.followUpDate);}
+  var fut=all.filter(function(l){return st(l)==='future';});
+  return '<div class="followup-container" style="padding:0;margin-bottom:16px"><div style="font-weight:800;font-size:15px;margin-bottom:8px">&#128197; Facebook Follow-Up Dashboard <span style="font-size:12px;color:var(--text3);font-weight:600">&middot; '+all.length+' follow-ups</span></div>'
+    +'<div class="followup-grid">'+card('Overdue',all.filter(function(l){return st(l)==='overdue';}),'#dc2626','#fee2e2','&#128308;')
+    +card('Due Today',all.filter(function(l){return st(l)==='today';}),'#b45309','#fef3c7','&#128993;')
+    +card('Next 3 Days',all.filter(function(l){return st(l)==='soon';}),'#0d9488','#f0fdfa','&#128994;')+'</div>'
+    +'<div class="followup-group" style="margin-top:14px"><div class="followup-group-header" style="background:var(--surface3);color:var(--text2)"><span>&#128198; All Upcoming</span><span style="background:var(--text3);color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">'+fut.length+'</span></div>'
+    +'<div style="max-height:360px;overflow-y:auto">'+(fut.length?fut.map(item).join(''):'<div class="followup-empty">No upcoming follow-ups</div>')+'</div></div></div>';
+}
 function fbLeadsPanelHTML(){
-  var rows=leads.filter(function(l){return !l.deleted&&isFbLead(l);}).sort(function(a,b){
-    var da=a.date||'',db=b.date||''; return db>da?1:db<da?-1:(b.id-a.id);
-  });
-  var body=rows.length?rows.map(function(l){
-    return '<tr onclick="openDetail('+l.id+')" style="cursor:pointer">'
-      +'<td><div class="address-cell">'+(esc(l.address)||'')+'</div></td>'
-      +'<td>'+esc(l.name||'')+'</td>'
-      +'<td>'+(l.phone?'<span style="color:var(--accent);font-weight:600">'+esc(l.phone)+'</span>':'')+'</td>'
-      +'<td><span class="money-val">'+formatMoney(l.offer)+'</span></td>'
-      +'<td>'+statusBadge(l.status)+'</td>'
-      +'<td style="white-space:nowrap;font-size:12px">'+esc(l.date||'')+'</td>'
-      +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
-      +'<td onclick="event.stopPropagation()">'+assignBtnHTML(l)+'</td></tr>';
-  }).join(''):'<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:18px">No Facebook leads yet &mdash; click <b>+ Add Lead</b> to add one.</td></tr>';
-  return '<div style="margin-bottom:18px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px;flex-wrap:wrap">'
-    +'<div style="font-weight:800;font-size:15px">&#128172; Facebook Leads <span style="font-size:12px;color:var(--text3);font-weight:600">('+rows.length+')</span></div>'
+  var rows=fbLeadsList().sort(function(a,b){ var da=a.date||'',db=b.date||''; return db>da?1:db<da?-1:(b.id-a.id); });
+  var body=rows.length?rows.map(fbRowHTML).join(''):'<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:18px">No Facebook leads yet &mdash; click <b>+ Add Lead</b> to add one.</td></tr>';
+  return fbFollowUpDashHTML()+'<div style="margin-bottom:18px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px;flex-wrap:wrap">'
+    +'<div style="font-weight:800;font-size:15px">&#128172; Facebook Leads <span style="font-size:12px;color:var(--text3);font-weight:600">('+rows.length+') &middot; only leads with <b>Review</b> checked go to the DMV CRM Review tab</span></div>'
     +'<button class="btn btn-primary btn-sm" onclick="openAddFb()">+ Add Lead</button></div>'
-    +'<div class="table-container" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Property</th><th>Name</th><th>Phone</th><th>Offer</th><th>Status</th><th>Entry Date</th><th>Follow-Up</th><th>Assign</th></tr></thead><tbody>'+body+'</tbody></table></div></div></div>';
+    +'<div class="table-container" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Wholesaler</th><th>Phone</th><th>Address</th><th>Files</th><th>JV Signed</th><th>JV Split</th><th>Contract End</th><th>Entry Date</th><th>Follow-Up</th><th>Assign</th></tr></thead><tbody>'+body+'</tbody></table></div></div></div>';
 }
 var fuAssignee='';
 function setFuAssignee(v){ fuAssignee=v; if(activeSection==='outreach'){ if(activeTab==='nationwide') renderNationwideTab(); else renderFollowUpsTab(); } }
@@ -9595,7 +9688,7 @@ function renderDetailModal(){
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${statusBadge(l.status)}${l.score?leadScoreBadgeHTML(l.score):''}<span class="month-tag">${l.month}</span>${l.leadSource?'<span style="background:#e0f2fe;color:#0369a1;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;border:1px solid #7dd3fc">'+l.leadSource+'</span>':''}</div>
           <div class="detail-section"><div class="detail-section-title">Property &amp; Contact</div>
             <div class="detail-grid">
-              <div class="detail-item"><span class="detail-label">Agent</span><span class="detail-val">${esc(l.name)||''}</span></div>
+              <div class="detail-item"><span class="detail-label">${isFbLead(l)?'Wholesaler':'Agent'}</span><span class="detail-val">${esc(l.name)||''}</span></div>
               <div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):''}</span></div>
               <div class="detail-item"><span class="detail-label">Offer</span><span class="detail-val" style="color:var(--accent);font-weight:700;font-size:15px">${formatMoney(l.offer)}</span></div>
               <div class="detail-item"><span class="detail-label">ARV</span><span class="detail-val" style="color:var(--green);font-weight:700;font-size:15px">${formatMoney(l.arv)}</span></div>
@@ -9620,7 +9713,7 @@ function renderDetailModal(){
               ${l.comps&&l.comps.startsWith('http')?'<div><span class="detail-label">Comps</span>&nbsp;&nbsp;<a href="'+esc(l.comps.split(' ')[0])+'" target="_blank" class="detail-link">View Comps &#8599;</a></div>':'<div style="color:var(--text4);font-size:12px">No comp link</div>'}
             </div>
           </div>
-          ${renderAttachmentsSection('dmv', l.id)}
+          ${isFbLead(l)?fbSectionHTML(l):renderAttachmentsSection('dmv', l.id)}
           ${isPhoneUI()?'':ghlSmsSlotHTML('lead',l.id)}
           ${emailOfferSectionHTML(l)}
           ${agreementSectionHTML(l.id,'lead',l.agreementStatus,l.agreementAcceptedAt)}
@@ -9720,6 +9813,13 @@ function renderEditModal(){
               </div>
             </div>
           </div>
+          ${isFbLead(l)?`<div class="form-section"><div class="form-section-title">&#128172; Wholesaler deal</div>
+            <div class="form-grid cols-3">
+              <div class="form-field"><label class="form-label">JV agreement signed</label><select id="f-jvsigned" class="form-select"><option value="">&#8212;</option><option value="Yes" ${l.jvSigned==='Yes'?'selected':''}>Yes</option><option value="No" ${l.jvSigned==='No'?'selected':''}>No</option></select></div>
+              <div class="form-field"><label class="form-label">JV split %</label><input id="f-jvsplit" class="form-input" value="${esc(l.jvSplit||'')}" placeholder="e.g. 50"></div>
+              <div class="form-field"><label class="form-label">Contract end date</label><input id="f-contractend" type="date" class="form-input" value="${esc(l.contractEnd||'')}"></div>
+            </div>
+            <div style="font-size:11.5px;color:var(--text3)">Save the lead first, then open it to add pictures &amp; attachments (links or uploads).</div></div>`:''}
           <div class="form-section"><div class="form-section-title">Notes</div>
             <div class="form-field"><textarea id="f-notes" class="form-textarea" placeholder="Notes, conversations, next steps...">${esc(l.notes)}</textarea></div>
           </div>
@@ -9885,6 +9985,7 @@ async function saveLead(){
   l.webLink=document.getElementById('f-link').value.trim();l.comps=document.getElementById('f-comps').value.trim();
   l.notes=document.getElementById('f-notes').value.trim();
   l.score=document.getElementById('f-score').value;
+  var jsEl=document.getElementById('f-jvsigned'); if(jsEl){ l.jvSigned=jsEl.value; l.jvSplit=(document.getElementById('f-jvsplit').value||'').trim(); l.contractEnd=document.getElementById('f-contractend').value||''; }
   var bedsEl=document.getElementById('f-beds'); if(bedsEl) l.beds=bedsEl.value.trim();
   var bathsEl=document.getElementById('f-baths'); if(bathsEl) l.baths=bathsEl.value.trim();
   var sqftEl=document.getElementById('f-sqft'); if(sqftEl) l.sqft=sqftEl.value.trim();
