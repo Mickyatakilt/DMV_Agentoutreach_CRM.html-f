@@ -8927,8 +8927,10 @@ async function rvSkipTraceSelected(){
   // leads -> advanced (2 credits, Tracerfy finds the owner).
   var withAddr=picks.filter(function(p){ return p.address && p.state; });
   if(!withAddr.length){ showToast('Selected leads need a street address (with city/state) to trace','error'); return; }
-  var named=withAddr.filter(function(p){ return p.first_name && p.last_name; });
-  var addrOnly=withAddr.filter(function(p){ return !(p.first_name && p.last_name); });
+  // Always trace by ADDRESS only (advanced): stored names are often "LAST FIRST" and
+  // name+address traces miss even when the address alone hits.
+  var named=[];
+  var addrOnly=withAddr.map(function(p){ return Object.assign({}, p, { name:'', first_name:'', last_name:'' }); });
 
   __rvSkip = { total:withAddr.length };
   var btn=document.getElementById('rv-skiptrace-btn'); if(btn) btn.disabled=true;
