@@ -2002,7 +2002,7 @@ function renderAssignModal(){
     var on=assignDraft.person===n;
     return '<button class="btn btn-sm" onclick="assignPick(\'person\','+i+')" style="font-weight:700;padding:8px 14px;'+(on?'background:#6d28d9;color:#fff;border:1px solid #6d28d9':'background:#fff;color:#334155;border:1px solid #cbd5e1')+'">'+esc(n)+'</button>';
   }).join('');
-  var tabs=[['dmv','DMV Leads','&#128205;'],['nationwide','Nationwide','&#127758;'],['d4d','D4D','&#128663;'],['fb','FB Scrape','&#128241;'],['keep','Keep in '+cur,'&#128204;']].map(function(t){
+  var tabs=[['dmv','DMV Leads','&#128205;'],['nationwide','Nationwide','&#127758;'],['d4d','D4D','&#128663;'],['fb','FB Scrape','&#128241;'],['review','Review','&#128269;'],['keep','Keep in '+cur,'&#128204;']].map(function(t){
     var on=assignDraft.dest===t[0];
     return '<button class="btn btn-sm" onclick="assignPick(\'dest\',\''+t[0]+'\')" style="font-weight:700;padding:8px 14px;'+(on?'background:#0d9488;color:#fff;border:1px solid #0d9488':'background:#fff;color:#334155;border:1px solid #cbd5e1')+'">'+t[2]+' '+t[1]+'</button>';
   }).join('');
@@ -2021,7 +2021,8 @@ function applyAssign(){
   var d=assignDraft; if(!d||!d.person||!d.dest) return;
   var l=leads.find(function(x){return x.id===d.id;}); if(!l) return;
   var from=leadTabOf(l);
-  if(d.dest!=='keep'){
+  if(d.dest==='review'){ l.needsReview=true; l.reviewSentBy=(currentUser&&currentUser.name)||'Team'; l.reviewSentAt=new Date().toISOString(); }
+  else if(d.dest!=='keep'){
     var wasD4D=isD4DRow(l);
     if(wasD4D && d.dest!=='d4d'){ showToast('D4D leads stay in D4D — use Send to Task to move one out','error'); return; }
     if(d.dest==='dmv'){ l.nationwide=''; if(isFbLead(l)) l.leadSource=''; }
@@ -2032,7 +2033,7 @@ function applyAssign(){
   var now=new Date().toISOString();
   l.assignedTo=d.person; l.assignedBy=(currentUser&&currentUser.name)||''; l.assignedAt=now;
   var to=leadTabOf(l);
-  (l.activityLog=l.activityLog||[]).push({type:'Assigned',by:l.assignedBy,at:now,note:'Assigned to '+d.person+(to!==from?' · moved '+from+' → '+to:' · stays in '+to)});
+  (l.activityLog=l.activityLog||[]).push({type:'Assigned',by:l.assignedBy,at:now,note:'Assigned to '+d.person+(d.dest==='review'?' · added to Review':(to!==from?' · moved '+from+' → '+to:' · stays in '+to))});
   l.updatedBy=l.assignedBy; l.updatedAt=today();
   assignDraft=null; closeModal(); save(); render();
   saveLeadToSupabase(l);
