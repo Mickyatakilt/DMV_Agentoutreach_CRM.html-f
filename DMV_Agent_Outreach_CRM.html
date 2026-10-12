@@ -8866,14 +8866,20 @@ function notesHTML(raw){
   }).join('').replace(/\n$/,'');
 }
 // "Doe, John" or "John Q Doe" -> {first,last}
-function rvParseName(raw){
+function rvParseName(raw,lastFirst){
   raw=String(raw||'').trim();
   if(!raw) return {first:'',last:''};
   var first='',last='';
   if(raw.indexOf(',')>=0){ var p=raw.split(','); last=p[0].trim(); first=((p[1]||'').trim().split(/\s+/)[0])||''; }
-  else { var q=raw.split(/\s+/); first=q[0]||''; last=q.length>1?q[q.length-1]:''; }
+  else {
+    var q=raw.split(/\s+/);
+    if(lastFirst){ last=q[0]||''; first=q.length>1?q[1]:''; }   // D4D/SDAT owners are "LAST FIRST [MIDDLE]"
+    else { first=q[0]||''; last=q.length>1?q[q.length-1]:''; }
+  }
   return {first:first,last:last};
 }
+// Company / trust / estate owners have no person to name-match -> trace by address only.
+function rvIsEntityName(n){ return /\b(LLC|L\.?L\.?C|INC|CORP|CORPORATION|CO|COMPANY|LTD|LP|LLP|TRUST|TRUSTEE|TRUSTEES|ESTATE|BANK|CHURCH|ASSOC|ASSOCIATION|PARTNERS|PARTNERSHIP|HOLDINGS|PROPERTIES|INVESTMENTS|HOMES|REALTY|ENTERPRISES|FUND|MINISTRIES|CITY|COUNTY|STATE|HOUSING|AUTHORITY)\b/i.test(n||''); }
 // "4248 Foote St NE, Washington, DC 20019" -> {street,city,state,zip}
 function rvParseAddr(raw){
   raw=String(raw||'').replace(/\s+/g,' ').trim();
@@ -8936,7 +8942,9 @@ async function rvSkipTraceSelected(){
     var address = kind==='task' ? (l.location||'') : (l.address||'');
     var nm = (l.name||'').trim();
     if(/^D4D Lead —/i.test(nm)) nm='';               // strip placeholder owner names
-    var pa=rvParseAddr(address), pn=rvParseName(nm);
+    var isD4D = kind==='task' ? (l.sourceGroup==='D4D Auto-Scan' || l.leadSource==='D4D Auto-Scan') : isD4DRow(l);
+    var pa=rvParseAddr(address), pn=rvParseName(nm,isD4D);
+    if(rvIsEntityName(nm)) pn={first:'',last:''};
     picks.push({ id:id, kind:kind, name:nm, first_name:pn.first, last_name:pn.last,
       address:pa.street, city:pa.city, state:pa.state, zip:pa.zip });
   });
@@ -8945,10 +8953,10 @@ async function rvSkipTraceSelected(){
   // leads -> advanced (2 credits, Tracerfy finds the owner).
   var withAddr=picks.filter(function(p){ return p.address && p.state; });
   if(!withAddr.length){ showToast('Selected leads need a street address (with city/state) to trace','error'); return; }
-  // Always trace by ADDRESS only (advanced): stored names are often "LAST FIRST" and
-  // name+address traces miss even when the address alone hits.
-  var named=[];
-  var addrOnly=withAddr.map(function(p){ return Object.assign({}, p, { name:'', first_name:'', last_name:'' }); });
+  // Named leads -> normal trace (1 credit/hit, D4D "LAST FIRST" names are parsed correctly);
+  // anything it misses is retried below by address only (advanced, 2 credits/hit).
+  var named=withAddr.filter(function(p){ return p.first_name && p.last_name; });
+  var addrOnly=withAddr.filter(function(p){ return !(p.first_name && p.last_name); });
 
   __rvSkip = { total:withAddr.length };
   var btn=document.getElementById('rv-skiptrace-btn'); if(btn) btn.disabled=true;
