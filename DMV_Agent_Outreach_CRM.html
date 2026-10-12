@@ -1500,13 +1500,15 @@ function toRow(l) {
     review_sent_by: l.reviewSentBy||'', review_sent_at: l.reviewSentAt||'', review_note: l.reviewNote||'',
     d4d_hot: l.d4dHot||false, d4d_status: l.d4dStatus||'',
     shared: l.shared||false, shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
-    deleted: l.deleted||false, deleted_at: l.deletedAt||''
+    deleted: l.deleted||false, deleted_at: l.deletedAt||'',
+    assigned_to: l.assignedTo||'', assigned_by: l.assignedBy||'', assigned_at: l.assignedAt||''
   };
 }
 
 function fromRow(r) {
   return {
     id: r.id, month: r.month, name: r.name, status: r.status,
+    assignedTo: r.assigned_to||'', assignedBy: r.assigned_by||'', assignedAt: r.assigned_at||'',
     phone: r.phone, marketingType: r.marketing_type,
     address: r.address, offer: r.offer, arv: r.arv,
     comps: r.comps, notes: r.notes, date: r.date,
@@ -1946,6 +1948,8 @@ function getFiltered(){
     if(isD4DRow(l)) return false;
     // FB scrape batches live ONLY in the Facebook Scrape section — never in DMV Leads.
     if(isFbBatchLead(l)) return false;
+    // Manually-added Facebook leads live in the Facebook Scrape section.
+    if(isFbLead(l)) return false;
     // When searching, include nationwide leads too
     if(l.nationwide==='Yes' && !filters.search) return false;
     const q=filters.search.toLowerCase();
@@ -1976,8 +1980,89 @@ function getFiltered(){
   });
   return data;
 }
+
+// ===== Assign a lead to a teammate + send it to a tab (DMV / Nationwide / D4D / FB Scrape) =====
+var ASSIGNEES=['Biruk','Mike','Natnael Thomas','Tate','Zablon'];
+var FB_LEAD_SRC='FB Lead';
+function isFbLead(l){ return !!l && l.leadSource===FB_LEAD_SRC; }
+function leadTabOf(l){ return isD4DRow(l)?'D4D':(isFbLead(l)?'FB Scrape':(l.nationwide==='Yes'?'Nationwide':'DMV Leads')); }
+function assignBtnHTML(l){
+  return '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();openAssign('+l.id+')" title="'+(l.assignedTo?'Assigned to '+esc(l.assignedTo)+' — click to change':'Assign this lead to a teammate and a tab')+'" style="white-space:nowrap;font-weight:700'+(l.assignedTo?';background:#ede9fe;color:#6d28d9;border-color:#c4b5fd':'')+'">&#128100; '+(l.assignedTo?esc(l.assignedTo):'Assign')+'</button>';
+}
+var assignDraft=null;
+function openAssign(id){
+  var l=leads.find(function(x){return x.id===id;}); if(!l) return;
+  assignDraft={id:id,person:l.assignedTo||'',dest:''};
+  renderAssignModal();
+}
+function renderAssignModal(){
+  var l=leads.find(function(x){return x.id===assignDraft.id;}); if(!l) return;
+  var cur=leadTabOf(l);
+  var people=ASSIGNEES.map(function(n,i){
+    var on=assignDraft.person===n;
+    return '<button class="btn btn-sm" onclick="assignPick(\'person\','+i+')" style="font-weight:700;padding:8px 14px;'+(on?'background:#6d28d9;color:#fff;border:1px solid #6d28d9':'background:#fff;color:#334155;border:1px solid #cbd5e1')+'">'+esc(n)+'</button>';
+  }).join('');
+  var tabs=[['dmv','DMV Leads','&#128205;'],['nationwide','Nationwide','&#127758;'],['d4d','D4D','&#128663;'],['fb','FB Scrape','&#128241;'],['keep','Keep in '+cur,'&#128204;']].map(function(t){
+    var on=assignDraft.dest===t[0];
+    return '<button class="btn btn-sm" onclick="assignPick(\'dest\',\''+t[0]+'\')" style="font-weight:700;padding:8px 14px;'+(on?'background:#0d9488;color:#fff;border:1px solid #0d9488':'background:#fff;color:#334155;border:1px solid #cbd5e1')+'">'+t[2]+' '+t[1]+'</button>';
+  }).join('');
+  var ready=assignDraft.person&&assignDraft.dest;
+  document.getElementById('modal-container').innerHTML=''
+   +'<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:520px">'
+   +'<div class="modal-header"><div><div class="modal-title">&#128100; Assign lead</div><div class="modal-subtitle"><span>'+esc(l.address||l.name||('Lead #'+l.id))+'</span><span>&middot; now in '+esc(cur)+(l.assignedTo?' &middot; assigned to '+esc(l.assignedTo):'')+'</span></div></div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+   +'<div class="modal-body"><div style="font-size:12px;font-weight:800;color:var(--text3);margin-bottom:8px">1. WHO?</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">'+people+'</div>'
+   +'<div style="font-size:12px;font-weight:800;color:var(--text3);margin-bottom:8px">2. WHICH TAB SHOULD IT GO TO?</div><div style="display:flex;flex-wrap:wrap;gap:8px">'+tabs+'</div>'
+   +'<div style="font-size:11.5px;color:var(--text3);margin-top:14px">The lead moves to that tab and shows in '+(assignDraft.person?esc(assignDraft.person)+'&#8217;s':'that person&#8217;s')+' follow-ups (use the &ldquo;Assigned to&rdquo; filter on the Follow-Ups tab).</div></div>'
+   +'<div class="modal-footer"><button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button><button class="btn btn-primary" '+(ready?'':'disabled style="opacity:.5"')+' onclick="applyAssign()">Assign</button></div>'
+   +'</div></div>';
+}
+function assignPick(kind,v){ if(kind==='person') assignDraft.person=ASSIGNEES[v]; else assignDraft.dest=v; renderAssignModal(); }
+function applyAssign(){
+  var d=assignDraft; if(!d||!d.person||!d.dest) return;
+  var l=leads.find(function(x){return x.id===d.id;}); if(!l) return;
+  var from=leadTabOf(l);
+  if(d.dest!=='keep'){
+    var wasD4D=isD4DRow(l);
+    if(wasD4D && d.dest!=='d4d'){ showToast('D4D leads stay in D4D — use Send to Task to move one out','error'); return; }
+    if(d.dest==='dmv'){ l.nationwide=''; if(isFbLead(l)) l.leadSource=''; }
+    else if(d.dest==='nationwide'){ l.nationwide='Yes'; if(isFbLead(l)) l.leadSource=''; }
+    else if(d.dest==='fb'){ l.nationwide=''; l.leadSource=FB_LEAD_SRC; }
+    else if(d.dest==='d4d'){ l.nationwide=''; l.leadSource='D4D Auto-Scan'; l.d4dStatus='hot'; l.needsReview=false; }
+  }
+  var now=new Date().toISOString();
+  l.assignedTo=d.person; l.assignedBy=(currentUser&&currentUser.name)||''; l.assignedAt=now;
+  var to=leadTabOf(l);
+  (l.activityLog=l.activityLog||[]).push({type:'Assigned',by:l.assignedBy,at:now,note:'Assigned to '+d.person+(to!==from?' · moved '+from+' → '+to:' · stays in '+to)});
+  l.updatedBy=l.assignedBy; l.updatedAt=today();
+  assignDraft=null; closeModal(); save(); render();
+  saveLeadToSupabase(l);
+  showToast('Assigned to '+l.assignedTo+' · '+to,'success');
+}
+function openAddFb(){ openAdd(); modalLead.leadSource=FB_LEAD_SRC; modalLead.nationwide=''; renderEditModal(); }
+function fbLeadsPanelHTML(){
+  var rows=leads.filter(function(l){return !l.deleted&&isFbLead(l);}).sort(function(a,b){
+    var da=a.date||'',db=b.date||''; return db>da?1:db<da?-1:(b.id-a.id);
+  });
+  var body=rows.length?rows.map(function(l){
+    return '<tr onclick="openDetail('+l.id+')" style="cursor:pointer">'
+      +'<td><div class="address-cell">'+(esc(l.address)||'')+'</div></td>'
+      +'<td>'+esc(l.name||'')+'</td>'
+      +'<td>'+(l.phone?'<span style="color:var(--accent);font-weight:600">'+esc(l.phone)+'</span>':'')+'</td>'
+      +'<td><span class="money-val">'+formatMoney(l.offer)+'</span></td>'
+      +'<td>'+statusBadge(l.status)+'</td>'
+      +'<td style="white-space:nowrap;font-size:12px">'+esc(l.date||'')+'</td>'
+      +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
+      +'<td onclick="event.stopPropagation()">'+assignBtnHTML(l)+'</td></tr>';
+  }).join(''):'<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:18px">No Facebook leads yet &mdash; click <b>+ Add Lead</b> to add one.</td></tr>';
+  return '<div style="margin-bottom:18px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px;flex-wrap:wrap">'
+    +'<div style="font-weight:800;font-size:15px">&#128172; Facebook Leads <span style="font-size:12px;color:var(--text3);font-weight:600">('+rows.length+')</span></div>'
+    +'<button class="btn btn-primary btn-sm" onclick="openAddFb()">+ Add Lead</button></div>'
+    +'<div class="table-container" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Property</th><th>Name</th><th>Phone</th><th>Offer</th><th>Status</th><th>Entry Date</th><th>Follow-Up</th><th>Assign</th></tr></thead><tbody>'+body+'</tbody></table></div></div></div>';
+}
+var fuAssignee='';
+function setFuAssignee(v){ fuAssignee=v; if(activeSection==='outreach'){ if(activeTab==='nationwide') renderNationwideTab(); else renderFollowUpsTab(); } }
 function isFbBatchLead(l){ return l.leadSource==='FB Scrape Batch' || l.leadSource==='FB Group Scrape'; }
-function getStats(){const activeLeads=leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbBatchLead(l));return {total:activeLeads.length,...Object.fromEntries(getDropdowns().statuses.map(s=>[s,activeLeads.filter(l=>l.status===s).length]))};}
+function getStats(){const activeLeads=leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbBatchLead(l)&&!isFbLead(l));return {total:activeLeads.length,...Object.fromEntries(getDropdowns().statuses.map(s=>[s,activeLeads.filter(l=>l.status===s).length]))};}
 
 async function syncLeadToSheet(lead){
   if(!APPS_SCRIPT_URL) return;
@@ -8257,6 +8342,7 @@ function renderFBSection(){
     +'</div>'
     +'<div style="font-size:12px;color:var(--text3);margin-bottom:6px">&#128336; Next automatic run: <b>~6:00 AM</b> (your Mac&#8217;s time), daily</div>'
     +(nextUp?'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Next up: '+nextUp+'&hellip;</div>':'')
+    +fbLeadsPanelHTML()
     +fbFilesToolbar(files)
     +batchesTable
     +'</div>';
@@ -9103,6 +9189,7 @@ function renderTable(data,start,end){
       <td onclick="openDetail(${l.id})" style="white-space:nowrap;font-size:12px;color:var(--text2)">${l.date?esc(l.date):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
       <td onclick="openDetail(${l.id})">${l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
       <td>${l.webLink&&l.webLink.startsWith('http')?`<a href="${esc(l.webLink)}" target="_blank" class="detail-link" onclick="event.stopPropagation()">&#8599;</a>`:''}</td>
+      <td>${assignBtnHTML(l)}</td>
       <td onclick="openDetail(${l.id})"><span class="month-tag">${l.month}</span></td>
     </tr>`).join('');
   return `<div class="table-container"><div class="table-wrap"><table>
@@ -9118,6 +9205,7 @@ function renderTable(data,start,end){
       <th onclick="setSort('date')" title="Click to sort: newest entry first / oldest first">Entry Date ${sid()}</th>
       <th onclick="setSort('followUpDate')">Follow-Up ${si('followUpDate')}</th>
       <th>Link</th>
+      <th>Assign</th>
       <th onclick="setSort('month')">Month ${si('month')}</th>
     </tr></thead>
     <tbody>${rows}</tbody>
@@ -9357,6 +9445,8 @@ function buildFollowUpQueueHTML(nationwideOnly){
     }
   }
 
+  // Assigned-to filter (Follow-Ups tab)
+  if(fuAssignee){ allFU=allFU.filter(function(x){ return x.lead.assignedTo===fuAssignee; }); }
   // Sort by follow-up date
   allFU.sort(function(a,b){ return a.lead.followUpDate > b.lead.followUpDate ? 1 : -1; });
 
@@ -9390,6 +9480,8 @@ function buildFollowUpQueueHTML(nationwideOnly){
       + '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">'
       + srcBadge(x.type)
       + '<div class="followup-item-addr" style="margin:0">'+esc(title)+'</div>'
+      + (l.assignedTo?'<span style="margin-left:6px;font-size:10px;font-weight:800;color:#6d28d9;background:#ede9fe;border:1px solid #c4b5fd;border-radius:10px;padding:1px 7px;white-space:nowrap">&#128100; '+esc(l.assignedTo)+'</span>':'')
+      + (isFbLead(l)?'<span style="margin-left:6px;font-size:9px;font-weight:900;color:#1d4ed8;background:#dbeafe;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px">FB</span>':'')
       + '</div>'
       + '<div class="followup-item-meta">'+badge+'<span>'+esc(l.name||'')+'</span>'+(l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>':'')+'</div>'
       + '<div class="followup-item-date">'+l.followUpDate+' &middot; '+lbl+'</div>'
@@ -9429,7 +9521,8 @@ function buildFollowUpQueueHTML(nationwideOnly){
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
     + '<div><h2 style="font-size:16px;font-weight:700">&#128197; '+(nationwideOnly?'Nationwide Follow-Up Dashboard':'DMV Follow-Up Dashboard')+'</h2>'
     + '<p style="font-size:12px;color:var(--text3);margin-top:3px">Today is '+today()+' &middot; '+total+' total follow-ups</p></div>'
-    + '<button class="btn btn-primary btn-sm" onclick="openAdd()">+ Add Lead</button></div>'
+    + '<div style="display:flex;align-items:center;gap:8px"><label style="font-size:12px;font-weight:700;color:var(--text3)">Assigned to</label><select onchange="setFuAssignee(this.value)" class="form-input" style="width:auto;padding:5px 8px;font-size:12px"><option value="">Everyone</option>'+ASSIGNEES.map(function(n){return '<option value="'+n+'"'+(fuAssignee===n?' selected':'')+'>'+n+'</option>';}).join('')+'</select>'
+    + '<button class="btn btn-primary btn-sm" onclick="openAdd()">+ Add Lead</button></div></div>'
     + legend
     + '<div class="followup-grid">'
     + fuCard('Overdue', overdue, '#dc2626', '#fee2e2', '&#128308;')
@@ -9535,6 +9628,7 @@ function renderDetailModal(){
         <div class="modal-footer">
           <button class="btn btn-danger btn-sm" onclick="deleteLead()">&#128465; Delete</button>
           <button class="btn btn-secondary btn-sm" onclick="sendToReview('lead',${l.id})">&#128203; Review</button>
+          ${assignBtnHTML(l)}
           ${d4dOrigin(l)&&!d4dIsHot(l)
             ? `<button class="btn btn-sm" onclick="closeModal();d4dSendHot(${l.id})" title="Move this lead to the D4D Hot Leads tab" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-weight:700">&#128293; Send Hot Lead</button>`
             : `<button class="btn btn-sm" onclick="sendLeadToTask(${l.id})" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to ${d4dOrigin(l)?'CRM ':''}Task</button>`}
@@ -9559,7 +9653,7 @@ function renderEditModal(){
   const so=['',...dd.statuses].map(s=>'<option value="'+s+'" '+(l.status===s?'selected':'')+'>'+( s||'&#8212; Select Status &#8212;')+'</option>').join('');
   const mo=['',...dd.marketingTypes].map(m=>'<option value="'+m+'" '+(l.marketingType===m?'selected':'')+'>'+(m||'&#8212; Select Type &#8212;')+'</option>').join('');
   const mno=dd.months.map(m=>'<option value="'+m+'" '+(l.month===m?'selected':'')+'>'+m+'</option>').join('');
-  const sro=['',...dd.sources].map(s=>'<option value="'+s+'" '+(l.leadSource===s?'selected':'')+'>'+(s||'&#8212; Select Source &#8212;')+'</option>').join('');
+  const sro=['',...dd.sources,...((l.leadSource&&dd.sources.indexOf(l.leadSource)<0)?[l.leadSource]:[])].map(s=>'<option value="'+s+'" '+(l.leadSource===s?'selected':'')+'>'+(s||'&#8212; Select Source &#8212;')+'</option>').join('');
   const compLink=l.comps&&l.comps.startsWith('http')?l.comps.split(' ')[0]:'';
   document.getElementById('modal-container').innerHTML=`
     <div class="modal-overlay" onclick="overlayClick(event)">
@@ -9807,6 +9901,7 @@ async function saveLead(){
   if(isNew){leads.push(l);}
   else{const i=leads.findIndex(x=>x.id===l.id);if(i>=0)leads[i]=l;}
   save();render();
+  if(activeSection==='fb') renderFBSection();
   const ok = await saveLeadToSupabase(l);
   if(ok){
     showToast(wasNew?'Lead added!':'Updated!','success');
@@ -10106,7 +10201,7 @@ function renderNationwideTab(){
     ? '<div class="empty"><div class="empty-icon">&#127758;</div><h3>No Nationwide leads yet</h3><p>Edit a lead and toggle Nationwide to Yes</p></div>'
     : '<div class="table-container"><div class="table-wrap"><table>'
       +'<thead><tr>'
-      +'<th>Property</th><th>Phone</th><th>Offer</th><th>ARV</th><th>Marketing</th><th>Status</th><th>Score</th><th>Follow-Up</th><th>Month</th>'
+      +'<th>Property</th><th>Phone</th><th>Offer</th><th>ARV</th><th>Marketing</th><th>Status</th><th>Score</th><th>Follow-Up</th><th>Assign</th><th>Month</th>'
       +'</tr></thead><tbody>'
       + nwLeads.map(l=>`
         <tr onclick="openDetail(${l.id})">
@@ -10118,6 +10213,7 @@ function renderNationwideTab(){
           <td onclick="event.stopPropagation()">${statusBadge(l.status)}${l.status==='Review Complete'?'<button onclick="clearReviewComplete('+l.id+')" title="Clear Review Complete" style="margin-left:4px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;font-weight:700;vertical-align:middle">&#10005;</button>':''}</td>
           <td>${leadScoreBadgeHTML(l.score)}</td>
           <td>${l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
+          <td onclick="event.stopPropagation()">${assignBtnHTML(l)}</td>
           <td><span class="month-tag">${l.month}</span></td>
         </tr>`).join('')
       +'</tbody></table></div></div>';
