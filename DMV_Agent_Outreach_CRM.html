@@ -9014,8 +9014,12 @@ async function rvSkipTraceSelected(){
           if(d.length===10 && d!==best10 && backups.every(function(b){return b.d!==d;})) backups.push({d:d,f:rvFmtPhone(m)});
         });
         if(backups.length){
-          var tag='Other cells (backup): '+backups.map(function(b){return b.f;}).join(', ');
-          if((l.notes||'').indexOf(tag)<0) l.notes=l.notes?(l.notes+'\n'+tag):tag;
+          // One line per backup: "Backup 1: (410) ...", "Backup 2: (520) ..."
+          backups.forEach(function(b,i){
+            if((l.notes||'').indexOf(b.f)>=0) return;   // already saved on an earlier run
+            var tag='Backup '+(i+1)+' (wireless): '+b.f;
+            l.notes=l.notes?(l.notes+'\n'+tag):tag;
+          });
         }
         filled++;
       } else {
