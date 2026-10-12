@@ -9006,6 +9006,14 @@ async function rvSkipTraceSelected(){
           l.name=(row.first_name+' '+row.last_name).trim();
         }
         var tag='Skip trace: '+l.phone+' (wireless) — '+stamp;
+        // Backup cells only (no landlines): other wireless numbers Tracerfy returned.
+        var best10=String(w).replace(/\D/g,'').slice(-10);
+        var backups=[];
+        ((row&&row.mobiles)||[]).forEach(function(m){
+          var d=String(m).replace(/\D/g,'').slice(-10);
+          if(d.length===10 && d!==best10 && backups.every(function(b){return b.d!==d;})) backups.push({d:d,f:rvFmtPhone(m)});
+        });
+        if(backups.length) tag+='\nOther cells (backup): '+backups.map(function(b){return b.f;}).join(', ');
         l.notes=l.notes?(l.notes+'\n'+tag):tag;
         filled++;
       } else {
