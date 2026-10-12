@@ -8847,6 +8847,15 @@ var SKIPTRACE_FN_URL = SUPABASE_URL + '/functions/v1/tracerfy-skiptrace';
 function __rvSetProgress(txt){
   var p=document.getElementById('rv-skip-progress'); if(p) p.textContent=txt;
 }
+// Notes -> escaped HTML, with skip-trace backup-cell lines shown bold red (on a white chip so
+// they stay readable inside the pink notes box).
+function notesHTML(raw){
+  return esc(raw).split('\n').map(function(line){
+    return /^\s*(Backup \d+ \(wireless\):|Other cells \(backup\):)/.test(line)
+      ? '<span style="display:inline-block;background:#fff;color:#dc2626;font-weight:700;padding:1px 6px;border-radius:4px;margin:1px 0">'+line+'</span>'
+      : line;
+  }).join('\n');
+}
 // "Doe, John" or "John Q Doe" -> {first,last}
 function rvParseName(raw){
   raw=String(raw||'').trim();
@@ -9736,7 +9745,7 @@ function renderDetailModal(){
               <div class="detail-item"><span class="detail-label">Follow-Up</span><span class="detail-val">${l.followUpDate?followUpChip(l.followUpDate)+' <a href="'+buildGCalUrl(l.followUpDate,'Follow up: '+(l.address||'Lead'),'Lead follow-up reminder for '+(l.address||''))+'" target="_blank" class="detail-link" style="font-size:11px">&#128197; Add to Calendar</a>':''}</span></div>
             </div>
           </div>
-          <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>'}${noteChecklistHTML('lead',l.id)}</div>
+          <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+notesHTML(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>'}${noteChecklistHTML('lead',l.id)}</div>
           ${dealAnalysesAdminHTML('lead', l)}
           ${(l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':''}
           <div class="detail-section"><div class="detail-section-title">Links</div>
@@ -10629,7 +10638,7 @@ function openJVDetail(id){
     +'<div class="form-field"><label class="form-label">&#128197; Follow-Up Date</label><input type="date" id="jv-fu-date" class="form-input" value="'+(l.followUpDate||'')+'"><div class="field-hint"><a href="#" onclick="event.preventDefault();openGCalForShared(\'jv-fu-date\',\''+esc(l.name||'Task')+'\');" style="color:var(--accent)">&#128197; Add to Google Calendar</a></div></div></div>'
     +'<button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="saveJVDetail('+l.id+')">&#128190; Save Changes</button>'
     +'</div>'
-    +'<div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>'+(l.notes?'<div class="notes-box">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>')+noteChecklistHTML('task',l.id)+'</div>'
+    +'<div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>'+(l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+notesHTML(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>')+noteChecklistHTML('task',l.id)+'</div>'
     +dealAnalysesAdminHTML('task', l)
     +((l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':'')
     +agreementSectionHTML(l.id,'task',l.agreementStatus,l.agreementAcceptedAt)
@@ -12396,7 +12405,7 @@ function renderSharedLeadView(l) {
             </div>
           </div>
           ${renderDealAnalysisSection('lead', l)}
-          <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
+          <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+notesHTML(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
           ${renderSharedRecipientNotes()}
           ${renderNeedReviewSection(l)}
           <div id="shared-save-status" style="font-size:12px;color:var(--green);margin-bottom:8px"></div>
@@ -12477,7 +12486,7 @@ function renderSharedTaskView(l) {
             </div>
           </div>
           ${renderDealAnalysisSection('task', l)}
-          <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+esc(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
+          <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+notesHTML(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes</div>'}</div>
           ${renderSharedRecipientNotes()}
           ${renderNeedReviewSection(l)}
           <div id="shared-save-status" style="font-size:12px;color:var(--green);margin-bottom:8px"></div>
