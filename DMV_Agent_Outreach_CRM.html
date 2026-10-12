@@ -8942,8 +8942,10 @@ async function rvSkipTraceSelected(){
     var address = kind==='task' ? (l.location||'') : (l.address||'');
     var nm = (l.name||'').trim();
     if(/^D4D Lead —/i.test(nm)) nm='';               // strip placeholder owner names
-    var isD4D = kind==='task' ? (l.sourceGroup==='D4D Auto-Scan' || l.leadSource==='D4D Auto-Scan') : isD4DRow(l);
-    var pa=rvParseAddr(address), pn=rvParseName(nm,isD4D);
+    // D4D names are now stored "First Last" (DB trigger on new leads + one-time flip of the D4D tab),
+    // same as Tracerfy. A leftover "LAST FIRST" name just misses the 1-credit name trace and is
+    // retried by address below, so it can't cost more than the address trace.
+    var pa=rvParseAddr(address), pn=rvParseName(nm,false);
     if(rvIsEntityName(nm)) pn={first:'',last:''};
     picks.push({ id:id, kind:kind, name:nm, first_name:pn.first, last_name:pn.last,
       address:pa.street, city:pa.city, state:pa.state, zip:pa.zip });
