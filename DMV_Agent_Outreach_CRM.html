@@ -1962,7 +1962,7 @@ function getFiltered(){
     return true;
   });
   data.sort((a,b)=>{
-    if(sortField==='month'){
+    if(sortField==='month'||sortField==='date'){
       // Default: most recent entry date first
       var da = a.date||'', db = b.date||'';
       if(da && db) return db > da ? sortDir : db < da ? -sortDir : (b.id - a.id);
@@ -9088,6 +9088,8 @@ function renderLeadsTab(){
 
 function renderTable(data,start,end){
   const si=f=>sortField===f?(sortDir===1?'&#8593;':'&#8595;'):'<span style="opacity:.3">&#8597;</span>';
+  // Entry Date: default (Month sort) is already newest-entry-first, so show that as active on this column too
+  const sid=()=>(sortField==='date'||sortField==='month')?(sortDir===1?'&#8595;':'&#8593;'):'<span style="opacity:.3">&#8597;</span>';
   const rows=data.slice(start,end).map(l=>`
     <tr style="${selectedLeads.has(l.id)?'background:#eff6ff;':''}">
       <td onclick="event.stopPropagation()"><input type="checkbox" ${selectedLeads.has(l.id)?'checked':''} onchange="toggleSelect(${l.id},this.checked)" style="width:15px;height:15px;cursor:pointer"></td>
@@ -9098,6 +9100,7 @@ function renderTable(data,start,end){
       <td onclick="openDetail(${l.id})" style="font-size:12px;color:var(--text2)">${esc(l.marketingType)||''}</td>
       <td onclick="openDetail(${l.id})">${statusBadge(l.status)}</td>
       <td onclick="openDetail(${l.id})">${leadScoreBadgeHTML(l.score)}</td>
+      <td onclick="openDetail(${l.id})" style="white-space:nowrap;font-size:12px;color:var(--text2)">${l.date?esc(l.date):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
       <td onclick="openDetail(${l.id})">${l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
       <td>${l.webLink&&l.webLink.startsWith('http')?`<a href="${esc(l.webLink)}" target="_blank" class="detail-link" onclick="event.stopPropagation()">&#8599;</a>`:''}</td>
       <td onclick="openDetail(${l.id})"><span class="month-tag">${l.month}</span></td>
@@ -9112,6 +9115,7 @@ function renderTable(data,start,end){
       <th onclick="setSort('marketingType')">Marketing ${si('marketingType')}</th>
       <th onclick="setSort('status')">Status ${si('status')}</th>
       <th>Score</th>
+      <th onclick="setSort('date')" title="Click to sort: newest entry first / oldest first">Entry Date ${sid()}</th>
       <th onclick="setSort('followUpDate')">Follow-Up ${si('followUpDate')}</th>
       <th>Link</th>
       <th onclick="setSort('month')">Month ${si('month')}</th>
@@ -9782,7 +9786,7 @@ async function saveLead(){
   l.marketingType=document.getElementById('f-mkt').value;l.status=document.getElementById('f-status').value;
   if(!isD4DRow(l)) l.leadSource=document.getElementById('f-src').value; // never blank a D4D lead's tag
   l.month=document.getElementById('f-month').value;
-  l.date=document.getElementById('f-date').value;l.followUpDate=document.getElementById('f-followup').value;
+  l.date=document.getElementById('f-date').value||l.date||today();l.followUpDate=document.getElementById('f-followup').value;
   l.webLink=document.getElementById('f-link').value.trim();l.comps=document.getElementById('f-comps').value.trim();
   l.notes=document.getElementById('f-notes').value.trim();
   l.score=document.getElementById('f-score').value;
