@@ -8937,32 +8937,50 @@ async function rvSkipTraceSelected(){
   function resetBtn(){ __rvSkip=null; if(btn) btn.disabled=(reviewSel.size===0); __rvSetProgress(''); }
 
   try {
-    // Submit one queue per trace type present.
+    // Submit one queue per trace type, poll until done (~40s typical, up to ~4 min).
+    // Returns merged rows, or null after showing an error toast.
+    async function runTrace(jobs){
+      var queueIds=[];
+      for(var j=0;j<jobs.length;j++){
+        var sub=await __rvFetchFn({ action:'submit', trace_type:jobs[j].trace_type, leads:jobs[j].leads });
+        if(!sub || !sub.queue_id){
+          var em=(sub && sub.detail && (sub.detail.detail||JSON.stringify(sub.detail))) || (sub && sub.error) || 'submit failed';
+          showToast('Skip trace failed: '+em,'error'); return null;
+        }
+        queueIds.push(sub.queue_id);
+      }
+      var out=[];
+      for(var qi=0; qi<queueIds.length; qi++){
+        var got=null;
+        for(var i=0;i<48;i++){
+          await rvSleep(5000);
+          __rvSetProgress('Finding numbers… ('+Math.min((i+1)*5,240)+'s)');
+          var res=await __rvFetchFn({ action:'result', queue_id:queueIds[qi] });
+          if(res && res.pending===false && res.rows){ got=res.rows; break; }
+        }
+        if(!got){ showToast('Skip trace timed out — try again in a minute','error'); return null; }
+        out=out.concat(got);
+      }
+      return out;
+    }
     var jobs=[];
     if(named.length) jobs.push({ trace_type:'normal', leads:named });
     if(addrOnly.length) jobs.push({ trace_type:'advanced', leads:addrOnly });
-    var queueIds=[];
-    for(var j=0;j<jobs.length;j++){
-      var sub=await __rvFetchFn({ action:'submit', trace_type:jobs[j].trace_type, leads:jobs[j].leads });
-      if(!sub || !sub.queue_id){
-        var em=(sub && sub.detail && (sub.detail.detail||JSON.stringify(sub.detail))) || (sub && sub.error) || 'submit failed';
-        showToast('Skip trace failed: '+em,'error'); resetBtn(); return;
-      }
-      queueIds.push(sub.queue_id);
-    }
+    var rows=await runTrace(jobs);
+    if(!rows){ resetBtn(); return; }
 
-    // Poll each queue until done (~40s typical), up to ~4 min, and merge rows.
-    var rows=[];
-    for(var qi=0; qi<queueIds.length; qi++){
-      var got=null;
-      for(var i=0;i<48;i++){
-        await rvSleep(5000);
-        __rvSetProgress('Finding numbers… ('+Math.min((i+1)*5,240)+'s)');
-        var res=await __rvFetchFn({ action:'result', queue_id:queueIds[qi] });
-        if(res && res.pending===false && res.rows){ got=res.rows; break; }
-      }
-      if(!got){ showToast('Skip trace timed out — try again in a minute','error'); resetBtn(); return; }
-      rows=rows.concat(got);
+    // Stored names are often "LAST FIRST" (no comma), so a name+address trace can miss
+    // even when the address alone hits. Retry named misses as address-only (advanced).
+    var missed=named.filter(function(pk){
+      var key=rvAddrKey(pk.address, pk.state);
+      var row=rows.find(function(r){ return rvAddrKey(r.address, r.state)===key; });
+      return !(row && rvBestWireless(row));
+    });
+    if(missed.length){
+      __rvSetProgress('Retrying '+missed.length+' by address only…');
+      var rows2=await runTrace([{ trace_type:'advanced', leads:missed.map(function(pk){
+        return Object.assign({}, pk, { name:'', first_name:'', last_name:'' }); }) }]);
+      if(rows2) rows=rows.concat(rows2);
     }
 
     // Match each returned row back to its lead by address key, fill the best
@@ -8975,7 +8993,8 @@ async function rvSkipTraceSelected(){
       var l=arr.find(function(x){return x.id===pk.id;});
       if(!l) return;
       var key=rvAddrKey(pk.address, pk.state);
-      var row=rows.find(function(r){ return rvAddrKey(r.address, r.state)===key; });
+      var row=rows.find(function(r){ return rvAddrKey(r.address, r.state)===key && rvBestWireless(r); })
+        || rows.find(function(r){ return rvAddrKey(r.address, r.state)===key; });
       var w=row?rvBestWireless(row):'';
       if(w){
         var newSkipPhone=rvFmtPhone(w);
