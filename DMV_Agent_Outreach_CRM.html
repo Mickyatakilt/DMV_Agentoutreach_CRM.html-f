@@ -9832,17 +9832,18 @@ function plAdd(id){
 async function plPushGhl(l, newD, oldD){
   var cid=(l.ghlContactId||'').trim();
   if(!cid){ try{ cid=(await ghlLookupPhone(oldD))||''; }catch(e){} }
-  if(!cid) return {ok:true,skipped:true};
   if(AUTH_ENABLED && authSession){ try{ await authRefreshIfNeeded(); }catch(e){} }
-  var r=await fetch(GHL_PHONE_URL,{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':'application/json'},body:JSON.stringify({contactId:cid,phone:newD,oldPhone:plFmt(oldD)})});
+  // Existing GHL contact -> change its phone. None yet -> create one with the new number.
+  var body = cid ? {contactId:cid,phone:newD,oldPhone:plFmt(oldD)} : {create:true,phone:newD,name:l.name||'',address:l.address||''};
+  var r=await fetch(GHL_PHONE_URL,{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':'application/json'},body:JSON.stringify(body)});
   var d={}; try{ d=await r.json(); }catch(e){}
-  if(d&&d.ok){ l.ghlContactId=cid; return {ok:true}; }
+  if(d&&d.ok){ l.ghlContactId=d.contactId||cid; return {ok:true,created:!!d.created}; }
   return {ok:false,message:(d&&d.message)||'GoHighLevel did not accept the change'};
 }
 async function plSetMain(id,idx,reason){
   var l=plLead(id); if(!l) return;
   var list=plGet(l); var p=list[idx], old=list[0]; if(!p||idx===0) return;
-  if(reason==='manual' && !confirm('Make '+plFmt(p.n)+' the main number? This also changes the phone on the GoHighLevel contact.')) return;
+  if(reason==='manual' && !confirm('Make '+plFmt(p.n)+' the main number? This also updates GoHighLevel (changes the contact phone, or creates the contact if it is not there yet).')) return;
   showToast('Updating number&hellip;','success');
   var res; try{ res=await plPushGhl(l,p.n,old.n); }catch(e){ res={ok:false,message:'Network error'}; }
   if(!res.ok){ showToast('Not changed: '+res.message,'error'); return; }
@@ -9850,7 +9851,7 @@ async function plSetMain(id,idx,reason){
   p.role='main'; list.forEach(function(x,i){ if(i>0) x.role='backup'; });
   if(reason==='wrong') old.status='wrong';
   l.phones=list; l.phone=plFmt(p.n);
-  logActivity('lead',id,'Phone changed',plFmt(old.n)+' -> '+plFmt(p.n)+(reason==='wrong'?' (wrong number)':reason==='noreply'?' (no response)':'')+(res.skipped?' [no GHL contact found]':' [GHL updated]'));
+  logActivity('lead',id,'Phone changed',plFmt(old.n)+' -> '+plFmt(p.n)+(reason==='wrong'?' (wrong number)':reason==='noreply'?' (no response)':'')+(res.created?' [GHL contact created]':' [GHL updated]'));
 }
 async function plWrong(id,idx){
   var l=plLead(id); if(!l) return;
