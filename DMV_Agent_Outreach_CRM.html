@@ -9783,14 +9783,21 @@ function plDone(p){ return (p.texts||0)>=PL_TEXTS && (p.calls||0)>=PL_CALLS; }
 function plNext(list){ for(var i=1;i<list.length;i++){ if(list[i].status!=='wrong') return i; } return -1; }
 function plLead(id){ return leads.find(function(x){return x.id===id;}); }
 function plSave(l){ localStorage.setItem('crm_leads', JSON.stringify(leads)); saveLeadToSupabase(l); }
+function plBits(p,kind){
+  var key=kind==='text'?'tx':'cl', cnt=kind==='text'?(p.texts||0):(p.calls||0), len=kind==='text'?PL_TEXTS:PL_CALLS;
+  if(!Array.isArray(p[key])){ p[key]=[]; for(var i=0;i<len;i++) p[key].push(i<cnt?1:0); }
+  while(p[key].length<len) p[key].push(0);
+  return p[key];
+}
 function plCircle(id,idx,kind,n,filled){
   return '<button type="button" onclick="plSet('+id+','+idx+',\''+kind+'\','+n+')" title="'+(kind==='text'?'Text ':'Call ')+n+'" aria-label="'+kind+' '+n+'" style="display:inline-block;width:18px;height:18px;border-radius:50%;margin-right:4px;padding:0;cursor:pointer;vertical-align:middle;border:2px solid var(--accent);background:'+(filled?'var(--accent)':'#fff')+'"></button>';
 }
 function plDots(l,p,idx){
+  var tb=plBits(p,'text'), cb=plBits(p,'call');
   var h='Texts ';
-  for(var i=1;i<=PL_TEXTS;i++) h+=plCircle(l.id,idx,'text',i,i<=(p.texts||0));
+  for(var i=1;i<=PL_TEXTS;i++) h+=plCircle(l.id,idx,'text',i,!!tb[i-1]);
   h+=' &nbsp; Calls ';
-  for(var j=1;j<=PL_CALLS;j++) h+=plCircle(l.id,idx,'call',j,j<=(p.calls||0));
+  for(var j=1;j<=PL_CALLS;j++) h+=plCircle(l.id,idx,'call',j,!!cb[j-1]);
   return h+' &nbsp; '+plCount(p)+' of '+(PL_TEXTS+PL_CALLS)+' done';
 }
 function phoneLadderHTML(l){
@@ -9819,11 +9826,13 @@ function phoneLadderHTML(l){
 function plSet(id,idx,kind,n){
   var l=plLead(id); if(!l) return;
   var list=plGet(l); var p=list[idx]; if(!p) return;
-  var key=kind==='text'?'texts':'calls', cur=p[key]||0;
-  if(n<=cur && n===cur){ p[key]=cur-1; l.phones=list; plSave(l); modalLead=l; renderDetailModal(); return; }
-  if(n<cur){ p[key]=n; l.phones=list; plSave(l); modalLead=l; renderDetailModal(); return; }
-  p[key]=n; l.phones=list;
-  logActivity('lead',id,kind==='text'?'Text attempt':'Call attempt',plFmt(p.n)+' - '+plCount(p)+' of '+(PL_TEXTS+PL_CALLS));
+  var bits=plBits(p,kind), on=!bits[n-1];
+  bits[n-1]=on?1:0;
+  var sum=bits.reduce(function(a,b){return a+(b?1:0);},0);
+  if(kind==='text') p.texts=sum; else p.calls=sum;
+  l.phones=list;
+  if(on) logActivity('lead',id,kind==='text'?'Text attempt':'Call attempt',plFmt(p.n)+' - '+plCount(p)+' of '+(PL_TEXTS+PL_CALLS));
+  else { plSave(l); modalLead=l; renderDetailModal(); }
 }
 function plLog(id,idx,kind){
   var l=plLead(id); if(!l) return;
