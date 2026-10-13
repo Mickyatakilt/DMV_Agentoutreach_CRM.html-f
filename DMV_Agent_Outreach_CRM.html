@@ -1086,18 +1086,28 @@ function fmtCallDur(sec){
   sec=Number(sec)||0; if(sec<=0) return '0s';
   var m=Math.floor(sec/60), r=sec%60; return (m?m+'m ':'')+r+'s';
 }
+function callOutcome(c){
+  var out=(c.direction==='outbound'), st=String(c.status||'').toLowerCase(), d=Number(c.duration)||0;
+  if(st==='voicemail') return {t:out?'Went to voicemail':'Voicemail left',c:'#b45309',i:'&#128236;'};
+  if(/no.?answer/.test(st)) return {t:out?'No answer':'Missed call',c:'var(--red)',i:'&#10060;'};
+  if(st==='busy') return {t:'Busy',c:'var(--red)',i:'&#10060;'};
+  if(/fail|cancel/.test(st)) return {t:'Call '+st,c:'var(--red)',i:'&#10060;'};
+  if(st==='ringing'||st==='queued'||st==='initiated'||st==='in-progress') return {t:'Not connected / ringing',c:'var(--text4)',i:'&#9203;'};
+  if(st==='completed'||d>0){
+    if(d>0&&d<30) return {t:(out?'Short call':'Short call')+' &middot; '+fmtCallDur(d),c:'#b45309',i:'&#9888;&#65039;',tip:'Under 30 seconds: likely a hang-up or a voicemail greeting. GoHighLevel does not record who hung up.'};
+    return {t:(out?'Outgoing':'Incoming')+' call &middot; '+fmtCallDur(d),c:'var(--green)',i:out?'&#128222;':'&#128241;'};
+  }
+  return {t:(out?'Outgoing':'Incoming')+' call',c:'var(--text3)',i:'&#128222;'};
+}
 function renderCallLog(calls){
   var rows=calls.map(function(c){
-    var out=(c.direction==='outbound'), st=String(c.status||'').toLowerCase();
-    var answered=(st==='completed'||st==='answered'||c.duration>0);
-    var label=out?'Outgoing call':(answered?'Incoming call':'Missed call');
-    var color=(!out&&!answered)||/no.?answer|busy|failed|cancel/.test(st)?'var(--red)':'var(--green)';
-    var stTxt=st?(' &middot; '+esc(st.replace(/[-_]/g,' '))):'';
+    var o=callOutcome(c), out=(c.direction==='outbound');
+    var who=out?(c.by?' &middot; by '+esc(c.by):''):'';
     var rec=c.recordingUrl?(' &middot; <a href="'+esc(c.recordingUrl)+'" target="_blank" rel="noopener" class="detail-link">&#9654; Recording</a>'):'';
-    return '<div style="display:flex;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px">'
-      +'<span style="font-size:15px">'+(out?'&#128222;':'&#128241;')+'</span>'
-      +'<div style="flex:1"><div style="font-weight:600;color:'+color+'">'+label+'</div>'
-      +'<div style="font-size:11px;color:var(--text4)">'+esc(fmtSmsTime(c.dateAdded))+stTxt+(answered?' &middot; '+fmtCallDur(c.duration):'')+rec+'</div></div></div>';
+    return '<div style="display:flex;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px"'+(o.tip?' title="'+esc(o.tip)+'"':'')+'>'
+      +'<span style="font-size:15px">'+o.i+'</span>'
+      +'<div style="flex:1"><div style="font-weight:600;color:'+o.c+'">'+o.t+'</div>'
+      +'<div style="font-size:11px;color:var(--text4)">'+esc(fmtSmsTime(c.dateAdded))+who+rec+'</div></div></div>';
   }).join('');
   return '<div style="max-height:220px;overflow-y:auto;padding:2px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:10px">'+rows+'</div>';
 }

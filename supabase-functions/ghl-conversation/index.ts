@@ -89,6 +89,12 @@ Deno.serve(async (req) => {
     const raw = (mj.messages && mj.messages.messages) || mj.messages || [];
 
     if (wantCalls) {
+      // team-member names (best effort) so the log can say who made each call
+      const names: Record<string, string> = {};
+      try {
+        const ur = await fetch(`${GHL}/users/?locationId=${encodeURIComponent(loc)}`, { headers: { ...H, Version: '2021-07-28' } });
+        if (ur.ok) { const uj: any = await ur.json(); (uj.users || []).forEach((u: any) => { names[u.id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' '); }); }
+      } catch (_e) { /* names are optional */ }
       const calls = raw
         .filter((m: any) => String(m.messageType || m.type || '').toUpperCase().includes('CALL'))
         .map((m: any) => {
@@ -99,6 +105,9 @@ Deno.serve(async (req) => {
             status: c.status || m.status || '',
             duration: Number(c.duration ?? m.duration ?? 0) || 0,
             dateAdded: m.dateAdded || '',
+            by: (m.userId && names[m.userId]) || '',
+            from: m.from || '',
+            to: m.to || '',
             recordingUrl: m.attachments && m.attachments[0] ? (m.attachments[0].url || m.attachments[0]) : '',
           };
         })
