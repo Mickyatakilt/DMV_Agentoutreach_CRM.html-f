@@ -1494,6 +1494,7 @@ function toRow(l) {
     updated_by: l.updatedBy||'', updated_at: l.updatedAt||'',
     reached_by: l.reachedBy||'',
     ghl_contact_id: l.ghlContactId||'',
+    phones: l.phones||null,
     score: l.score||'', activity_log: l.activityLog||[],
     recipient_notes: l.recipientNotes||[],
     beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
@@ -1523,6 +1524,7 @@ function fromRow(r) {
     updatedBy: r.updated_by, updatedAt: r.updated_at,
     reachedBy: r.reached_by||'',
     ghlContactId: r.ghl_contact_id||'',
+    phones: r.phones||null,
     score: r.score||'', activityLog: r.activity_log||[],
     recipientNotes: r.recipient_notes||[],
     dealAnalyses: r.deal_analyses||{}, dealAnalysisKey: r.deal_analysis_key||'',
@@ -9748,6 +9750,122 @@ function openAdd(){
 }
 function closeModal(){document.getElementById('modal-container').innerHTML='';modalLead=null;cmtReplyTo=null;cmtMentionUI=null;}
 
+// ===== PHONE LADDER (Leads) =====================================================
+// Several numbers per lead (main + backups from the skip trace). Each number counts its own
+// attempts (3 texts + 1 call = done). "Wrong number" / "Make main" promote a backup to main:
+// the CRM phone changes AND the matching GoHighLevel contact's phone is updated first, so the
+// next text from the CRM goes to the new number. Stored in leads.phones (jsonb); leads without
+// it derive the list from the Phone column + "Backup N" lines in the notes.
+var PL_TEXTS=3, PL_CALLS=1;
+var GHL_PHONE_URL = SUPABASE_URL + '/functions/v1/ghl-contact-phone';
+function plDigits(s){ return String(s||'').replace(/\D/g,'').slice(-10); }
+function plFmt(d){ d=plDigits(d); return d.length===10 ? '('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6) : String(d||''); }
+function plParseBackups(notes){
+  var out=[];
+  String(notes||'').split('\n').forEach(function(line){
+    var m=line.match(/^\s*Backup\s*\d+\s*\(wireless\):\s*(.+)$/i);
+    if(m){ out.push(m[1].trim()); return; }
+    m=line.match(/^\s*Other cells \(backup\):\s*(.+)$/i);
+    if(m) m[1].split(',').forEach(function(n){ if(n.trim()) out.push(n.trim()); });
+  });
+  return out;
+}
+function plGet(l){
+  if(Array.isArray(l.phones) && l.phones.length) return l.phones;
+  var list=[], seen={};
+  function add(raw,role){ var d=plDigits(raw); if(d.length!==10||seen[d]) return; seen[d]=1; list.push({n:d,role:role,texts:0,calls:0,status:''}); }
+  add(String(l.phone||'').split('/')[0],'main');
+  plParseBackups(l.notes).forEach(function(n){ add(n,'backup'); });
+  return list;
+}
+function plCount(p){ return Math.min(p.texts||0,PL_TEXTS)+Math.min(p.calls||0,PL_CALLS); }
+function plDone(p){ return (p.texts||0)>=PL_TEXTS && (p.calls||0)>=PL_CALLS; }
+function plNext(list){ for(var i=1;i<list.length;i++){ if(list[i].status!=='wrong') return i; } return -1; }
+function plLead(id){ return leads.find(function(x){return x.id===id;}); }
+function plSave(l){ localStorage.setItem('crm_leads', JSON.stringify(leads)); saveLeadToSupabase(l); }
+function plDots(p){
+  var h='Texts ';
+  for(var i=0;i<PL_TEXTS;i++) h+='<span style="display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:3px;border:1.5px solid var(--accent);background:'+(i<(p.texts||0)?'var(--accent)':'transparent')+'"></span>';
+  h+=' &nbsp; Call <span style="display:inline-block;width:11px;height:11px;border-radius:50%;border:1.5px solid var(--accent);background:'+((p.calls||0)>=PL_CALLS?'var(--accent)':'transparent')+'"></span>';
+  return h+' &nbsp; '+plCount(p)+' of '+(PL_TEXTS+PL_CALLS)+' done';
+}
+function phoneLadderHTML(l){
+  var list=plGet(l); if(!list.length) return '';
+  var id=l.id, nxt=plNext(list), main=list[0];
+  var btn='font-size:12px;padding:3px 9px;margin-left:4px';
+  var h='<div class="detail-section"><div class="detail-section-title" style="display:flex;justify-content:space-between;align-items:center">Phones <button type="button" class="btn btn-secondary btn-sm" style="'+btn+'" onclick="plAdd('+id+')">+ Add number</button></div>';
+  if(main.status!=='wrong' && plDone(main) && nxt>0)
+    h+='<div style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:9px 12px;border-radius:8px;margin-bottom:10px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px"><span>&#9888; All '+(PL_TEXTS+PL_CALLS)+' attempts used on the main number with no reply. Try Backup '+nxt+' next.</span><button type="button" class="btn btn-secondary btn-sm" style="'+btn+'" onclick="plSetMain('+id+','+nxt+',\'noreply\')">Switch to Backup '+nxt+'</button></div>';
+  else if(main.status!=='wrong' && plDone(main) && nxt<0)
+    h+='<div style="background:#fffbeb;color:#92400e;border:1px solid #fde68a;padding:9px 12px;border-radius:8px;margin-bottom:10px;font-size:13px">&#9888; All attempts used and there is no other number to try. Add a new number or run another skip trace.</div>';
+  list.forEach(function(p,i){
+    var dead=p.status==='wrong', role=i===0?'Main':'Backup '+i;
+    var roleBg=i===0?'#dbeafe':'#f1f5f9', roleFg=i===0?'#1d4ed8':'#475569';
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border,#e2e8f0);border-radius:8px;margin-bottom:8px;'+(dead?'opacity:.55;':'')+'">'
+     +'<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700;'+(dead?'text-decoration:line-through;':'')+'">'+esc(plFmt(p.n))+' <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:'+roleBg+';color:'+roleFg+'">'+role+'</span>'
+     +(dead?' <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:#fee2e2;color:#b91c1c">Wrong number</span>':(plDone(p)?' <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:#fee2e2;color:#b91c1c">No response</span>':''))
+     +'</div><div style="font-size:12px;color:var(--text3,#64748b);margin-top:3px">'+plDots(p)+'</div></div>'
+     +'<div style="white-space:nowrap">'
+     +(dead?'':'<button type="button" class="btn btn-secondary btn-sm" style="'+btn+'" onclick="plLog('+id+','+i+',\'text\')">+ Text</button><button type="button" class="btn btn-secondary btn-sm" style="'+btn+'" onclick="plLog('+id+','+i+',\'call\')">+ Call</button>')
+     +(i>0&&!dead?'<button type="button" class="btn btn-secondary btn-sm" style="'+btn+'" onclick="plSetMain('+id+','+i+',\'manual\')">Make main</button>':'')
+     +(dead?'':'<button type="button" class="btn btn-secondary btn-sm" style="'+btn+'" onclick="plWrong('+id+','+i+')">Wrong number</button>')
+     +'</div></div>';
+  });
+  return h+'</div>';
+}
+function plLog(id,idx,kind){
+  var l=plLead(id); if(!l) return;
+  var list=plGet(l); var p=list[idx]; if(!p) return;
+  if(kind==='text') p.texts=(p.texts||0)+1; else p.calls=(p.calls||0)+1;
+  l.phones=list;
+  logActivity('lead',id,kind==='text'?'Text attempt':'Call attempt',plFmt(p.n)+' - '+plCount(p)+' of '+(PL_TEXTS+PL_CALLS));
+}
+function plAdd(id){
+  var l=plLead(id); if(!l) return;
+  var v=prompt('New phone number (10 digits):'); if(v===null) return;
+  var d=plDigits(v); if(d.length!==10){ showToast('Enter a valid 10-digit number','error'); return; }
+  var list=plGet(l);
+  if(list.some(function(p){return p.n===d;})){ showToast('That number is already on this lead','error'); return; }
+  list.push({n:d,role:'backup',texts:0,calls:0,status:''}); l.phones=list;
+  logActivity('lead',id,'Phone added',plFmt(d));
+}
+async function plPushGhl(l, newD, oldD){
+  var cid=(l.ghlContactId||'').trim();
+  if(!cid){ try{ cid=(await ghlLookupPhone(oldD))||''; }catch(e){} }
+  if(!cid) return {ok:true,skipped:true};
+  if(AUTH_ENABLED && authSession){ try{ await authRefreshIfNeeded(); }catch(e){} }
+  var r=await fetch(GHL_PHONE_URL,{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':'application/json'},body:JSON.stringify({contactId:cid,phone:newD,oldPhone:plFmt(oldD)})});
+  var d={}; try{ d=await r.json(); }catch(e){}
+  if(d&&d.ok){ l.ghlContactId=cid; return {ok:true}; }
+  return {ok:false,message:(d&&d.message)||'GoHighLevel did not accept the change'};
+}
+async function plSetMain(id,idx,reason){
+  var l=plLead(id); if(!l) return;
+  var list=plGet(l); var p=list[idx], old=list[0]; if(!p||idx===0) return;
+  if(reason==='manual' && !confirm('Make '+plFmt(p.n)+' the main number? This also changes the phone on the GoHighLevel contact.')) return;
+  showToast('Updating number&hellip;','success');
+  var res; try{ res=await plPushGhl(l,p.n,old.n); }catch(e){ res={ok:false,message:'Network error'}; }
+  if(!res.ok){ showToast('Not changed: '+res.message,'error'); return; }
+  list.splice(idx,1); list.unshift(p);
+  p.role='main'; list.forEach(function(x,i){ if(i>0) x.role='backup'; });
+  if(reason==='wrong') old.status='wrong';
+  l.phones=list; l.phone=plFmt(p.n);
+  logActivity('lead',id,'Phone changed',plFmt(old.n)+' -> '+plFmt(p.n)+(reason==='wrong'?' (wrong number)':reason==='noreply'?' (no response)':'')+(res.skipped?' [no GHL contact found]':' [GHL updated]'));
+}
+async function plWrong(id,idx){
+  var l=plLead(id); if(!l) return;
+  var list=plGet(l); var p=list[idx]; if(!p) return;
+  if(!confirm('Mark '+plFmt(p.n)+' as a wrong number?')) return;
+  if(idx===0){
+    var nx=plNext(list);
+    if(nx>0){ await plSetMain(id,nx,'wrong'); return; }
+    p.status='wrong'; l.phones=list;
+    logActivity('lead',id,'Wrong number',plFmt(p.n)+' - no backup number to switch to'); return;
+  }
+  p.status='wrong'; l.phones=list;
+  logActivity('lead',id,'Wrong number',plFmt(p.n));
+}
+
 function renderDetailModal(){
   const l=modalLead;
   const fuStatus=l.followUpDate?getFUStatus(l.followUpDate):null;
@@ -9778,6 +9896,7 @@ function renderDetailModal(){
               <div class="detail-item"><span class="detail-label">Follow-Up</span><span class="detail-val">${l.followUpDate?followUpChip(l.followUpDate)+' <a href="'+buildGCalUrl(l.followUpDate,'Follow up: '+(l.address||'Lead'),'Lead follow-up reminder for '+(l.address||''))+'" target="_blank" class="detail-link" style="font-size:11px">&#128197; Add to Calendar</a>':''}</span></div>
             </div>
           </div>
+          ${phoneLadderHTML(l)}
           <div class="detail-section"><div class="detail-section-title">Original Lead Notes</div>${l.notes?'<div class="notes-box" style="white-space:pre-wrap">'+notesHTML(l.notes)+'</div>':'<div style="color:var(--text4);font-size:12px">No notes yet</div>'}${noteChecklistHTML('lead',l.id)}</div>
           ${dealAnalysesAdminHTML('lead', l)}
           ${(l.recipientNotes&&l.recipientNotes.length)?'<div class="detail-section"><div class="detail-section-title">&#128221; Recipient Notes</div>'+recipientNotesListHTML(l.recipientNotes)+'</div>':''}
