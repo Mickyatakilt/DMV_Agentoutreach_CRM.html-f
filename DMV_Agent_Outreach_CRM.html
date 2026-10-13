@@ -9756,7 +9756,7 @@ function closeModal(){document.getElementById('modal-container').innerHTML='';mo
 // the CRM phone changes AND the matching GoHighLevel contact's phone is updated first, so the
 // next text from the CRM goes to the new number. Stored in leads.phones (jsonb); leads without
 // it derive the list from the Phone column + "Backup N" lines in the notes.
-var PL_TEXTS=3, PL_CALLS=1;
+var PL_TEXTS=3, PL_CALLS=4;
 var GHL_PHONE_URL = SUPABASE_URL + '/functions/v1/ghl-contact-phone';
 function plDigits(s){ return String(s||'').replace(/\D/g,'').slice(-10); }
 function plFmt(d){ d=plDigits(d); return d.length===10 ? '('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6) : String(d||''); }
@@ -9783,10 +9783,14 @@ function plDone(p){ return (p.texts||0)>=PL_TEXTS && (p.calls||0)>=PL_CALLS; }
 function plNext(list){ for(var i=1;i<list.length;i++){ if(list[i].status!=='wrong') return i; } return -1; }
 function plLead(id){ return leads.find(function(x){return x.id===id;}); }
 function plSave(l){ localStorage.setItem('crm_leads', JSON.stringify(leads)); saveLeadToSupabase(l); }
-function plDots(p){
+function plCircle(id,idx,kind,n,filled){
+  return '<button type="button" onclick="plSet('+id+','+idx+',\''+kind+'\','+n+')" title="'+(kind==='text'?'Text ':'Call ')+n+'" aria-label="'+kind+' '+n+'" style="display:inline-block;width:18px;height:18px;border-radius:50%;margin-right:4px;padding:0;cursor:pointer;vertical-align:middle;border:2px solid var(--accent);background:'+(filled?'var(--accent)':'#fff')+'"></button>';
+}
+function plDots(l,p,idx){
   var h='Texts ';
-  for(var i=0;i<PL_TEXTS;i++) h+='<span style="display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:3px;border:1.5px solid var(--accent);background:'+(i<(p.texts||0)?'var(--accent)':'transparent')+'"></span>';
-  h+=' &nbsp; Call <span style="display:inline-block;width:11px;height:11px;border-radius:50%;border:1.5px solid var(--accent);background:'+((p.calls||0)>=PL_CALLS?'var(--accent)':'transparent')+'"></span>';
+  for(var i=1;i<=PL_TEXTS;i++) h+=plCircle(l.id,idx,'text',i,i<=(p.texts||0));
+  h+=' &nbsp; Calls ';
+  for(var j=1;j<=PL_CALLS;j++) h+=plCircle(l.id,idx,'call',j,j<=(p.calls||0));
   return h+' &nbsp; '+plCount(p)+' of '+(PL_TEXTS+PL_CALLS)+' done';
 }
 function phoneLadderHTML(l){
@@ -9804,14 +9808,22 @@ function phoneLadderHTML(l){
     h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border,#e2e8f0);border-radius:8px;margin-bottom:8px;'+(dead?'opacity:.55;':'')+'">'
      +'<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700;'+(dead?'text-decoration:line-through;':'')+'">'+esc(plFmt(p.n))+' <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:'+roleBg+';color:'+roleFg+'">'+role+'</span>'
      +(dead?' <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:#fee2e2;color:#b91c1c">Wrong number</span>':(plDone(p)?' <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:#fee2e2;color:#b91c1c">No response</span>':''))
-     +'</div><div style="font-size:12px;color:var(--text3,#64748b);margin-top:3px">'+plDots(p)+'</div></div>'
+     +'</div><div style="font-size:12px;color:var(--text3,#64748b);margin-top:3px">'+plDots(l,p,i)+'</div></div>'
      +'<div style="white-space:nowrap">'
-     +(dead?'':'<button type="button" class="btn btn-secondary btn-sm" style="'+btn+'" onclick="plLog('+id+','+i+',\'text\')">+ Text</button><button type="button" class="btn btn-secondary btn-sm" style="'+btn+'" onclick="plLog('+id+','+i+',\'call\')">+ Call</button>')
      +(i>0&&!dead?'<button type="button" class="btn btn-secondary btn-sm" style="'+btn+'" onclick="plSetMain('+id+','+i+',\'manual\')">Make main</button>':'')
      +(dead?'':'<button type="button" class="btn btn-secondary btn-sm" style="'+btn+'" onclick="plWrong('+id+','+i+')">Wrong number</button>')
      +'</div></div>';
   });
   return h+'</div>';
+}
+function plSet(id,idx,kind,n){
+  var l=plLead(id); if(!l) return;
+  var list=plGet(l); var p=list[idx]; if(!p) return;
+  var key=kind==='text'?'texts':'calls', cur=p[key]||0;
+  if(n<=cur && n===cur){ p[key]=cur-1; l.phones=list; plSave(l); modalLead=l; renderDetailModal(); return; }
+  if(n<cur){ p[key]=n; l.phones=list; plSave(l); modalLead=l; renderDetailModal(); return; }
+  p[key]=n; l.phones=list;
+  logActivity('lead',id,kind==='text'?'Text attempt':'Call attempt',plFmt(p.n)+' - '+plCount(p)+' of '+(PL_TEXTS+PL_CALLS));
 }
 function plLog(id,idx,kind){
   var l=plLead(id); if(!l) return;
