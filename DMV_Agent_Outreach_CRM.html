@@ -1993,6 +1993,17 @@ function leadTabOf(l){ return isD4DRow(l)?'D4D':(isFbLead(l)?'FB Scrape':(l.nati
 function assignBtnHTML(l){
   return '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();openAssign('+l.id+')" title="'+(l.assignedTo?'Assigned to '+esc(l.assignedTo)+' — click to change':'Assign this lead to a teammate and a tab')+'" style="white-space:nowrap;font-weight:700'+(l.assignedTo?';background:#ede9fe;color:#6d28d9;border-color:#c4b5fd':'')+'">&#128100; '+(l.assignedTo?esc(l.assignedTo):'Assign')+'</button>';
 }
+// Email the assignee (best-effort; never blocks the assignment). Calls the assign-notify edge function.
+function assignNotify(payload){
+  try{
+    fetch(SUPABASE_URL+'/functions/v1/assign-notify',{method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':'application/json'},
+      body:JSON.stringify(payload)})
+    .then(function(r){return r.json().catch(function(){return {};});})
+    .then(function(d){ if(d&&d.sent) showToast('Emailed '+d.to,'success'); })
+    .catch(function(){});
+  }catch(e){}
+}
 var assignDraft=null;
 function openAssign(id){
   var l=leads.find(function(x){return x.id===id;}); if(!l) return;
@@ -2041,6 +2052,7 @@ function applyAssign(){
   l.updatedBy=l.assignedBy; l.updatedAt=today();
   assignDraft=null; closeModal(); save(); render();
   saveLeadToSupabase(l);
+  assignNotify({kind:'lead',name:l.assignedTo,leadId:l.id,label:l.address||l.name||('Lead #'+l.id),note:'Now in '+to+(d.dest==='review'?' (Review)':'')});
   showToast('Assigned to '+l.assignedTo+' · '+to,'success');
 }
 function openAddFb(){ openAdd(); modalLead.leadSource=FB_LEAD_SRC; modalLead.nationwide=''; renderEditModal(); }
@@ -6071,6 +6083,7 @@ async function ttSaveForm(id){
     if(isOwner() && uid && t && uid!==t.userId){ f.user_id=uid; f.user_name=twPersonName(uid); f.assigned_by=authProfile.id; f.assigned_by_name=authProfile.name||authProfile.email||''; }
     if(await ttPatch(id,f)){
       closeModal();
+      if(f.user_id) assignNotify({kind:'task',userId:f.user_id,label:text,note:(f.due_date?'Due '+f.due_date+'\n':'')+(f.description||'')});
       if(f.user_id && teamTasks) teamTasks=teamTasks.filter(function(x){return +x.id!==+id;});
       ttRefreshViews(); showToast('Task saved','success');
     }
@@ -6084,6 +6097,7 @@ async function ttSaveForm(id){
         if(nt.userId===(authProfile&&authProfile.id)){ teamTasks=teamTasks||[]; teamTasks.unshift(nt); }
         if(teamAllTasks) teamAllTasks.unshift(nt);
       }
+      if(assignee!==(authProfile&&authProfile.id)) assignNotify({kind:'task',userId:assignee,label:text,note:(f.due_date?'Due '+f.due_date+'\n':'')+(f.description||'')});
       closeModal(); ttRefreshViews(); showToast('Task added','success');
     } catch(e){ showToast('Could not add task: '+twErr(e),'error'); }
   }
