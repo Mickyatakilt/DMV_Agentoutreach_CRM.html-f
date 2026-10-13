@@ -5049,8 +5049,10 @@ function pbSkiptracePreview(){
     var fp=pbParseReplace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
     var n=(fp&&fp.rows)?fp.rows.length:0;
     if(bFill) bFill.style.display='none';
-    if(bFresh){ bFresh.className='btn btn-primary btn-sm'; bFresh.textContent='＋ Add '+n.toLocaleString()+' as new batch'; }
-    el.innerHTML='<span style="color:#b45309">&#9888; No <b>id</b> column &mdash; this is a fresh list. '+n.toLocaleString()+' row'+(n!==1?'s':'')+' ready. Type a <b>State</b> above and click the blue <b>Add as new batch</b> button.</span>';
+    if(bFresh){ bFresh.className='btn btn-primary btn-sm'; bFresh.textContent='Match by address & import'; }
+    var _k={}; (crmProbate||[]).forEach(function(x){ var k=pbStreetKey(x.propertyAddress); if(k) _k[k]=1; });
+    var _m=(fp&&fp.rows?fp.rows:[]).filter(function(r){ return _k[pbStreetKey(r.address)]; }).length;
+    el.innerHTML='<span style="color:#0369a1">No <b>id</b> column &mdash; matching by <b>address</b>. '+n.toLocaleString()+' row'+(n!==1?'s':'')+' &middot; <b>'+_m.toLocaleString()+'</b> match an existing probate lead (will be filled) &middot; '+(n-_m).toLocaleString()+' new. A State is only needed if there are new ones to add.</span>';
     return;
   }
   if(bFill){ bFill.style.display=''; bFill.className='btn btn-primary btn-sm'; }
@@ -5093,40 +5095,70 @@ async function pbRunSkiptraceImport(){
 // Digits-only phone key and a normalized address key, used to spot duplicates.
 function pbPhoneKey(s){ return String(s||'').replace(/\D/g,''); }
 function pbAddrKey(s){ return String(s||'').trim().toUpperCase().replace(/\s+/g,' '); }
+// Street key for matching a file row to an existing lead: first comma-part, upper, punctuation stripped.
+function pbStreetKey(s){ return String(s||'').split(',')[0].toUpperCase().replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
+function pbNameTokens(s){ return String(s||'').toUpperCase().replace(/[^A-Z ]/g,' ').split(/\s+/).filter(function(t){ return t.length>1; }); }
 async function pbRunFreshImport(){
   var st=((document.getElementById('pb-st-state')||{}).value||'').trim().toUpperCase();
-  if(!st){ showToast('Type a State first (e.g. SC) to add a new batch','error'); return; }
   var p=pbParseReplace(__pbImpText||(document.getElementById('pb-st-text')||{}).value||'');
   if(!p||!p.rows.length){ showToast('No rows found in that file','error'); return; }
   var dt=today();
   // 1) Drop rows with no usable phone number (need at least 10 digits).
   var noPhone=0, withPhone=[];
   p.rows.forEach(function(r){ if(pbPhoneKey(r.phone).length>=10) withPhone.push(r); else noPhone++; });
-  // 2) Index existing probate leads by phone + address, remembering scraped vs not-scraped.
-  var exPhone={}, exAddr={};
+  // 2) Index existing leads by street address (to FILL them) and by phone (to spot duplicates).
+  var byStreet={}, exPhone={};
   (crmProbate||[]).forEach(function(x){
-    var status=pbLeadBatchStatus(x); // 'scraped' | 'texted' | 'notscraped'
-    var d=pbPhoneKey(x.skiptracePhone||x.prPhone); if(d && exPhone[d]===undefined) exPhone[d]=status;
-    var a=pbAddrKey(x.skiptraceAddress||x.propertyAddress); if(a && exAddr[a]===undefined) exAddr[a]=status;
+    var k=pbStreetKey(x.propertyAddress); if(k){ (byStreet[k]=byStreet[k]||[]).push(x); }
+    var d=pbPhoneKey(x.skiptracePhone||x.prPhone); if(d && exPhone[d]===undefined) exPhone[d]=1;
   });
-  // 3) Split into brand-new vs already-in-CRM (and drop repeats inside the file).
-  var seen={}, fresh=[], dupScraped=0, dupNot=0, dupInFile=0;
+  // 3) Each row: match an existing lead by address (name breaks ties) -> fill it; else brand-new.
+  var seen={}, fresh=[], fill=[], usedLead={}, dupInFile=0, dupCRM=0;
   withPhone.forEach(function(r){
-    var d=pbPhoneKey(r.phone), a=pbAddrKey(r.address);
+    var d=pbPhoneKey(r.phone), k=pbStreetKey(r.address);
+    var cands=(byStreet[k]||[]).filter(function(x){ return !usedLead[x.id]; });
+    if(cands.length){
+      var toks=pbNameTokens(r.name), best=cands[0], bestScore=-1;
+      cands.forEach(function(x){
+        var nt=pbNameTokens(x.decedentName+' '+x.prName), sc=toks.filter(function(t){ return nt.indexOf(t)>=0; }).length;
+        if(sc>bestScore){ best=x; bestScore=sc; }
+      });
+      usedLead[best.id]=1; fill.push({lead:best,row:r}); return;
+    }
     if(seen[d]){ dupInFile++; return; }
-    var hit = (exPhone[d]!==undefined) ? exPhone[d] : (a && exAddr[a]!==undefined ? exAddr[a] : null);
-    if(hit!==null){ if(hit==='notscraped') dupNot++; else dupScraped++; return; }
+    if(exPhone[d]!==undefined){ dupCRM++; return; }
     seen[d]=1; fresh.push(r);
   });
-  var dupCRM=dupScraped+dupNot;
-  if(!fresh.length){ showToast('Nothing new to add — every row is a duplicate or has no phone','error'); return; }
-  var msg='Add to '+st+' (dated '+dt+'):\n\n'
-    + '• '+fresh.length+' NEW lead'+(fresh.length!==1?'s':'')+' to add\n'
-    + (dupCRM? '• '+dupCRM+' already in your CRM — will be skipped ('+dupScraped+' already skip-traced, '+dupNot+' not skip-traced)\n':'')
+  if(!fill.length && !fresh.length){ showToast('Nothing to import — every row is a duplicate or has no phone','error'); return; }
+  if(fresh.length && !st){ showToast(fill.length+' row'+(fill.length!==1?'s':'')+' match existing leads, but '+fresh.length+' are new — type a State (e.g. MD) to add those, then click again','error'); return; }
+  var msg='Skip-traced upload:\n\n'
+    + '• '+fill.length+' row'+(fill.length!==1?'s':'')+' matched an existing probate lead by address — name/phone will be filled in\n'
+    + (fresh.length? '• '+fresh.length+' NEW lead'+(fresh.length!==1?'s':'')+' (no address match) will be added to '+st+' (dated '+dt+')\n':'')
+    + (dupCRM? '• '+dupCRM+' already in your CRM by phone — skipped\n':'')
     + (dupInFile? '• '+dupInFile+' repeated inside the file — skipped\n':'')
     + (noPhone? '• '+noPhone+' with no phone — skipped\n':'')
     + '\nProceed?';
   if(!confirm(msg)) return;
+  // 4) Fill matched leads in place.
+  var okFill=0, failFill=0, batches={};
+  if(fill.length) showToast('Filling '+fill.length+' lead'+(fill.length!==1?'s':'')+'…','info');
+  for(var i=0;i<fill.length;i++){
+    var lead=fill[i].lead, row=fill[i].row;
+    try{
+      await crmProbateSkiptraceUpdate(lead.id,{name:row.name,phone:row.phone,address:row.address});
+      lead.skiptraceName=row.name; lead.skiptracePhone=row.phone; lead.skiptraceAddress=row.address; lead.skiptracedAt=new Date().toISOString();
+      if(lead.datePulled&&lead.state) batches[pbbKey(lead.datePulled,lead.state)]={date:lead.datePulled,state:lead.state};
+      okFill++;
+    }catch(e){ failFill++; }
+  }
+  var bk=Object.keys(batches);
+  for(var j=0;j<bk.length;j++){ var bb=batches[bk[j]]; try{ await pbbSet(bb.date,bb.state,'skiptraced','Yes'); }catch(e){} }
+  if(!fresh.length){
+    closeModal();
+    if(activeSection==='probate') renderProbate();
+    showToast('Filled '+okFill+' lead'+(okFill!==1?'s':'')+' by address'+(failFill?' · '+failFill+' failed':''),'success');
+    return;
+  }
   var now=new Date().toISOString();
   var recs=fresh.map(function(x){ var a=pbSplitAddr(x.address); return {
     source_case_id:null, state:st, county:'', decedent_name:x.name, pr_name:x.name,
@@ -5145,7 +5177,7 @@ async function pbRunFreshImport(){
   closeModal();
   crmProbate=null; crmProbateBatches=null;
   if(activeSection==='probate') renderProbate();
-  showToast('Added new '+st+' batch with '+recs.length.toLocaleString()+' skip-traced lead'+(recs.length!==1?'s':''),'success');
+  showToast((okFill?'Filled '+okFill+' by address · ':'')+'Added new '+st+' batch with '+recs.length.toLocaleString()+' skip-traced lead'+(recs.length!==1?'s':''),'success');
 }
 // ---- Replace a whole batch with an uploaded skip-traced list (no id needed) ----
 // The skip-tracer returns First Name / Last Name / Phone Number / Address (no CRM id),
