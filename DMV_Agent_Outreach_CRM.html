@@ -5040,11 +5040,11 @@ function pbOpenSkiptraceImport(){
     '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:560px">'
     + '<div class="modal-header"><div class="modal-title">&#8681; Upload Skip-Traced File</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
     + '<div class="modal-body">'
-      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px"><b>Two ways to use this:</b><br>&bull; File has an <b>id</b> column &rarr; each row fills its matching lead in place, batches flip to <b>Skiptraced = Yes</b>. Use <b>Import &amp; Fill</b>.<br>&bull; Fresh list (<b>no id</b>, just Name / Phone / Address) &rarr; type a <b>State</b> below and it&rsquo;s added as a new <b>Scraped</b> batch dated today. Use <b>Add as new batch</b>.</p>'
+      + '<p style="font-size:12.5px;color:var(--text3);line-height:1.5;margin-bottom:12px"><b>Two ways to use this:</b><br>&bull; File has an <b>id</b> column &rarr; each row fills its matching lead in place, batches flip to <b>Skiptraced = Yes</b>. Use <b>Import &amp; Fill</b>.<br>&bull; Skip-traced list (<b>no id</b>, just Name / Phone / Address) &rarr; rows are matched to existing leads by <b>address</b> and filled in; any with no match are added as a new <b>Scraped</b> batch dated today &mdash; <b>type the State below</b> (e.g. TX) for those. Use <b>Match by address &amp; import</b>.</p>'
       + '<div class="form-field"><label class="form-label">Upload .csv</label><input type="file" id="pb-st-file" accept=".csv,text/csv" class="form-input" onchange="pbSkiptraceFile(event)"></div>'
       + '<div class="form-field"><label class="form-label">&hellip; or paste rows</label><textarea id="pb-st-text" class="form-input" rows="5" placeholder="id,Name,Phone Number,Address\n123,John Smith,(240) 555-1212,101 Main St" oninput="__pbImpText=this.value;pbSkiptracePreview()"></textarea></div>'
       + '<div id="pb-st-count" style="font-size:12px;color:var(--text3);margin:-4px 0 4px"></div>'
-      + '<div class="form-field" style="margin-top:8px"><label class="form-label">State <span style="font-weight:400;color:var(--text3)">(only for a fresh no-id list &mdash; date is set to today automatically)</span></label><input type="text" id="pb-st-state" class="form-input" placeholder="e.g. SC" maxlength="24" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>'
+      + '<div class="form-field" style="margin-top:8px"><label class="form-label">State <span style="font-weight:400;color:var(--text3)">(only for a fresh no-id list &mdash; date is set to today automatically)</span></label><input type="text" id="pb-st-state" class="form-input" placeholder="REQUIRED for new leads — e.g. TX" maxlength="24" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>'
     + '</div>'
     + '<div class="modal-footer">'
       + '<button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>'
@@ -5055,7 +5055,7 @@ function pbOpenSkiptraceImport(){
 function pbSkiptraceFile(ev){
   var f=ev.target.files&&ev.target.files[0]; if(!f) return;
   var rd=new FileReader();
-  rd.onload=function(){ __pbImpText=String(rd.result||''); var ta=document.getElementById('pb-st-text'); if(ta) ta.value=__pbImpText; pbSkiptracePreview(); };
+  rd.onload=function(){ var _st=document.getElementById('pb-st-state'); if(_st&&!_st.value){ if(/dallas/i.test(f.name)) _st.value='TX'; else if(/\bMD\b|maryland/i.test(f.name)) _st.value='MD'; } __pbImpText=String(rd.result||''); var ta=document.getElementById('pb-st-text'); if(ta) ta.value=__pbImpText; pbSkiptracePreview(); };
   rd.readAsText(f);
 }
 // Find the column index whose header matches any of `names` (case/space-insensitive).
@@ -5174,7 +5174,7 @@ async function pbRunFreshImport(){
     seen[d]=1; fresh.push(r);
   });
   if(!fill.length && !fresh.length){ showToast('Nothing to import — every row is a duplicate or has no phone','error'); return; }
-  if(fresh.length && !st){ showToast(fill.length+' row'+(fill.length!==1?'s':'')+' match existing leads, but '+fresh.length+' are new — type a State (e.g. MD) to add those, then click again','error'); return; }
+  if(fresh.length && !st){ var _se=document.getElementById('pb-st-state'); if(_se){ _se.style.borderColor='#dc2626'; _se.style.boxShadow='0 0 0 2px rgba(220,38,38,.25)'; _se.focus(); _se.scrollIntoView({block:'center'}); } showToast(fill.length+' row'+(fill.length!==1?'s':'')+' match existing leads, but '+fresh.length+' are new — type a State (e.g. MD) to add those, then click again','error'); return; }
   var msg='Skip-traced upload:\n\n'
     + '• '+fill.length+' row'+(fill.length!==1?'s':'')+' matched an existing probate lead by address — name/phone will be filled in\n'
     + (fresh.length? '• '+fresh.length+' NEW lead'+(fresh.length!==1?'s':'')+' (no address match) will be added to '+st+' (dated '+dt+')\n':'')
