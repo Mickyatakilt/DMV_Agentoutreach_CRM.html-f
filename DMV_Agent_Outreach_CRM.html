@@ -961,7 +961,10 @@ function ghlSmsSectionHTML(contactId, kind, id){
     +   '</div>'
     + '</div>'
     + '<div id="ghl-sms-status" style="font-size:11px;color:var(--text4);margin-top:4px;min-height:14px"></div>'
-    + '</div>';
+    + '</div>'
+    + '<div class="detail-section"><div class="detail-section-title">&#128222; Call History '
+    + '<span style="font-weight:400;color:var(--text4);font-size:11px">&middot; from GoHighLevel</span></div>'
+    + '<div id="ghl-calls-body"></div></div>';
 }
 // A placeholder the SMS panel mounts into. Lets the panel appear even when the GHL
 // contact id wasn't stored on the row yet (Task/Nationwide leads) — we look it up live.
@@ -1079,9 +1082,40 @@ function renderSmsThread(msgs){
   }).join('');
   return '<div id="ghl-sms-scroll" class="ghl-sms-scroll" style="max-height:260px;overflow-y:auto;padding:10px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:10px">' + rows + '</div>';
 }
+function fmtCallDur(sec){
+  sec=Number(sec)||0; if(sec<=0) return '0s';
+  var m=Math.floor(sec/60), r=sec%60; return (m?m+'m ':'')+r+'s';
+}
+function renderCallLog(calls){
+  var rows=calls.map(function(c){
+    var out=(c.direction==='outbound'), st=String(c.status||'').toLowerCase();
+    var answered=(st==='completed'||st==='answered'||c.duration>0);
+    var label=out?'Outgoing call':(answered?'Incoming call':'Missed call');
+    var color=(!out&&!answered)||/no.?answer|busy|failed|cancel/.test(st)?'var(--red)':'var(--green)';
+    var stTxt=st?(' &middot; '+esc(st.replace(/[-_]/g,' '))):'';
+    var rec=c.recordingUrl?(' &middot; <a href="'+esc(c.recordingUrl)+'" target="_blank" rel="noopener" class="detail-link">&#9654; Recording</a>'):'';
+    return '<div style="display:flex;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px">'
+      +'<span style="font-size:15px">'+(out?'&#128222;':'&#128241;')+'</span>'
+      +'<div style="flex:1"><div style="font-weight:600;color:'+color+'">'+label+'</div>'
+      +'<div style="font-size:11px;color:var(--text4)">'+esc(fmtSmsTime(c.dateAdded))+stTxt+(answered?' &middot; '+fmtCallDur(c.duration):'')+rec+'</div></div></div>';
+  }).join('');
+  return '<div style="max-height:220px;overflow-y:auto;padding:2px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:10px">'+rows+'</div>';
+}
+async function loadGhlCalls(contactId){
+  var body=document.getElementById('ghl-calls-body'); if(!body) return;
+  body.innerHTML='<div style="color:var(--text4);font-size:12px;padding:8px 0">Loading calls&hellip;</div>';
+  try{
+    var r=await ghlConvoFetch({ action:'calls', contactId:contactId });
+    var d=await r.json().catch(function(){ return {}; });
+    if(!d||!d.ok){ body.innerHTML='<div style="color:var(--text4);font-size:12px;padding:8px 0">Could not load calls.</div>'; return; }
+    if(!d.calls||!d.calls.length){ body.innerHTML='<div style="color:var(--text4);font-size:12px;padding:8px 0">No calls on record for this number.</div>'; return; }
+    body.innerHTML='<div style="font-size:11px;color:var(--text4);margin-bottom:4px">'+d.calls.length+' call'+(d.calls.length!==1?'s':'')+' &middot; last: '+esc(fmtSmsTime(d.calls[0].dateAdded))+'</div>'+renderCallLog(d.calls);
+  }catch(e){ body.innerHTML='<div style="color:var(--text4);font-size:12px;padding:8px 0">Could not load calls (network).</div>'; }
+}
 async function loadGhlSms(contactId){
   var body = document.getElementById('ghl-sms-body');
   if(!body) return;
+  loadGhlCalls(contactId);
   body.innerHTML = '<div style="color:var(--text4);font-size:12px;padding:8px 0">Loading messages&hellip;</div>';
   try {
     var r = await ghlConvoFetch({ contactId: contactId });
