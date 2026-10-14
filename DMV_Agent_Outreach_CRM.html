@@ -6853,11 +6853,19 @@ var dashTab = 'overview';
 function dashTabsHTML(){
   if(!isOwner()) return '';
   function tb(k,label){ var on=dashTab===k; return '<button type="button" onclick="dashSetTab(\''+k+'\')" style="padding:7px 16px;border:0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:'+(on?'var(--accent,#2563eb)':'transparent')+';color:'+(on?'#fff':'var(--text3,#64748b)')+'">'+label+'</button>'; }
-  return '<div style="display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:var(--card,#fff);margin-right:8px">'+tb('overview','&#128202; Overview')+tb('team','&#128101; Team')+'</div>';
+  return '<div style="display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:var(--card,#fff);margin-right:8px">'+tb('overview','&#128202; Overview')+tb('team','&#128101; Team')+tb('comm','&#128222; Call Log')+'</div>';
 }
 function dashSetTab(k){ dashTab=k; renderDashboard(); }
 function renderDashboard(){
   var host=document.getElementById('section-main'); if(!host) return;
+  if(isOwner() && dashTab==='comm'){
+    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128202; Dashboard</h2>'
+      +'<p>Call log: every text (individual or bulk) and call by team member, credited to whoever the conversation is assigned to in GoHighLevel.</p></div>'
+      +'<div class="lt-actions">'+dashTabsHTML()+'<button class="btn btn-secondary btn-sm" onclick="renderCommTab()">&#8635; Refresh</button></div></div>'
+      + '<div id="comm-host"></div></div>';
+    renderCommTab();
+    return;
+  }
   if(isOwner() && dashTab==='team'){
     host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128202; Dashboard</h2>'
       +'<p>Your team: who is on the clock, hours, and every task with its status and finish date.</p></div>'
@@ -6959,6 +6967,97 @@ function renderDashboard(){
     + '</div>';
   try{ mgrInjectCSS(); mgrRenderBriefing(false); loadSmsAnalytics(); loadProbateFunnel(); }catch(e){ console.warn('dash analytics', e); }
   if(isOwner()) renderTeamWork(teamAllClock!==null);
+}
+// ---- Owner: Communication tab (texts + calls per team member, from GHL via ghl-team-sync) ----
+var commPreset='7d', commBucket='day';
+function commDates(){
+  var to=new Date(), from=new Date(); to.setDate(to.getDate()+1); to.setHours(0,0,0,0);
+  if(commPreset==='today'){ from=new Date(); from.setHours(0,0,0,0); }
+  else if(commPreset==='7d'){ from=new Date(to); from.setDate(from.getDate()-7); }
+  else if(commPreset==='30d'){ from=new Date(to); from.setDate(from.getDate()-30); }
+  else if(commPreset==='month'){ from=new Date(); from.setDate(1); from.setHours(0,0,0,0); }
+  return {from:from,to:to};
+}
+function commSet(k,v){ if(k==='p') commPreset=v; else commBucket=v; renderCommTab(); }
+var commNames={};
+function commLink(uid,kind,period,label,count){
+  var n=(count===undefined)? label : count; if(!(+n>0) && kind!=='all') return label;
+  return '<a href="#" onclick="commDrill(\''+uid+'\',\''+kind+'\',\''+(period||'')+'\');return false" style="color:var(--accent,#2563eb);font-weight:700;text-decoration:underline dotted;cursor:pointer">'+label+'</a>';
+}
+function commClose(){ var m=document.getElementById('comm-modal'); if(m) m.remove(); }
+async function commDrill(uid,kind,period){
+  var from,to,d=commDates();
+  if(period){ from=new Date(period+'T00:00:00'); to=new Date(from);
+    if(commBucket==='week') to.setDate(to.getDate()+7); else if(commBucket==='month') to.setMonth(to.getMonth()+1); else to.setDate(to.getDate()+1);
+  } else { from=d.from; to=d.to; }
+  var titles={ti:'Individual texts',tb:'Bulk texts',texts:'All texts',co:'Calls made',ci:'Calls received',calls:'All calls',all:'All activity'};
+  commClose();
+  var m=document.createElement('div'); m.id='comm-modal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.onclick=function(e){ if(e.target===m) commClose(); };
+  m.innerHTML='<div style="background:var(--card,#fff);border-radius:14px;max-width:820px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.3)"><div style="padding:14px 18px;border-bottom:1px solid var(--border,#e5e7eb);display:flex;justify-content:space-between;align-items:center;gap:10px"><div><div style="font-size:16px;font-weight:800">'+titles[kind]+'</div><div id="comm-sub" style="font-size:12px;color:var(--text4,#64748b)">Loading&hellip;</div></div><button onclick="commClose()" style="padding:6px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer">Close</button></div><div id="comm-body" style="overflow:auto;padding:4px 8px 12px"></div></div>';
+  document.body.appendChild(m);
+  var rows=await smsRpc('get_team_comm_detail',{p_user:uid,p_kind:kind,p_from:from.toISOString(),p_to:to.toISOString()});
+  var sub=document.getElementById('comm-sub'), body=document.getElementById('comm-body'); if(!body) return;
+  if(!rows){ body.innerHTML='<div style="padding:20px;color:#64748b">Could not load details.</div>'; return; }
+  var endD=new Date(to-864e5);
+  sub.innerHTML=esc(commNames[uid]||'')+' &middot; '+from.toLocaleDateString(undefined,{month:'short',day:'numeric'})+(endD>from?' &ndash; '+endD.toLocaleDateString(undefined,{month:'short',day:'numeric'}):'')+' &middot; '+rows.length+' item'+(rows.length===1?'':'s');
+  var th='text-align:left;padding:8px 10px;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #e5e7eb;position:sticky;top:0;background:#fff';
+  var td='padding:9px 10px;font-size:13px;border-bottom:1px solid #f1f5f9';
+  var typeLbl={text_individual:'&#128172; Text',text_bulk:'&#128226; Bulk text',call_out:'&#128222; Call made',call_in:'&#128222; Call received'};
+  body.innerHTML= rows.length? '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+'">When</th><th style="'+th+'">Type</th><th style="'+th+'">Customer</th><th style="'+th+'">Phone</th><th style="'+th+'">Result</th><th style="'+th+'"></th></tr></thead><tbody>'+rows.map(function(r){
+    var t=new Date(r.date_added);
+    return '<tr><td style="'+td+';white-space:nowrap">'+t.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+t.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})+'</td><td style="'+td+'">'+typeLbl[r.type]+'</td><td style="'+td+';font-weight:700">'+esc(r.customer||'Unknown')+'</td><td style="'+td+'">'+esc(r.phone||'')+'</td><td style="'+td+'">'+esc(r.result||'')+'</td><td style="'+td+'"><a href="'+esc(r.ghl_url||'#')+'" target="_blank" rel="noopener" style="color:#2563eb;font-weight:700;white-space:nowrap">Open in GHL &rarr;</a></td></tr>';
+  }).join('')+'</tbody></table>' : '<div style="padding:20px;color:#64748b">Nothing in this period.</div>';
+}
+async function renderCommTab(){
+  var host=document.getElementById('comm-host'); if(!host) return;
+  var card='background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;';
+  var th='text-align:left;padding:8px 10px;font-size:11px;color:var(--text4);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border,#e5e7eb)';
+  var td='padding:9px 10px;font-size:13px;border-bottom:1px solid var(--border,#f1f5f9)';
+  host.innerHTML='<div style="'+card+'padding:24px;margin-top:10px;text-align:center;color:var(--text4);font-size:13px">Loading communication&hellip;</div>';
+  var d=commDates();
+  var r=await Promise.all([ smsRpc('get_team_comm',{p_from:d.from.toISOString(),p_to:d.to.toISOString(),p_bucket:commBucket}), smsRpc('get_team_comm_status',{}) ]);
+  host=document.getElementById('comm-host'); if(!host) return;
+  var rows=r[0], st=(r[1]&&r[1][0])||null;
+  if(!rows){ host.innerHTML='<div style="'+card+'padding:24px;margin-top:10px;color:var(--text4);font-size:13px">Could not load communication data.</div>'; return; }
+  rows.forEach(function(x){ commNames[x.user_id]=x.user_name; });
+  var tot={ti:0,tb:0,co:0,ci:0,cs:0}, per={};
+  rows.forEach(function(x){
+    tot.ti+=+x.texts_individual; tot.tb+=+x.texts_bulk; tot.co+=+x.calls_out; tot.ci+=+x.calls_in; tot.cs+=+x.call_seconds;
+    var p=per[x.user_id]||(per[x.user_id]={name:x.user_name,ti:0,tb:0,co:0,ci:0,cs:0});
+    p.ti+=+x.texts_individual; p.tb+=+x.texts_bulk; p.co+=+x.calls_out; p.ci+=+x.calls_in; p.cs+=+x.call_seconds;
+  });
+  function dur(sec){ sec=+sec||0; var h=Math.floor(sec/3600), m=Math.round((sec%3600)/60); return h? h+'h '+m+'m' : m+'m'; }
+  function stat(v,l){ return '<div style="'+card+'padding:12px 16px;min-width:130px"><div style="font-size:22px;font-weight:800">'+v+'</div><div style="font-size:11px;color:var(--text4)">'+l+'</div></div>'; }
+  function pill(k,v,label){ var on=(k==='p'?commPreset:commBucket)===v; return '<button type="button" onclick="commSet(\''+k+'\',\''+v+'\')" style="padding:6px 12px;border:0;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:'+(on?'var(--accent,#2563eb)':'transparent')+';color:'+(on?'#fff':'var(--text3,#64748b)')+'">'+label+'</button>'; }
+  var grp='display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:var(--card,#fff)';
+  var people=Object.keys(per).sort(function(a,b){ return (per[b].ti+per[b].tb+per[b].co)-(per[a].ti+per[a].tb+per[a].co); });
+  var pbody=people.length? people.map(function(id){ var p=per[id];
+    return '<tr><td style="'+td+';font-weight:700">'+esc(p.name)+'</td><td style="'+td+'">'+commLink(id,'ti','',p.ti)+'</td><td style="'+td+'">'+commLink(id,'tb','',p.tb)+'</td><td style="'+td+';font-weight:700">'+commLink(id,'texts','',p.ti+p.tb)+'</td><td style="'+td+'">'+commLink(id,'co','',p.co)+'</td><td style="'+td+'">'+commLink(id,'ci','',p.ci)+'</td><td style="'+td+'">'+commLink(id,'calls','',dur(p.cs),p.co+p.ci)+'</td></tr>';
+  }).join('') : '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text4);font-size:13px">No texts or calls in this period yet.</td></tr>';
+  var lbl={day:'Day',week:'Week of',month:'Month'}[commBucket];
+  var dbody=rows.map(function(x){
+    var pd=String(x.period); try{ var dt=new Date(pd+'T12:00:00'); pd=commBucket==='month'? dt.toLocaleDateString(undefined,{month:'long',year:'numeric'}) : dt.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }catch(e){}
+    return '<tr><td style="'+td+'">'+commLink(x.user_id,'all',x.period,esc(pd),1)+'</td><td style="'+td+';font-weight:700">'+esc(x.user_name)+'</td><td style="'+td+'">'+commLink(x.user_id,'ti',x.period,x.texts_individual)+'</td><td style="'+td+'">'+commLink(x.user_id,'tb',x.period,x.texts_bulk)+'</td><td style="'+td+'">'+commLink(x.user_id,'co',x.period,x.calls_out)+'</td><td style="'+td+'">'+commLink(x.user_id,'ci',x.period,x.calls_in)+'</td><td style="'+td+'">'+commLink(x.user_id,'calls',x.period,dur(x.call_seconds),x.calls_out+x.calls_in)+'</td></tr>';
+  }).join('');
+  var note=st? ('Last synced '+(st.updated_at? new Date(st.updated_at).toLocaleString():'never')+(st.backfill_done?'':' &middot; importing history&hellip;')) : '';
+  host.innerHTML=
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">'
+      +'<div style="'+grp+'">'+pill('p','today','Today')+pill('p','7d','7 days')+pill('p','30d','30 days')+pill('p','month','This month')+'</div>'
+      +'<div style="'+grp+'">'+pill('b','day','Daily')+pill('b','week','Weekly')+pill('b','month','Monthly')+'</div>'
+      +'<span style="font-size:11px;color:var(--text4)">'+note+'</span>'
+    +'</div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">'
+      +stat(tot.ti,'Individual texts')+stat(tot.tb,'Bulk texts')+stat(tot.co,'Calls made')+stat(tot.ci,'Calls received')+stat(dur(tot.cs),'Time on calls')
+    +'</div>'
+    +'<div style="'+card+'margin-top:12px;padding:6px 6px 10px"><div style="padding:8px 10px;font-size:14px;font-weight:800">By person (selected period)</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'
+      +['Person','Individual texts','Bulk texts','Total texts','Calls made','Calls received','Call time'].map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')
+    +'</tr></thead><tbody>'+pbody+'</tbody></table></div></div>'
+    +(rows.length? '<div style="'+card+'margin-top:12px;padding:6px 6px 10px"><div style="padding:8px 10px;font-size:14px;font-weight:800">Breakdown</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'
+      +[lbl,'Person','Individual texts','Bulk texts','Calls made','Calls received','Call time'].map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')
+    +'</tr></thead><tbody>'+dbody+'</tbody></table></div></div>' : '')
+    +'<div style="font-size:11px;color:var(--text4);margin-top:8px">Counts come from GoHighLevel and are credited to whoever the conversation is assigned to. Automated workflow messages are not counted. Conversations with no assignee show as &ldquo;Unassigned&rdquo;.</div>';
 }
 // =================== end Dashboard ===================
 
