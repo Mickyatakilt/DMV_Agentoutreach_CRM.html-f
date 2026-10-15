@@ -7079,7 +7079,8 @@ function commOutreachGraph(f, daily, card){
     +fun
     +'</div>';
 }
-function commSetCustom(k,v){ commCustom[k]=v; if(commCustom.from&&commCustom.to){ commPreset='custom'; renderCommTab(); } }
+function dIso(x){ return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
+function commSetCustom(k,v){ if(commPreset!=='custom'){ var cd=commDates(); commCustom.from=dIso(cd.from); commCustom.to=dIso(new Date(cd.to-864e5)); } commCustom[k]=v; if(commCustom.from&&commCustom.to){ commPreset='custom'; renderCommTab(); } }
 async function renderCommTab(){
   var host=document.getElementById('comm-host'); if(!host) return;
   var card='background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;';
@@ -7116,10 +7117,10 @@ async function renderCommTab(){
   var note=st? ('Last synced '+(st.updated_at? new Date(st.updated_at).toLocaleString():'never')+(st.backfill_done?'':' &middot; importing history&hellip;')) : '';
   host.innerHTML=
     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">'
-      +'<div style="'+grp+'">'+pill('p','today','Today')+pill('p','7d','7 days')+pill('p','30d','30 days')+pill('p','month','This month')+pill('p','custom','Custom')+'</div>'
+      +'<div style="'+grp+'">'+pill('p','today','Today')+pill('p','7d','7 days')+pill('p','30d','30 days')+pill('p','month','This month')+'</div>'
       +'<div style="'+grp+'">'+pill('b','day','Daily')+pill('b','week','Weekly')+pill('b','month','Monthly')+'</div>'
       +'<select onchange="commUser=this.value;renderCommTab()" style="padding:7px 10px;border:1px solid var(--border,#e5e7eb);border-radius:10px;font-size:12px;font-weight:700;background:var(--card,#fff)"><option value="">All team members</option>'+commUsers.map(function(u){ return '<option value="'+esc(u.user_id)+'"'+(u.user_id===commUser?' selected':'')+'>'+esc(u.user_name)+'</option>'; }).join('')+'</select>'
-      +(commPreset==='custom'||commCustom.from? '<span style="font-size:12px"><input type="date" value="'+commCustom.from+'" onchange="commSetCustom(\'from\',this.value)"> to <input type="date" value="'+commCustom.to+'" onchange="commSetCustom(\'to\',this.value)"></span>':'')
+      +'<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700">From <input type="date" value="'+dIso(d.from)+'" onchange="commSetCustom(\'from\',this.value)" style="padding:6px 8px;border:1px solid var(--border,#e5e7eb);border-radius:8px"> To <input type="date" value="'+dIso(new Date(d.to-864e5))+'" onchange="commSetCustom(\'to\',this.value)" style="padding:6px 8px;border:1px solid var(--border,#e5e7eb);border-radius:8px"></span>'
       +'<span style="font-size:11px;color:var(--text4)">'+note+'</span>'
     +'</div>'
     +commOutreachGraph(r[2]&&r[2][0], r[3], card)
