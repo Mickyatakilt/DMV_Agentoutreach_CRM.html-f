@@ -7007,13 +7007,14 @@ function renderDashboard(){
   if(isOwner()) renderTeamWork(teamAllClock!==null);
 }
 // ---- Owner: Communication tab (texts + calls per team member, from GHL via ghl-team-sync) ----
-var commPreset='7d', commBucket='day';
+var commPreset='7d', commBucket='day', commCustom={from:'',to:''}, commUser='', commUsers=[];
 function commDates(){
   var to=new Date(), from=new Date(); to.setDate(to.getDate()+1); to.setHours(0,0,0,0);
   if(commPreset==='today'){ from=new Date(); from.setHours(0,0,0,0); }
   else if(commPreset==='7d'){ from=new Date(to); from.setDate(from.getDate()-7); }
   else if(commPreset==='30d'){ from=new Date(to); from.setDate(from.getDate()-30); }
   else if(commPreset==='month'){ from=new Date(); from.setDate(1); from.setHours(0,0,0,0); }
+  else if(commPreset==='custom' && commCustom.from && commCustom.to){ from=new Date(commCustom.from+'T00:00:00'); to=new Date(commCustom.to+'T00:00:00'); to.setDate(to.getDate()+1); }
   return {from:from,to:to};
 }
 function commSet(k,v){ if(k==='p') commPreset=v; else commBucket=v; renderCommTab(); }
@@ -7048,6 +7049,40 @@ async function commDrill(uid,kind,period){
     return '<tr><td style="'+td+';white-space:nowrap">'+t.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+t.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})+'</td><td style="'+td+'">'+typeLbl[r.type]+'</td><td style="'+td+';font-weight:700">'+esc(r.customer||'Unknown')+'</td><td style="'+td+'">'+esc(r.phone||'')+'</td><td style="'+td+'">'+esc(r.result||'')+'</td><td style="'+td+'"><a href="'+esc(r.ghl_url||'#')+'" target="_blank" rel="noopener" style="color:#2563eb;font-weight:700;white-space:nowrap">Open in GHL &rarr;</a></td></tr>';
   }).join('')+'</tbody></table>' : '<div style="padding:20px;color:#64748b">Nothing in this period.</div>';
 }
+
+function commOutreachGraph(f, daily, card){
+  f=f||{called:0,texted:0,responded:0,opted_out:0,no_response:0}; daily=daily||[];
+  function pct(n,d){ return d>0? (Math.round(n/d*1000)/10)+'%' : '0%'; }
+  var T=+f.texted||0;
+  var steps=[['Texted',T,'#2563eb',''],['Responded',+f.responded,'#16a34a',pct(f.responded,T)+' of texted'],['Unsubscribed / Removed',+f.opted_out,'#dc2626',pct(f.opted_out,T)+' of texted'],['No response',+f.no_response,'#94a3b8',pct(f.no_response,T)+' of texted']];
+  var fun=steps.map(function(x){ var w=T>0? Math.max(x[1]/T*100,x[1]>0?1.5:0):0;
+    return '<div style="display:flex;align-items:center;gap:10px;margin:7px 0"><div style="width:150px;font-size:12px;font-weight:700">'+x[0]+'</div><div style="flex:1;background:var(--border,#f1f5f9);border-radius:6px;height:22px"><div style="width:'+w+'%;height:100%;background:'+x[2]+';border-radius:6px"></div></div><div style="width:150px;font-size:12px"><b>'+x[1].toLocaleString()+'</b> <span style="color:var(--text4)">'+x[3]+'</span></div></div>'; }).join('');
+  function chart(series,title){
+    var W=640,H=170,pl=34,pb=22,pt=10,n=daily.length; if(!n) return '<div style="color:var(--text4);font-size:12px;padding:10px">No data in this period.</div>';
+    var max=1; series.forEach(function(se){ daily.forEach(function(d){ max=Math.max(max,+d[se.k]||0); }); });
+    var pw=(W-pl-8)/n, ph=H-pb-pt, out='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto"><line x1="'+pl+'" y1="'+(H-pb)+'" x2="'+W+'" y2="'+(H-pb)+'" stroke="#cbd5e1"/><text x="2" y="'+(pt+8)+'" font-size="10" fill="#64748b">'+max+'</text><text x="2" y="'+(H-pb)+'" font-size="10" fill="#64748b">0</text>';
+    var step=Math.ceil(n/10);
+    daily.forEach(function(d,i){ if(i%step===0){ var dt=new Date(d.day+'T12:00:00'); out+='<text x="'+(pl+pw*i+pw/2)+'" y="'+(H-6)+'" font-size="9" fill="#64748b" text-anchor="middle">'+(dt.getMonth()+1)+'/'+dt.getDate()+'</text>'; } });
+    series.forEach(function(se,si){
+      if(se.bar){ daily.forEach(function(d,i){ var h=(+d[se.k]||0)/max*ph; out+='<rect x="'+(pl+pw*i+pw*0.15)+'" y="'+(H-pb-h)+'" width="'+(pw*0.7)+'" height="'+h+'" fill="'+se.c+'" opacity=".85"><title>'+d.day+' '+se.l+': '+d[se.k]+'</title></rect>'; }); }
+      else { var pts=daily.map(function(d,i){ return (pl+pw*i+pw/2)+','+(H-pb-(+d[se.k]||0)/max*ph); }).join(' ');
+        out+='<polyline points="'+pts+'" fill="none" stroke="'+se.c+'" stroke-width="2.5"/>'+daily.map(function(d,i){ return '<circle cx="'+(pl+pw*i+pw/2)+'" cy="'+(H-pb-(+d[se.k]||0)/max*ph)+'" r="3" fill="'+se.c+'"><title>'+d.day+' '+se.l+': '+d[se.k]+'</title></circle>'; }).join(''); }
+    });
+    out+='</svg>';
+    var leg=series.map(function(se){ return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;margin-right:12px"><i style="width:10px;height:10px;border-radius:2px;background:'+se.c+';display:inline-block"></i>'+se.l+'</span>'; }).join('');
+    return '<div style="font-size:12px;font-weight:700;margin:10px 0 2px">'+title+'</div>'+out+'<div>'+leg+'</div>';
+  }
+  return '<div style="'+card+'margin-top:12px;padding:12px 16px">'
+    +'<div style="font-size:14px;font-weight:800">Outreach funnel'+(commUser?' &mdash; '+esc((commUsers.filter(function(u){return u.user_id===commUser;})[0]||{}).user_name||''):'')+'</div>'
+    +'<div style="font-size:11px;color:var(--text4);margin-bottom:6px">Unique people. Responded / unsubscribed / no-response are counted among the people texted in this period.</div>'
+    +'<div style="display:flex;gap:10px;margin:8px 0;flex-wrap:wrap"><div style="'+card+'padding:10px 16px"><div style="font-size:22px;font-weight:800">'+(+f.called).toLocaleString()+'</div><div style="font-size:11px;color:var(--text4)">People called</div></div><div style="'+card+'padding:10px 16px"><div style="font-size:22px;font-weight:800">'+T.toLocaleString()+'</div><div style="font-size:11px;color:var(--text4)">People texted</div></div><div style="'+card+'padding:10px 16px"><div style="font-size:22px;font-weight:800">'+pct(f.no_response,T)+'</div><div style="font-size:11px;color:var(--text4)">No-response rate</div></div></div>'
+    +fun
+    +'<div style="font-size:14px;font-weight:800;margin-top:14px">Daily trend</div>'
+    +chart([{k:'texted',l:'People texted',c:'#2563eb',bar:true},{k:'called',l:'People called',c:'#f59e0b'}],'Texted & called per day')
+    +chart([{k:'responded',l:'Responded',c:'#16a34a'},{k:'opted_out',l:'Unsubscribed / Removed',c:'#dc2626'}],'Responses & unsubscribes per day')
+    +'</div>';
+}
+function commSetCustom(k,v){ commCustom[k]=v; if(commCustom.from&&commCustom.to){ commPreset='custom'; renderCommTab(); } }
 async function renderCommTab(){
   var host=document.getElementById('comm-host'); if(!host) return;
   var card='background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;';
@@ -7055,7 +7090,8 @@ async function renderCommTab(){
   var td='padding:9px 10px;font-size:13px;border-bottom:1px solid var(--border,#f1f5f9)';
   host.innerHTML='<div style="'+card+'padding:24px;margin-top:10px;text-align:center;color:var(--text4);font-size:13px">Loading communication&hellip;</div>';
   var d=commDates();
-  var r=await Promise.all([ smsRpc('get_team_comm',{p_from:d.from.toISOString(),p_to:d.to.toISOString(),p_bucket:commBucket}), smsRpc('get_team_comm_status',{}) ]);
+  var r=await Promise.all([ smsRpc('get_team_comm',{p_from:d.from.toISOString(),p_to:d.to.toISOString(),p_bucket:commBucket}), smsRpc('get_team_comm_status',{}), smsRpc('get_outreach_funnel',{p_from:d.from.toISOString(),p_to:d.to.toISOString(),p_user:commUser||null}), smsRpc('get_outreach_funnel_daily',{p_from:d.from.toISOString(),p_to:d.to.toISOString(),p_user:commUser||null}), commUsers.length? Promise.resolve(commUsers) : smsRpc('get_outreach_users',{}) ]);
+  if(r[4]&&r[4].length) commUsers=r[4];
   host=document.getElementById('comm-host'); if(!host) return;
   var rows=r[0], st=(r[1]&&r[1][0])||null;
   if(!rows){ host.innerHTML='<div style="'+card+'padding:24px;margin-top:10px;color:var(--text4);font-size:13px">Could not load communication data.</div>'; return; }
@@ -7082,10 +7118,13 @@ async function renderCommTab(){
   var note=st? ('Last synced '+(st.updated_at? new Date(st.updated_at).toLocaleString():'never')+(st.backfill_done?'':' &middot; importing history&hellip;')) : '';
   host.innerHTML=
     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">'
-      +'<div style="'+grp+'">'+pill('p','today','Today')+pill('p','7d','7 days')+pill('p','30d','30 days')+pill('p','month','This month')+'</div>'
+      +'<div style="'+grp+'">'+pill('p','today','Today')+pill('p','7d','7 days')+pill('p','30d','30 days')+pill('p','month','This month')+pill('p','custom','Custom')+'</div>'
+      +'<select onchange="commUser=this.value;renderCommTab()" style="padding:7px 10px;border:1px solid var(--border,#e5e7eb);border-radius:10px;font-size:12px;font-weight:700;background:var(--card,#fff)"><option value="">All team members</option>'+commUsers.map(function(u){ return '<option value="'+esc(u.user_id)+'"'+(u.user_id===commUser?' selected':'')+'>'+esc(u.user_name)+'</option>'; }).join('')+'</select>'
+      +(commPreset==='custom'||commCustom.from? '<span style="font-size:12px"><input type="date" value="'+commCustom.from+'" onchange="commSetCustom(\'from\',this.value)"> to <input type="date" value="'+commCustom.to+'" onchange="commSetCustom(\'to\',this.value)"></span>':'')
       +'<div style="'+grp+'">'+pill('b','day','Daily')+pill('b','week','Weekly')+pill('b','month','Monthly')+'</div>'
       +'<span style="font-size:11px;color:var(--text4)">'+note+'</span>'
     +'</div>'
+    +commOutreachGraph(r[2]&&r[2][0], r[3], card)
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">'
       +stat(tot.ti,'Individual texts')+stat(tot.tb,'Bulk texts')+stat(tot.co,'Calls made')+stat(tot.ci,'Calls received')+stat(dur(tot.cs),'Time on calls')
     +'</div>'
