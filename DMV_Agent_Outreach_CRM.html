@@ -456,6 +456,19 @@
   .pb-wf-f select,.pb-wf-f input{border:1.5px solid var(--border2);border-radius:8px;padding:6px 8px;font-size:12.5px;background:var(--surface);color:var(--text);text-transform:none;font-weight:500;letter-spacing:0;}
   .pb-wf-grow{flex:1;min-width:180px;}
   .pb-wf-grow input{width:100%;}
+  /* ============ Bot handoffs bubble (above Assistance, every tab) ============ */
+  .ho-fab{position:fixed;right:22px;bottom:84px;z-index:360;display:none;align-items:center;gap:8px;border:none;cursor:pointer;background:linear-gradient(135deg,#f59e0b,#ea580c);color:#fff;font-weight:800;font-size:14px;padding:12px 18px;border-radius:999px;box-shadow:0 8px 24px rgba(234,88,12,.4);}
+  .ho-fab.on{display:flex;}
+  .ho-badge{position:absolute;top:-8px;right:-4px;min-width:24px;height:24px;border-radius:12px;background:#dc2626;color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 6px;border:2px solid #fff;animation:asstpulse 1.8s infinite;}
+  .ho-panel{position:fixed;right:22px;bottom:146px;z-index:365;width:400px;max-width:calc(100vw - 32px);max-height:70vh;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.3);display:none;flex-direction:column;overflow:hidden;}
+  .ho-panel.open{display:flex;}
+  .ho-head{background:linear-gradient(135deg,#f59e0b,#ea580c);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;}
+  .ho-head small{display:block;opacity:.9;font-weight:500;font-size:11px;}
+  .ho-x{background:rgba(255,255,255,.25);border:none;color:#fff;width:28px;height:28px;border-radius:8px;cursor:pointer;}
+  .ho-list{overflow:auto;padding:8px 10px 12px;}
+  .ho-item{border:1px solid var(--border);border-left:4px solid #f59e0b;border-radius:11px;padding:10px;margin-bottom:8px;background:var(--surface);}
+  .ho-toast{position:fixed;right:22px;bottom:150px;z-index:390;max-width:320px;background:#0f172a;color:#fff;padding:12px 16px;border-radius:12px;font-size:13.5px;box-shadow:0 12px 36px rgba(0,0,0,.4);cursor:pointer;display:none;}
+  .ho-toast.on{display:block;}
   /* ============ Assistance (floating task reminders, every tab) ============ */
   .asst-fab{position:fixed;right:22px;bottom:22px;z-index:360;display:flex;align-items:center;gap:8px;border:none;cursor:pointer;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;font-weight:800;font-size:14px;padding:12px 18px;border-radius:999px;box-shadow:0 8px 24px rgba(8,145,178,.45);}
   .asst-badge{position:absolute;top:-8px;right:-4px;min-width:24px;height:24px;border-radius:12px;background:#dc2626;color:#fff;font-size:13px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 6px;border:2px solid #fff;animation:asstpulse 1.8s infinite;}
@@ -506,7 +519,7 @@
   .asst-edit{padding:10px;border:1.5px solid #0d9488;border-radius:11px;margin-bottom:6px;background:var(--surface);display:flex;flex-direction:column;gap:8px;}
   .asst-edit input{border:1.5px solid var(--border2);border-radius:8px;padding:8px 10px;font-size:14px;background:var(--surface);color:var(--text);width:100%;}
   .asst-edit .asst-row button.cancel{background:var(--surface3,#e2e8f0);color:var(--text2);}
-  @media(max-width:768px){ .asst-fab{right:14px;bottom:calc(62px + env(safe-area-inset-bottom) + 12px);} .asst-panel{right:8px;left:8px;width:auto;bottom:calc(62px + env(safe-area-inset-bottom) + 70px);max-width:none;} body:has(#modal-container .modal-overlay) .asst-fab{display:none !important;} .asst-undo{bottom:calc(62px + env(safe-area-inset-bottom) + 70px);} }
+  @media(max-width:768px){ .ho-fab{right:14px;bottom:calc(62px + env(safe-area-inset-bottom) + 72px);} .ho-panel{right:8px;left:8px;width:auto;bottom:calc(62px + env(safe-area-inset-bottom) + 132px);max-width:none;} .ho-toast{right:14px;bottom:calc(62px + env(safe-area-inset-bottom) + 130px);} .asst-fab{right:14px;bottom:calc(62px + env(safe-area-inset-bottom) + 12px);} .asst-panel{right:8px;left:8px;width:auto;bottom:calc(62px + env(safe-area-inset-bottom) + 70px);max-width:none;} body:has(#modal-container .modal-overlay) .asst-fab{display:none !important;} .asst-undo{bottom:calc(62px + env(safe-area-inset-bottom) + 70px);} }
   /* ============ P5 Ask AI (floating natural-language query) ============ */
   .ask-fab{position:fixed;right:22px;bottom:22px;z-index:360;display:flex;align-items:center;gap:8px;border:none;cursor:pointer;
     background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-weight:800;font-size:14px;padding:12px 18px;border-radius:999px;
@@ -2167,7 +2180,7 @@ function fbRemoveFile(id,kind,i){
 }
 function fbRowHTML(l){
   return '<tr onclick="openDetail('+l.id+')" style="cursor:pointer">'
-    +'<td><b>'+esc(l.name||'')+'</b></td>'
+    +'<td><b>'+esc(l.name||'')+'</b>'+(isBotHandoffLead(l)?' <span title="The text bot handed this conversation to you" style="font-size:10px;font-weight:800;color:#b45309;background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:1px 7px;white-space:nowrap">&#129302; Bot handoff</span>':'')+'</td>'
     +'<td>'+(l.phone?'<a href="#" data-phone="'+esc(l.phone.split('/')[0].trim())+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);font-weight:600;text-decoration:none" title="Open in GoHighLevel / SMS">'+esc(l.phone)+' &#8599;</a>':'')+'</td>'
     +'<td><div style="display:flex;align-items:center;gap:4px"><div class="address-cell">'+(esc(l.address)||'')+'</div>'+fbZillowA(l.address)+pwIcon(l.address)+'</div></td>'
     +'<td>'+((l.pictures||[]).length?'<span title="Property pictures">&#128247; '+l.pictures.length+'</span>':'<span style="color:var(--text4)">&#8212;</span>')+((l.attachments||[]).length?' <span title="Attachments">&#128206; '+l.attachments.length+'</span>':'')+'</td>'
@@ -2178,6 +2191,23 @@ function fbRowHTML(l){
     +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
     +'<td onclick="event.stopPropagation()">'+assignBtnHTML(l)+'</td></tr>';
 }
+function isBotHandoffLead(l){ return !!l && (l.notes||'').indexOf('BOT HANDOFF')>-1; }
+function fbHandoffCardHTML(){
+  var hs=botHandoffs||[]; if(!hs.length) return '';
+  var rows=hs.map(function(h){
+    var when=h.created_at?new Date(h.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid #fde68a">'
+      +'<div style="min-width:0"><div style="font-weight:800;font-size:14px;color:var(--text1)">'+esc(h.name||'(no name)')
+      +(h.phone?' &middot; <a href="#" data-phone="'+esc(String(h.phone).split('/')[0].trim())+'" data-cid="'+esc(h.ghl_contact_id||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);font-weight:700;text-decoration:none">'+esc(h.phone)+' &#8599;</a>':'')+'</div>'
+      +'<div style="font-size:12px;color:#92400e;margin-top:2px">'+esc(h.reason||'')+' <span style="color:var(--text3)">&middot; '+esc(when)+'</span></div></div>'
+      +'<div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="botHandoffOpen('+(h.lead_id||0)+')" style="font-weight:700">Open lead</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="botHandoffDone('+h.id+')" style="font-weight:700">&#10003; Handled</button></div></div>';
+  }).join('');
+  return '<div style="background:#fffbeb;border:1px solid #fcd34d;border-left:4px solid #f59e0b;border-radius:12px;padding:12px 14px;margin-bottom:16px">'
+    +'<div style="font-weight:800;font-size:15px;color:#92400e">&#129302; Bot handoffs &mdash; waiting for you ('+hs.length+')</div>'+rows+'</div>';
+}
+function botHandoffOpen(leadId){ if(leadId) openDetail(leadId); }
+function botHandoffDone(id){ return hoHandled(id); }
 function fbLeadsList(){ return leads.filter(function(l){return !l.deleted&&isFbLead(l);}); }
 function fbFollowUpDashHTML(){
   var all=fbLeadsList().filter(function(l){return l.followUpDate;}).sort(function(a,b){return a.followUpDate>b.followUpDate?1:-1;});
@@ -2206,7 +2236,7 @@ function fbFollowUpDashHTML(){
 function fbLeadsPanelHTML(){
   var rows=fbLeadsList().sort(function(a,b){ var da=a.date||'',db=b.date||''; return db>da?1:db<da?-1:(b.id-a.id); });
   var body=rows.length?rows.map(fbRowHTML).join(''):'<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:18px">No Facebook leads yet &mdash; click <b>+ Add Lead</b> to add one.</td></tr>';
-  return fbFollowUpDashHTML()+'<div style="margin-bottom:18px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px;flex-wrap:wrap">'
+  return fbHandoffCardHTML()+fbFollowUpDashHTML()+'<div style="margin-bottom:18px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px;flex-wrap:wrap">'
     +'<div style="font-weight:800;font-size:15px">&#128172; Facebook Leads <span style="font-size:12px;color:var(--text3);font-weight:600">('+rows.length+') &middot; only leads with <b>Review</b> checked go to the DMV CRM Review tab</span></div>'
     +'<button class="btn btn-primary btn-sm" onclick="openAddFb()">+ Add Lead</button></div>'
     +'<div class="table-container" style="padding:0"><div class="table-wrap"><table><thead><tr><th>Wholesaler</th><th>Phone</th><th>Address</th><th>Files</th><th>JV Signed</th><th>JV Split</th><th>Contract End</th><th>Entry Date</th><th>Follow-Up</th><th>Assign</th></tr></thead><tbody>'+body+'</tbody></table></div></div></div>';
@@ -7391,6 +7421,59 @@ function askOpen(kind,id){
   if(kind==='deal'){ setSection('dispo'); setTimeout(function(){ dispoEditDeal(id); },70); return; }
   dashOpen(kind,id); // list / probate / task / lead
 }
+// =================== Bot handoffs bubble (popup + red count on every tab) ===================
+var hoList=[], hoOpenP=false, hoSeenIds=null, hoToastT=null;
+function hoMount(){
+  if(authProfile && authProfile.role==='recipient') return;
+  if(document.getElementById('ho-root')) return;
+  var root=document.createElement('div'); root.id='ho-root';
+  root.innerHTML='<button id="ho-fab" class="ho-fab" onclick="hoToggle()" title="Text-bot handoffs waiting for you"><span>\uD83E\uDD16</span><span>Handoffs</span><span id="ho-badge" class="ho-badge">0</span></button>'
+    +'<div id="ho-panel" class="ho-panel"><div class="ho-head"><span><b>\uD83E\uDD16 Bot handoffs</b><small>stays here until you click Handled</small></span><button class="ho-x" onclick="hoToggle(false)">\u2715</button></div><div id="ho-list" class="ho-list"></div></div>'
+    +'<div id="ho-toast" class="ho-toast" onclick="hoToggle(true)"></div>';
+  document.body.appendChild(root);
+  hoLoad(); setInterval(hoLoad, 60*1000);
+}
+async function hoLoad(){
+  try{ hoList=await sbFetch('bot_handoffs?select=*&seen_at=is.null&order=created_at.desc&limit=50')||[]; }catch(e){ return; }
+  botHandoffs=hoList.slice();
+  var ids=hoList.map(function(h){return h.id;});
+  if(hoSeenIds!==null){
+    var fresh=hoList.filter(function(h){ return hoSeenIds.indexOf(h.id)<0; });
+    if(fresh.length) hoToast(fresh);
+  }
+  hoSeenIds=ids;
+  hoRender();
+  if(activeSection==='fb' && typeof renderFBSection==='function' && fbGroups!==null) renderFBSection();
+}
+function hoToast(fresh){
+  var t=document.getElementById('ho-toast'); if(!t) return;
+  var h=fresh[0]; t.innerHTML='\uD83E\uDD16 <b>New bot handoff</b>'+(fresh.length>1?' (+'+(fresh.length-1)+' more)':'')+'<br>'+esc(h.name||h.phone||'')+' \u00b7 '+esc(h.reason||'');
+  t.classList.add('on'); clearTimeout(hoToastT); hoToastT=setTimeout(function(){ t.classList.remove('on'); },12000);
+}
+function hoRender(){
+  var fab=document.getElementById('ho-fab'), b=document.getElementById('ho-badge'), l=document.getElementById('ho-list'); if(!fab) return;
+  fab.classList.toggle('on', hoList.length>0); b.textContent=hoList.length;
+  if(!hoList.length){ var p=document.getElementById('ho-panel'); if(p) p.classList.remove('open'); hoOpenP=false; }
+  if(!l) return;
+  l.innerHTML=hoList.map(function(h){
+    var when=h.created_at?new Date(h.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
+    return '<div class="ho-item"><div style="font-weight:800;font-size:14px">'+esc(h.name||'(no name)')+(h.phone?' \u00b7 <span style="color:var(--accent)">'+esc(h.phone)+'</span>':'')+'</div>'
+      +'<div style="font-size:12px;color:#92400e;margin:2px 0 8px">'+esc(h.reason||'')+' <span style="color:var(--text3)">\u00b7 '+esc(when)+'</span></div>'
+      +'<div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="hoGo('+(h.lead_id||0)+')" style="font-weight:700">Open lead</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="hoHandled('+h.id+')" style="font-weight:700">\u2713 Handled</button></div></div>';
+  }).join('');
+}
+function hoToggle(open){
+  hoOpenP=(open===undefined)?!hoOpenP:open;
+  var p=document.getElementById('ho-panel'); if(p) p.classList.toggle('open',hoOpenP);
+  var t=document.getElementById('ho-toast'); if(t) t.classList.remove('on');
+}
+function hoGo(leadId){ hoToggle(false); if(activeSection!=='fb') setSection('fb'); if(leadId) setTimeout(function(){ openDetail(leadId); },150); }
+async function hoHandled(id){
+  hoList=hoList.filter(function(h){return +h.id!==+id;}); botHandoffs=hoList.slice(); hoRender();
+  try{ await sbFetch('bot_handoffs?id=eq.'+id,'PATCH',{seen_at:new Date().toISOString()}); }catch(e){ showToast('Could not mark handled','error'); }
+  if(activeSection==='fb') renderFBSection();
+}
 // =================== Assistance (task reminders on every tab) ===================
 var asstTasks=[], asstLast=null, asstOpen=false, asstEditing=null, asstUndoT=null, asstDraft=null;
 function asstToday(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -7748,6 +7831,7 @@ function render(){
   if(!sbSectionAllowed(activeSection)){ activeSection = sbItems()[0].k; document.getElementById('app').innerHTML = sidebarHTML() + '<div id="section-main" class="section-main"></div>'; }
   askMount(); // floating "Ask AI" button (mounts once to #ask-root; survives re-renders)
   asstMount(); // floating Assistance task reminders (every tab)
+  hoMount();   // floating bot-handoff popup + red count (every tab)
   if(activeSection==='lists'){ renderLists(); return; }
   if(activeSection==='dispo'){ renderDispo(); return; }
   if(activeSection==='jv'){ renderJvAgreements(); return; }
@@ -8543,6 +8627,7 @@ var fbFiles = null;         // cached fb_scrape_files (the daily CSV "files" sho
 var fbLastReq = null;       // most recent fb_scan_requests row (for failure detection)
 var fbWorker = null;        // {last_seen,host} heartbeat row
 var fbLeadCounts = {};      // {group_link_id: total leads found} for the group manager
+var botHandoffs = [];       // unhandled text-bot handoffs (bot_handoffs rows with seen_at null)
 var fbScan = { running:false };
 var fbScanTimer = null;
 var FB_ONLINE_MS = 90*1000; // heartbeat fresher than this => Mac is online
@@ -8569,8 +8654,10 @@ async function fbLoadState(){
       sbFetch('fb_worker_status?select=last_seen,host&id=eq.1'),
       sbFetch('rpc/fb_group_lead_counts','POST',{}).catch(function(){ return []; }),
       sbFetch('fb_scrape_files?select=*&deleted=eq.false&order=date_scraped.desc,id.desc&limit=300').catch(function(){ return []; }),
-      sbFetch('fb_scan_requests?select=status,error,requested_at,finished_at&order=requested_at.desc&limit=1').catch(function(){ return []; })
+      sbFetch('fb_scan_requests?select=status,error,requested_at,finished_at&order=requested_at.desc&limit=1').catch(function(){ return []; }),
+      sbFetch('bot_handoffs?select=*&seen_at=is.null&order=created_at.desc&limit=50').catch(function(){ return []; })
     ]);
+    botHandoffs = res[5] || [];
     fbGroups = res[0] || [];
     fbWorker = (res[1] && res[1][0]) || null;
     fbLeadCounts = {};
