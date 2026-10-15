@@ -2193,15 +2193,15 @@ function fbRowHTML(l){
 }
 function isBotHandoffLead(l){ return !!l && (l.notes||'').indexOf('BOT HANDOFF')>-1; }
 function fbHandoffCardHTML(){
-  var hs=botHandoffs||[]; if(!hs.length) return '';
+  var hs=(botHandoffs||[]).filter(hoVisible); if(!hs.length) return '';
   var rows=hs.map(function(h){
     var when=h.created_at?new Date(h.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
     return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid #fde68a">'
       +'<div style="min-width:0"><div style="font-weight:800;font-size:14px;color:var(--text1)">'+esc(h.name||'(no name)')
       +(h.phone?' &middot; <a href="#" data-phone="'+esc(String(h.phone).split('/')[0].trim())+'" data-cid="'+esc(h.ghl_contact_id||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);font-weight:700;text-decoration:none">'+esc(h.phone)+' &#8599;</a>':'')+'</div>'
       +'<div style="font-size:12px;color:#92400e;margin-top:2px">'+esc(h.reason||'')+' <span style="color:var(--text3)">&middot; '+esc(when)+'</span></div></div>'
-      +'<div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="botHandoffOpen('+(h.lead_id||0)+')" style="font-weight:700">Open lead</button>'
-      +'<button class="btn btn-secondary btn-sm" onclick="botHandoffDone('+h.id+')" style="font-weight:700">&#10003; Handled</button></div></div>';
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="btn btn-primary btn-sm" onclick="botHandoffOpen('+(h.lead_id||0)+')" style="font-weight:700">Open lead</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="botHandoffDone('+h.id+')" style="font-weight:700">&#10003; Handled</button>'+hoAssignSelect(h)+'</div></div>';
   }).join('');
   return '<div style="background:#fffbeb;border:1px solid #fcd34d;border-left:4px solid #f59e0b;border-radius:12px;padding:12px 14px;margin-bottom:16px">'
     +'<div style="font-weight:800;font-size:15px;color:#92400e">&#129302; Bot handoffs &mdash; waiting for you ('+hs.length+')</div>'+rows+'</div>';
@@ -6883,11 +6883,19 @@ var dashTab = 'overview';
 function dashTabsHTML(){
   if(!isOwner()) return '';
   function tb(k,label){ var on=dashTab===k; return '<button type="button" onclick="dashSetTab(\''+k+'\')" style="padding:7px 16px;border:0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;background:'+(on?'var(--accent,#2563eb)':'transparent')+';color:'+(on?'#fff':'var(--text3,#64748b)')+'">'+label+'</button>'; }
-  return '<div style="display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:var(--card,#fff);margin-right:8px">'+tb('overview','&#128202; Overview')+tb('team','&#128101; Team')+tb('comm','&#128222; Call Log')+'</div>';
+  return '<div style="display:inline-flex;gap:2px;padding:3px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:var(--card,#fff);margin-right:8px">'+tb('overview','&#128202; Overview')+tb('team','&#128101; Team')+tb('comm','&#128222; Call Log')+tb('handoffs','&#129302; Handoffs'+(hoList&&hoList.length?' ('+hoList.length+')':''))+'</div>';
 }
 function dashSetTab(k){ dashTab=k; renderDashboard(); }
 function renderDashboard(){
   var host=document.getElementById('section-main'); if(!host) return;
+  if(isOwner() && dashTab==='handoffs'){
+    host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128202; Dashboard</h2>'
+      +'<p>Every conversation the text bot handed to you: why, who it is assigned to, and whether it is handled. Use this to discuss them with your team.</p></div>'
+      +'<div class="lt-actions">'+dashTabsHTML()+'<button class="btn btn-secondary btn-sm" onclick="renderHandoffsTab()">&#8635; Refresh</button></div></div>'
+      +'<div id="handoffs-host"></div></div>';
+    renderHandoffsTab();
+    return;
+  }
   if(isOwner() && dashTab==='comm'){
     host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128202; Dashboard</h2>'
       +'<p>Call log: every text (individual or bulk) and call by team member, credited to whoever the conversation is assigned to in GoHighLevel.</p></div>'
@@ -7433,8 +7441,36 @@ function hoMount(){
   document.body.appendChild(root);
   hoLoad(); setInterval(hoLoad, 60*1000);
 }
+function hoMe(){ return ((authProfile&&authProfile.name)||(currentUser&&currentUser.name)||'').trim(); }
+// Unassigned handoffs show to everyone; once assigned, ONLY the assignee sees it in the bubble/popup (owner sees all on Dashboard > Handoffs).
+function hoVisible(h){ return !h.assigned_to || String(h.assigned_to).toLowerCase()===hoMe().toLowerCase(); }
+function hoAssignSelect(h){
+  return '<select onchange="hoAssign('+h.id+',this.value)" title="Assign this handoff" style="font-size:12.5px;font-weight:700;padding:6px 8px;border-radius:8px;border:1px solid '+(h.assigned_to?'#c4b5fd':'var(--border,#cbd5e1)')+';background:'+(h.assigned_to?'#ede9fe':'#fff')+';color:'+(h.assigned_to?'#6d28d9':'var(--text1)')+'">'
+    +'<option value="">&#128100; Assign to&hellip;</option>'
+    +ASSIGNEES.map(function(n){ return '<option value="'+esc(n)+'"'+(String(h.assigned_to||'')===n?' selected':'')+'>'+esc(n)+'</option>'; }).join('')+'</select>';
+}
+async function hoAssign(id,person){
+  if(!person) return;
+  var h=(hoList||[]).concat(hoAllRows||[]).find(function(x){return +x.id===+id;}); if(!h) return;
+  var now=new Date().toISOString(), by=hoMe();
+  h.assigned_to=person; h.assigned_by=by; h.assigned_at=now;
+  try{
+    await sbFetch('bot_handoffs?id=eq.'+id,'PATCH',{assigned_to:person,assigned_by:by,assigned_at:now});
+    if(h.lead_id){
+      await sbFetch('leads?id=eq.'+h.lead_id,'PATCH',{assigned_to:person,assigned_by:by,assigned_at:now});
+      var l=leads.find(function(x){return x.id===h.lead_id;}); if(l){ l.assignedTo=person; l.assignedBy=by; l.assignedAt=now; }
+      assignNotify({kind:'lead',name:person,leadId:h.lead_id,label:(h.name||h.phone||'bot handoff')+' (bot handoff)',note:h.reason||''});
+    }
+    showToast('Handoff assigned to '+person,'success');
+  }catch(e){ showToast('Could not assign','error'); }
+  // after assigning to someone else it leaves my bubble
+  hoList=(hoList||[]).filter(hoVisible); botHandoffs=hoList.slice(); hoRender();
+  if(activeSection==='fb') renderFBSection();
+  if(activeSection==='dashboard' && dashTab==='handoffs') renderHandoffsTab();
+}
+var hoAllRows=null;
 async function hoLoad(){
-  try{ hoList=await sbFetch('bot_handoffs?select=*&seen_at=is.null&order=created_at.desc&limit=50')||[]; }catch(e){ return; }
+  try{ hoList=(await sbFetch('bot_handoffs?select=*&seen_at=is.null&order=created_at.desc&limit=50')||[]).filter(hoVisible); }catch(e){ return; }
   botHandoffs=hoList.slice();
   var ids=hoList.map(function(h){return h.id;});
   if(hoSeenIds!==null){
@@ -7459,9 +7495,34 @@ function hoRender(){
     var when=h.created_at?new Date(h.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
     return '<div class="ho-item"><div style="font-weight:800;font-size:14px">'+esc(h.name||'(no name)')+(h.phone?' \u00b7 <span style="color:var(--accent)">'+esc(h.phone)+'</span>':'')+'</div>'
       +'<div style="font-size:12px;color:#92400e;margin:2px 0 8px">'+esc(h.reason||'')+' <span style="color:var(--text3)">\u00b7 '+esc(when)+'</span></div>'
-      +'<div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="hoGo('+(h.lead_id||0)+')" style="font-weight:700">Open lead</button>'
-      +'<button class="btn btn-secondary btn-sm" onclick="hoHandled('+h.id+')" style="font-weight:700">\u2713 Handled</button></div></div>';
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="btn btn-primary btn-sm" onclick="hoGo('+(h.lead_id||0)+')" style="font-weight:700">Open lead</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="hoHandled('+h.id+')" style="font-weight:700">\u2713 Handled</button>'+hoAssignSelect(h)+'</div></div>';
   }).join('');
+}
+var hoFilter='open';
+async function renderHandoffsTab(){
+  var host=document.getElementById('handoffs-host'); if(!host) return;
+  if(hoAllRows===null) host.innerHTML='<div style="padding:30px;text-align:center;color:var(--text4)">Loading&hellip;</div>';
+  try{ hoAllRows=await sbFetch('bot_handoffs?select=*&order=created_at.desc&limit=300')||[]; }catch(e){ host.innerHTML='<div class="empty">Could not load handoffs.</div>'; return; }
+  var open=hoAllRows.filter(function(h){return !h.seen_at;}), done=hoAllRows.filter(function(h){return !!h.seen_at;});
+  var rows=(hoFilter==='open'?open:hoFilter==='done'?done:hoAllRows);
+  function fb(k,lb){ var on=hoFilter===k; return '<button class="btn btn-sm '+(on?'btn-primary':'btn-secondary')+'" onclick="hoFilter=\''+k+'\';renderHandoffsTab()">'+lb+'</button>'; }
+  var body=rows.length?rows.map(function(h){
+    var when=h.created_at?new Date(h.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
+    var st=h.seen_at?'<span style="font-size:11px;font-weight:800;color:#166534;background:#dcfce7;border-radius:10px;padding:2px 8px">&#10003; Handled'+(h.handled_by?' by '+esc(h.handled_by):'')+'</span>':'<span style="font-size:11px;font-weight:800;color:#b45309;background:#fef3c7;border-radius:10px;padding:2px 8px">Open</span>';
+    return '<tr><td style="white-space:nowrap;font-size:12px">'+esc(when)+'</td>'
+      +'<td><b>'+esc(h.name||'(no name)')+'</b><div style="font-size:12px;color:var(--text3)">'+esc(h.phone||'')+'</div></td>'
+      +'<td style="max-width:280px"><div style="font-weight:600">'+esc(h.reason||'')+'</div>'+(h.transcript?'<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px;color:var(--accent)">Last texts</summary><div style="white-space:pre-wrap;font-size:12px;color:var(--text2);margin-top:4px">'+esc(h.transcript)+'</div></details>':'')+'</td>'
+      +'<td>'+hoAssignSelect(h)+'</td><td>'+st+'</td>'
+      +'<td style="white-space:nowrap"><button class="btn btn-primary btn-sm" onclick="hoGo('+(h.lead_id||0)+')">Open lead</button> '
+      +(h.seen_at?'<button class="btn btn-secondary btn-sm" onclick="hoReopen('+h.id+')">Reopen</button>':'<button class="btn btn-secondary btn-sm" onclick="hoHandled('+h.id+')">&#10003; Handled</button>')+'</td></tr>';
+  }).join(''):'<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">Nothing here.</td></tr>';
+  host.innerHTML='<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'+fb('open','Open ('+open.length+')')+fb('done','Handled ('+done.length+')')+fb('all','All ('+hoAllRows.length+')')+'</div>'
+    +'<div class="table-container" style="padding:0"><div class="table-wrap"><table><thead><tr><th>When</th><th>Wholesaler</th><th>Why / texts</th><th>Assigned to</th><th>Status</th><th></th></tr></thead><tbody>'+body+'</tbody></table></div></div>';
+}
+async function hoReopen(id){
+  try{ await sbFetch('bot_handoffs?id=eq.'+id,'PATCH',{seen_at:null,handled_by:''}); }catch(e){ showToast('Could not reopen','error'); return; }
+  hoLoad(); renderHandoffsTab();
 }
 function hoToggle(open){
   hoOpenP=(open===undefined)?!hoOpenP:open;
@@ -7471,8 +7532,9 @@ function hoToggle(open){
 function hoGo(leadId){ hoToggle(false); if(activeSection!=='fb') setSection('fb'); if(leadId) setTimeout(function(){ openDetail(leadId); },150); }
 async function hoHandled(id){
   hoList=hoList.filter(function(h){return +h.id!==+id;}); botHandoffs=hoList.slice(); hoRender();
-  try{ await sbFetch('bot_handoffs?id=eq.'+id,'PATCH',{seen_at:new Date().toISOString()}); }catch(e){ showToast('Could not mark handled','error'); }
+  try{ await sbFetch('bot_handoffs?id=eq.'+id,'PATCH',{seen_at:new Date().toISOString(),handled_by:hoMe()}); }catch(e){ showToast('Could not mark handled','error'); }
   if(activeSection==='fb') renderFBSection();
+  if(activeSection==='dashboard' && dashTab==='handoffs') renderHandoffsTab();
 }
 // =================== Assistance (task reminders on every tab) ===================
 var asstTasks=[], asstLast=null, asstOpen=false, asstEditing=null, asstUndoT=null, asstDraft=null;
