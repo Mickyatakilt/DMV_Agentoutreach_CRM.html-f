@@ -7077,9 +7077,6 @@ function commOutreachGraph(f, daily, card){
     +'<div style="font-size:11px;color:var(--text4);margin-bottom:6px">Unique people. Responded / unsubscribed / no-response are counted among the people texted in this period.</div>'
     +'<div style="display:flex;gap:10px;margin:8px 0;flex-wrap:wrap"><div style="'+card+'padding:10px 16px"><div style="font-size:22px;font-weight:800">'+(+f.called).toLocaleString()+'</div><div style="font-size:11px;color:var(--text4)">People called</div></div><div style="'+card+'padding:10px 16px"><div style="font-size:22px;font-weight:800">'+T.toLocaleString()+'</div><div style="font-size:11px;color:var(--text4)">People texted</div></div><div style="'+card+'padding:10px 16px"><div style="font-size:22px;font-weight:800">'+pct(f.no_response,T)+'</div><div style="font-size:11px;color:var(--text4)">No-response rate</div></div></div>'
     +fun
-    +'<div style="font-size:14px;font-weight:800;margin-top:14px">Daily trend</div>'
-    +chart([{k:'texted',l:'People texted',c:'#2563eb',bar:true},{k:'called',l:'People called',c:'#f59e0b'}],'Texted & called per day')
-    +chart([{k:'responded',l:'Responded',c:'#16a34a'},{k:'opted_out',l:'Unsubscribed / Removed',c:'#dc2626'}],'Responses & unsubscribes per day')
     +'</div>';
 }
 function commSetCustom(k,v){ commCustom[k]=v; if(commCustom.from&&commCustom.to){ commPreset='custom'; renderCommTab(); } }
@@ -7121,20 +7118,10 @@ async function renderCommTab(){
       +'<div style="'+grp+'">'+pill('p','today','Today')+pill('p','7d','7 days')+pill('p','30d','30 days')+pill('p','month','This month')+pill('p','custom','Custom')+'</div>'
       +'<select onchange="commUser=this.value;renderCommTab()" style="padding:7px 10px;border:1px solid var(--border,#e5e7eb);border-radius:10px;font-size:12px;font-weight:700;background:var(--card,#fff)"><option value="">All team members</option>'+commUsers.map(function(u){ return '<option value="'+esc(u.user_id)+'"'+(u.user_id===commUser?' selected':'')+'>'+esc(u.user_name)+'</option>'; }).join('')+'</select>'
       +(commPreset==='custom'||commCustom.from? '<span style="font-size:12px"><input type="date" value="'+commCustom.from+'" onchange="commSetCustom(\'from\',this.value)"> to <input type="date" value="'+commCustom.to+'" onchange="commSetCustom(\'to\',this.value)"></span>':'')
-      +'<div style="'+grp+'">'+pill('b','day','Daily')+pill('b','week','Weekly')+pill('b','month','Monthly')+'</div>'
       +'<span style="font-size:11px;color:var(--text4)">'+note+'</span>'
     +'</div>'
     +commOutreachGraph(r[2]&&r[2][0], r[3], card)
-    +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">'
-      +stat(tot.ti,'Individual texts')+stat(tot.tb,'Bulk texts')+stat(tot.co,'Calls made')+stat(tot.ci,'Calls received')+stat(dur(tot.cs),'Time on calls')
-    +'</div>'
-    +'<div style="'+card+'margin-top:12px;padding:6px 6px 10px"><div style="padding:8px 10px;font-size:14px;font-weight:800">By person (selected period)</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'
-      +['Person','Individual texts','Bulk texts','Total texts','Calls made','Calls received','Call time'].map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')
-    +'</tr></thead><tbody>'+pbody+'</tbody></table></div></div>'
-    +(rows.length? '<div style="'+card+'margin-top:12px;padding:6px 6px 10px"><div style="padding:8px 10px;font-size:14px;font-weight:800">Breakdown</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'
-      +[lbl,'Person','Individual texts','Bulk texts','Calls made','Calls received','Call time'].map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')
-    +'</tr></thead><tbody>'+dbody+'</tbody></table></div></div>' : '')
-    +'<div style="font-size:11px;color:var(--text4);margin-top:8px">Counts come from GoHighLevel and are credited to whoever the conversation is assigned to. Automated workflow messages are not counted. Conversations with no assignee show as &ldquo;Unassigned&rdquo;.</div>';
+    +'<div style="font-size:11px;color:var(--text4);margin-top:8px">Counts come from GoHighLevel. Per-person numbers are credited to whoever the conversation is assigned to; automated workflow messages are not counted per person.</div>';
 }
 // =================== end Dashboard ===================
 
