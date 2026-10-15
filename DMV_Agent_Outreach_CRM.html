@@ -8362,6 +8362,8 @@ function renderReviewTab(){
 // Dedicated Driving-for-Dollars SECTION (left-sidebar item, not a tab): only D4D auto-scan leads,
 // plus the ⚡ Scan Now button, the Google-budget banner, and the "no qualified leads" messaging.
 function d4dSetTab(t){ d4dTab=t; reviewSel.clear(); renderD4DSection(); }
+// Manual "+ Add Lead" in the D4D section: same form as DMV Leads, but tagged D4D so it lands in D4D Leads (never DMV Leads).
+function openAddD4D(){ openAdd(); modalLead.leadSource='D4D Auto-Scan'; modalLead.nationwide=''; modalLead.needsReview=true; renderEditModal(); }
 function renderD4DSection(){
   var host=document.getElementById('section-main'); if(!host) return;
   var mailN = leads.filter(function(l){ return !l.deleted && l.d4dStatus==='mail_queued'; }).length
@@ -8372,7 +8374,7 @@ function renderD4DSection(){
   host.innerHTML = '<div class="lt-wrap">'
     +'<div class="lt-head"><div><h2>&#128663; Driving for Dollars</h2>'
     +'<p>Distress leads found automatically by the Driving-for-Dollars robot (facade graded from Street View). Click &#9889; Scan Now to find more &mdash; new hot leads land here in ~5-10 minutes. Address links open the exact graded Street View. Use &#128100; Find Owner (Propwire) where the owner name is blank, or &#9993; Send Mail to queue a property for a direct-mail postcard/letter — it moves to the Send Mail tab and off your other lists.</p></div>'
-    +'<div class="lt-actions">'+d4dScanBtnHTML()+'</div></div>'
+    +'<div class="lt-actions"><button class="btn btn-primary btn-sm" onclick="openAddD4D()">+ Add Lead</button> '+d4dScanBtnHTML()+'</div></div>'
     +d4dScanBannerHTML()+d4dLimitBannerHTML()
     +'<div class="tabs" style="position:static;margin:0 0 14px;padding:0">'
       +'<div class="tab '+(d4dTab==='leads'?'active':'')+'" onclick="d4dSetTab(\'leads\')">&#128663; Leads</div>'
