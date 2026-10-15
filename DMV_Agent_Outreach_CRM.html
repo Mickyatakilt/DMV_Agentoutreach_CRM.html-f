@@ -7093,6 +7093,7 @@ async function renderCommTab(){
   var rows=r[0], st=(r[1]&&r[1][0])||null;
   if(!rows){ host.innerHTML='<div style="'+card+'padding:24px;margin-top:10px;color:var(--text4);font-size:13px">Could not load communication data.</div>'; return; }
   rows.forEach(function(x){ commNames[x.user_id]=x.user_name; });
+  if(commUser) rows=rows.filter(function(x){ return x.user_id===commUser; });
   var tot={ti:0,tb:0,co:0,ci:0,cs:0}, per={};
   rows.forEach(function(x){
     tot.ti+=+x.texts_individual; tot.tb+=+x.texts_bulk; tot.co+=+x.calls_out; tot.ci+=+x.calls_in; tot.cs+=+x.call_seconds;
@@ -7116,11 +7117,18 @@ async function renderCommTab(){
   host.innerHTML=
     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px">'
       +'<div style="'+grp+'">'+pill('p','today','Today')+pill('p','7d','7 days')+pill('p','30d','30 days')+pill('p','month','This month')+pill('p','custom','Custom')+'</div>'
+      +'<div style="'+grp+'">'+pill('b','day','Daily')+pill('b','week','Weekly')+pill('b','month','Monthly')+'</div>'
       +'<select onchange="commUser=this.value;renderCommTab()" style="padding:7px 10px;border:1px solid var(--border,#e5e7eb);border-radius:10px;font-size:12px;font-weight:700;background:var(--card,#fff)"><option value="">All team members</option>'+commUsers.map(function(u){ return '<option value="'+esc(u.user_id)+'"'+(u.user_id===commUser?' selected':'')+'>'+esc(u.user_name)+'</option>'; }).join('')+'</select>'
       +(commPreset==='custom'||commCustom.from? '<span style="font-size:12px"><input type="date" value="'+commCustom.from+'" onchange="commSetCustom(\'from\',this.value)"> to <input type="date" value="'+commCustom.to+'" onchange="commSetCustom(\'to\',this.value)"></span>':'')
       +'<span style="font-size:11px;color:var(--text4)">'+note+'</span>'
     +'</div>'
     +commOutreachGraph(r[2]&&r[2][0], r[3], card)
+    +'<div style="'+card+'margin-top:12px;padding:6px 6px 10px"><div style="padding:8px 10px;font-size:14px;font-weight:800">By person (selected period)</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'
+      +['Person','Individual texts','Bulk texts','Total texts','Calls made','Calls received','Call time'].map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')
+    +'</tr></thead><tbody>'+pbody+'</tbody></table></div></div>'
+    +(rows.length? '<div style="'+card+'margin-top:12px;padding:6px 6px 10px"><div style="padding:8px 10px;font-size:14px;font-weight:800">Breakdown</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'
+      +[lbl,'Person','Individual texts','Bulk texts','Calls made','Calls received','Call time'].map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')
+    +'</tr></thead><tbody>'+dbody+'</tbody></table></div></div>' : '')
     +'<div style="font-size:11px;color:var(--text4);margin-top:8px">Counts come from GoHighLevel. Per-person numbers are credited to whoever the conversation is assigned to; automated workflow messages are not counted per person.</div>';
 }
 // =================== end Dashboard ===================
