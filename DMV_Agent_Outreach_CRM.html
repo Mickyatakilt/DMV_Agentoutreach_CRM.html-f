@@ -7552,19 +7552,19 @@ async function renderHandoffsTab(){
       +'<td style="white-space:nowrap"><button class="btn btn-primary btn-sm" onclick="hoGo('+(h.lead_id||0)+')">Open lead</button> '
       +(h.seen_at?'<button class="btn btn-secondary btn-sm" onclick="hoReopen('+h.id+')">Reopen</button>':'<button class="btn btn-secondary btn-sm" onclick="hoHandled('+h.id+')">&#10003; Handled</button>')+'</td></tr>';
   }).join(''):'<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">Nothing here.</td></tr>';
-  // Bot spend estimate: each bot event that called the model (sent/dry/handoff) ~ $0.0002 on gpt-4o-mini (OpenAI cost isn't logged)
+  // Real OpenAI cost per call, logged by the ai-trainer edge function into ai_usage (source 'bot' = live replies, 'trainer' = training/practice)
   var spendHTML='';
   try{
-    var br=await sbFetch('bot_replies?select=action,created_at&limit=10000')||[];
-    var calls=br.filter(function(r){return r.action==='sent'||r.action==='dry'||r.action==='handoff';});
-    var PER=0.0002, now=new Date(), d0=new Date(now.getFullYear(),now.getMonth(),now.getDate()), m0=new Date(now.getFullYear(),now.getMonth(),1);
-    var cT=calls.length, cD=calls.filter(function(r){return new Date(r.created_at)>=d0;}).length, cM=calls.filter(function(r){return new Date(r.created_at)>=m0;}).length;
-    var sent=br.filter(function(r){return r.action==='sent';}).length;
-    function usd(n){ var v=n*PER; return v<0.01&&n>0?'< $0.01':'$'+v.toFixed(2); }
+    var ur=await sbFetch('ai_usage?select=source,cost_usd,created_at&order=created_at.desc&limit=20000')||[];
+    var now=new Date(), d0=new Date(now.getFullYear(),now.getMonth(),now.getDate()), m0=new Date(now.getFullYear(),now.getMonth(),1);
+    function sum(src,since){ var t=0,n=0; ur.forEach(function(r){ if(r.source!==src) return; if(since&&new Date(r.created_at)<since) return; t+=Number(r.cost_usd)||0; n++; }); return {t:t,n:n}; }
+    function usd(v){ return v>0&&v<0.01?'$'+v.toFixed(4):'$'+v.toFixed(2); }
+    var bD=sum('bot',d0), bM=sum('bot',m0), bA=sum('bot'), tA=sum('trainer'), tM=sum('trainer',m0);
+    var per=bA.n?bA.t/bA.n:0;
     spendHTML='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'
-      +[['Bot spend today',usd(cD),cD+' AI replies'],['This month',usd(cM),cM+' AI replies'],['All time',usd(cT),cT+' AI replies &middot; '+sent+' texts sent']].map(function(x){
+      +[['Bot spend today',usd(bD.t),bD.n+' AI calls'],['Bot this month',usd(bM.t),bM.n+' AI calls'],['Bot all time',usd(bA.t),bA.n+' AI calls &middot; avg '+usd(per)+'/reply'],['Training (practice)',usd(tA.t),'this month '+usd(tM.t)]].map(function(x){
         return '<div style="background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:10px 14px;min-width:150px"><div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase">'+x[0]+'</div><div style="font-size:22px;font-weight:800">'+x[1]+'</div><div style="font-size:11px;color:var(--text3)">'+x[2]+'</div></div>';}).join('')
-      +'<div style="font-size:11px;color:var(--text3);align-self:center;max-width:260px">Estimate at ~$0.0002 per AI reply (gpt-4o-mini). Exact bill: platform.openai.com &rarr; Usage.</div></div>';
+      +'<div style="font-size:11px;color:var(--text3);align-self:center;max-width:260px">Real OpenAI tokens &times; model price, logged on every call (since Oct 16).</div></div>';
   }catch(e){}
   host.innerHTML=spendHTML+'<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'+fb('open','Open ('+open.length+')')+fb('done','Handled ('+done.length+')')+fb('all','All ('+hoAllRows.length+')')+'</div>'
     +'<div class="table-container" style="padding:0"><div class="table-wrap"><table><thead><tr><th>When</th><th>Wholesaler</th><th>Why / texts</th><th>Assigned to</th><th>Status</th><th></th></tr></thead><tbody>'+body+'</tbody></table></div></div>';
