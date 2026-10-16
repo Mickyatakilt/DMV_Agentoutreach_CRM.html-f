@@ -7566,6 +7566,19 @@ async function renderHandoffsTab(){
         return '<div style="background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:10px 14px;min-width:150px"><div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase">'+x[0]+'</div><div style="font-size:22px;font-weight:800">'+x[1]+'</div><div style="font-size:11px;color:var(--text3)">'+x[2]+'</div></div>';}).join('')
       +'<div style="font-size:11px;color:var(--text3);align-self:center;max-width:260px">Real OpenAI tokens &times; model price, logged on every call (since Oct 16).</div></div>';
   }catch(e){}
+  // GHL texting spend (estimate): daily SMS counts from the ghl_spend_daily RPC x per-text rates (app_config ghl_sms_rate_out / ghl_sms_rate_in)
+  try{
+    var gr=await sbFetch('rpc/ghl_spend_daily','POST',{p_days:62})||[];
+    var nyd=function(d){ return d.toLocaleDateString('en-CA',{timeZone:'America/New_York'}); };
+    var tNow=new Date(), tStr=nyd(tNow), wStr=nyd(new Date(tNow.getTime()-6*864e5)), mStr=tStr.slice(0,8)+'01';
+    var g={d:{c:0,n:0},w:{c:0,n:0},m:{c:0,n:0}};
+    gr.forEach(function(r){ var cost=r.outbound*Number(r.rate_out)+r.inbound*Number(r.rate_in), n=Number(r.outbound)+Number(r.inbound), ds=String(r.day);
+      if(ds===tStr){g.d.c+=cost;g.d.n+=n;} if(ds>=wStr){g.w.c+=cost;g.w.n+=n;} if(ds>=mStr){g.m.c+=cost;g.m.n+=n;} });
+    var ro=gr.length?Number(gr[0].rate_out):0.011, ri=gr.length?Number(gr[0].rate_in):0.0079;
+    var gcard=function(t,x){ return '<div style="background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:10px 14px;min-width:150px"><div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase">'+t+'</div><div style="font-size:22px;font-weight:800">$'+x.c.toFixed(2)+'</div><div style="font-size:11px;color:var(--text3)">'+x.n.toLocaleString()+' texts</div></div>'; };
+    spendHTML='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">'+gcard('GHL texting today',g.d)+gcard('Last 7 days',g.w)+gcard('This month',g.m)
+      +'<div style="font-size:11px;color:var(--text3);align-self:center;max-width:300px">Estimate: texts sent &times; $'+ro+' + texts received &times; $'+ri+'. GHL monthly plan not included. Exact: GHL &rarr; Settings &rarr; Phone System &rarr; Wallet transactions.</div></div>'+spendHTML;
+  }catch(e){}
   host.innerHTML=spendHTML+'<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'+fb('open','Open ('+open.length+')')+fb('done','Handled ('+done.length+')')+fb('all','All ('+hoAllRows.length+')')+'</div>'
     +'<div class="table-container" style="padding:0"><div class="table-wrap"><table><thead><tr><th>When</th><th>Wholesaler</th><th>Why / texts</th><th>Assigned to</th><th>Status</th><th></th></tr></thead><tbody>'+body+'</tbody></table></div></div>';
 }
