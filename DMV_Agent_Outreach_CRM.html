@@ -2194,7 +2194,7 @@ function fbRemoveFile(id,kind,i){
 }
 function fbRowHTML(l){
   return '<tr onclick="openDetail('+l.id+')" style="cursor:pointer">'
-    +'<td><b>'+esc(l.name||'')+'</b>'+(isBotHandoffLead(l)?' <span title="The text bot handed this conversation to you" style="font-size:10px;font-weight:800;color:#b45309;background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:1px 7px;white-space:nowrap">&#129302; Bot handoff</span>':'')+'</td>'
+    +'<td><b>'+esc(l.name||'')+'</b>'+(isBotHandoffLead(l)?' <span title="The text bot handed this conversation to you" style="font-size:10px;font-weight:800;color:#b45309;background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:1px 7px;white-space:nowrap">&#129302; Bot handoff &middot; waiting</span>':'')+'</td>'
     +'<td>'+(l.phone?'<a href="#" data-phone="'+esc(l.phone.split('/')[0].trim())+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);font-weight:600;text-decoration:none" title="Open in GoHighLevel / SMS">'+esc(l.phone)+' &#8599;</a>':'')+'</td>'
     +'<td><div style="display:flex;align-items:center;gap:4px"><div class="address-cell">'+(esc(l.address)||'')+'</div>'+fbZillowA(l.address)+pwIcon(l.address)+'</div></td>'
     +'<td>'+((l.pictures||[]).length?'<span title="Property pictures">&#128247; '+l.pictures.length+'</span>':'<span style="color:var(--text4)">&#8212;</span>')+((l.attachments||[]).length?' <span title="Attachments">&#128206; '+l.attachments.length+'</span>':'')+'</td>'
@@ -2205,7 +2205,8 @@ function fbRowHTML(l){
     +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
     +'<td onclick="event.stopPropagation()">'+assignBtnHTML(l)+'</td></tr>';
 }
-function isBotHandoffLead(l){ return !!l && (l.notes||'').indexOf('BOT HANDOFF')>-1; }
+var hoPendingLeadIds=[];   // lead ids with a bot handoff that is still waiting (not clicked Handled), for EVERY assignee
+function isBotHandoffLead(l){ return !!l && hoPendingLeadIds.indexOf(+l.id)>-1; }
 function fbHandoffCardHTML(){
   var hs=(botHandoffs||[]).filter(hoVisible); if(!hs.length) return '';
   var rows=hs.map(function(h){
@@ -7536,7 +7537,10 @@ function hoMount(){
     +'<div id="ho-panel" class="ho-panel"><div class="ho-head"><span><b>\uD83E\uDD16 Bot handoffs</b><small>stays here until you click Handled</small></span><button class="ho-x" onclick="hoToggle(false)">\u2715</button></div><div id="ho-list" class="ho-list"></div></div>'
     +'<div id="ho-toast" class="ho-toast" onclick="hoToggle(true)"></div>';
   document.body.appendChild(root);
-  hoLoad(); setInterval(hoLoad, 60*1000);
+  hoLoad(); setInterval(hoLoad, 15*1000);
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden) hoLoad(); });
+  window.addEventListener('focus',function(){ hoLoad(); }); window.addEventListener('online',function(){ hoLoad(); });
+  document.addEventListener('click',hoAskNotif,{once:true});
 }
 function hoMe(){ return ((authProfile&&authProfile.name)||(currentUser&&currentUser.name)||'').trim(); }
 // Unassigned handoffs show to everyone; once assigned, ONLY the assignee sees it in the bubble/popup (owner sees all on Dashboard > Handoffs).
@@ -7566,27 +7570,35 @@ async function hoAssign(id,person){
   if(activeSection==='dashboard' && dashTab==='handoffs') renderHandoffsTab();
 }
 var hoAllRows=null;
+var hoBaseTitle=null, hoPendingSig=null;
+function hoBeep(){ try{ var C=window.AudioContext||window.webkitAudioContext; if(!C) return; var c=new C(), o=c.createOscillator(), g=c.createGain(); o.type='sine'; o.frequency.value=880; g.gain.value=0.08; o.connect(g); g.connect(c.destination); o.start(); setTimeout(function(){ o.frequency.value=660; },180); setTimeout(function(){ try{ o.stop(); c.close(); }catch(e){} },420); }catch(e){} }
+function hoAskNotif(){ try{ if(window.Notification && Notification.permission==='default') Notification.requestPermission(); }catch(e){} }
+function hoNotify(fresh){ try{ if(window.Notification && Notification.permission==='granted'){ var h=fresh[0]; var n=new Notification('\uD83E\uDD16 New bot handoff'+(fresh.length>1?' (+'+(fresh.length-1)+' more)':''),{body:(h.name||h.phone||'')+' - '+(h.reason||''),tag:'ho-'+h.id,requireInteraction:true}); n.onclick=function(){ try{ window.focus(); }catch(e){} hoToggle(true); n.close(); }; } }catch(e){} }
 async function hoLoad(){
-  try{ hoList=(await sbFetch('bot_handoffs?select=*&seen_at=is.null&order=created_at.desc&limit=50')||[]).filter(hoVisible); }catch(e){ return; }
+  var raw;
+  try{ raw=(await sbFetch('bot_handoffs?select=*&seen_at=is.null&order=created_at.desc&limit=100'))||[]; }catch(e){ return; }
+  hoPendingLeadIds=raw.map(function(h){ return +h.lead_id; }).filter(Boolean);   // every waiting handoff, whoever it is assigned to
+  hoList=raw.filter(hoVisible);   // the bubble shows unassigned ones to everyone, assigned ones only to the assignee
   botHandoffs=hoList.slice();
   var ids=hoList.map(function(h){return h.id;});
-  if(hoSeenIds!==null){
-    var fresh=hoList.filter(function(h){ return hoSeenIds.indexOf(h.id)<0; });
-    if(fresh.length) hoToast(fresh);
-  }
+  var fresh=(hoSeenIds===null)?hoList.slice():hoList.filter(function(h){ return hoSeenIds.indexOf(h.id)<0; });
+  if(fresh.length){ hoToast(fresh); if(hoSeenIds!==null){ hoBeep(); hoNotify(fresh); } }
   hoSeenIds=ids;
   hoRender();
-  if(activeSection==='fb' && typeof renderFBSection==='function' && fbGroups!==null) renderFBSection();
+  try{ if(hoBaseTitle===null) hoBaseTitle=document.title.replace(/^\(\d+\)\s*/,''); document.title=(hoList.length?'('+hoList.length+') ':'')+hoBaseTitle; }catch(e){}
+  // re-draw the Facebook list only when the set of waiting handoffs actually changed (we poll every 15 s now; do not disturb typing)
+  var sig=raw.map(function(h){return h.id;}).join(',');
+  if(sig!==hoPendingSig){ hoPendingSig=sig; if(activeSection==='fb' && typeof renderFBSection==='function' && fbGroups!==null) renderFBSection(); }
 }
 function hoToast(fresh){
   var t=document.getElementById('ho-toast'); if(!t) return;
-  var h=fresh[0]; t.innerHTML='\uD83E\uDD16 <b>New bot handoff</b>'+(fresh.length>1?' (+'+(fresh.length-1)+' more)':'')+'<br>'+esc(h.name||h.phone||'')+' \u00b7 '+esc(h.reason||'');
-  t.classList.add('on'); clearTimeout(hoToastT); hoToastT=setTimeout(function(){ t.classList.remove('on'); },12000);
+  var h=fresh[0]; t.innerHTML='\uD83E\uDD16 <b>Bot handoff waiting</b>'+(fresh.length>1?' (+'+(fresh.length-1)+' more)':'')+'<br>'+esc(h.name||h.phone||'')+' \u00b7 '+esc(h.reason||'')+'<br><small>tap to open - stays until you click Handled</small>';
+  t.classList.add('on');   // sticky: no auto-hide
 }
 function hoRender(){
   var fab=document.getElementById('ho-fab'), b=document.getElementById('ho-badge'), l=document.getElementById('ho-list'); if(!fab) return;
   fab.classList.toggle('on', hoList.length>0); b.textContent=hoList.length;
-  if(!hoList.length){ var p=document.getElementById('ho-panel'); if(p) p.classList.remove('open'); hoOpenP=false; }
+  if(!hoList.length){ var p=document.getElementById('ho-panel'); if(p) p.classList.remove('open'); hoOpenP=false; var tt=document.getElementById('ho-toast'); if(tt) tt.classList.remove('on'); }
   if(!l) return;
   l.innerHTML=hoList.map(function(h){
     var when=h.created_at?new Date(h.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
@@ -7630,6 +7642,7 @@ function hoGo(leadId){ hoToggle(false); if(activeSection!=='fb') setSection('fb'
 async function hoHandled(id){
   hoList=hoList.filter(function(h){return +h.id!==+id;}); botHandoffs=hoList.slice(); hoRender();
   try{ await sbFetch('bot_handoffs?id=eq.'+id,'PATCH',{seen_at:new Date().toISOString(),handled_by:hoMe()}); }catch(e){ showToast('Could not mark handled','error'); }
+  hoLoad();
   if(activeSection==='fb') renderFBSection();
   if(activeSection==='dashboard' && dashTab==='handoffs') renderHandoffsTab();
 }
