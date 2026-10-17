@@ -473,6 +473,20 @@
   .asst-fab{position:fixed;right:22px;bottom:22px;z-index:360;display:flex;align-items:center;gap:8px;border:none;cursor:pointer;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;font-weight:800;font-size:14px;padding:12px 18px;border-radius:999px;box-shadow:0 8px 24px rgba(8,145,178,.45);}
   .asst-badge{position:absolute;top:-8px;right:-4px;min-width:24px;height:24px;border-radius:12px;background:#dc2626;color:#fff;font-size:13px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 6px;border:2px solid #fff;animation:asstpulse 1.8s infinite;}
   .asst-badge.on{display:flex;}
+  .asst-badge2{position:absolute;top:-8px;right:24px;min-width:24px;height:24px;border-radius:12px;background:#facc15;color:#422006;font-size:13px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 6px;border:2px solid #fff;animation:asstpulseY 1.8s infinite;}
+  .asst-badge2.on{display:flex;}
+  @keyframes asstpulseY{0%{box-shadow:0 0 0 0 rgba(250,204,21,.6)}70%{box-shadow:0 0 0 10px rgba(250,204,21,0)}100%{box-shadow:0 0 0 0 rgba(250,204,21,0)}}
+  .asst-nt{border:1.5px solid #eab308;border-left:5px solid #eab308;background:#fef9c3;border-radius:11px;padding:10px;margin-bottom:8px;color:#422006;}
+  .asst-nt-h{font-size:13px;font-weight:800;}
+  .asst-nt-l{font-size:11.5px;color:#854d0e;margin-top:1px;}
+  .asst-nt-b{margin-top:7px;padding:8px 10px;background:#fefce8;border:1px solid #fde047;border-radius:8px;font-size:13px;white-space:pre-wrap;word-break:break-word;max-height:160px;overflow:auto;}
+  .asst-nt-act{display:flex;gap:6px;margin-top:8px;}
+  .asst-nt-act button,.asst-nt-rep button{border:0;border-radius:8px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer;}
+  .asst-nt-view{background:#ca8a04;color:#fff;} .asst-nt-done{background:#422006;color:#fef08a;margin-left:auto;}
+  .asst-nt-rep{margin-top:8px;display:flex;flex-direction:column;gap:6px;}
+  .asst-nt-rep textarea{box-sizing:border-box;width:100%;min-height:44px;border:1.5px solid #fde047;border-radius:8px;padding:7px 9px;font-size:13px;background:#fff;color:#0f172a;resize:vertical;font-family:inherit;}
+  .asst-nt-rep .row{display:flex;gap:6px;justify-content:flex-end;}
+  .asst-nt-send{background:#0d9488;color:#fff;} .asst-nt-ping{background:#fff;color:#92400e;border:1.5px solid #eab308 !important;}
   @keyframes asstpulse{0%{box-shadow:0 0 0 0 rgba(220,38,38,.5)}70%{box-shadow:0 0 0 10px rgba(220,38,38,0)}100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}}
   .asst-panel{position:fixed;right:22px;bottom:84px;z-index:365;width:400px;max-width:calc(100vw - 32px);max-height:74vh;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.3);display:none;flex-direction:column;overflow:hidden;}
   .asst-panel.open{display:flex;}
@@ -5607,7 +5621,7 @@ function cmtPanelHTML(kind, id){
     +   '<div id="cmt-reply-'+kind+'-'+id+'"></div>'
     +   '<textarea id="cmt-input-'+kind+'-'+id+'" class="cmt-input" placeholder="Comment, or type @ to mention someone&hellip;" oninput="cmtOnInput(\''+kind+'\','+id+')" onkeydown="cmtOnKeydown(event,\''+kind+'\','+id+')"></textarea>'
     +   '<div id="cmt-mention-pop-'+kind+'-'+id+'"></div>'
-    +   '<div class="cmt-send-row"><span class="cmt-hint">@ to mention</span><div style="display:flex;gap:4px"><button type="button" class="btn btn-primary" style="padding:4px 9px;font-size:11px;border-radius:6px" onclick="cmtSubmit(\''+kind+'\','+id+',false)">Send</button><button type="button" class="btn btn-secondary" style="padding:4px 8px;font-size:11px;border-radius:6px;color:#b45309;border-color:#fcd34d;white-space:nowrap" onclick="cmtSubmit(\''+kind+'\','+id+',true)" title="Post this comment and email everyone @mentioned in it">&#128276; Notify</button></div></div>'
+    +   '<div class="cmt-send-row"><span class="cmt-hint">@ to mention</span><div style="display:flex;gap:4px"><button type="button" class="btn btn-primary" style="padding:4px 9px;font-size:11px;border-radius:6px" onclick="cmtSubmit(\''+kind+'\','+id+',false)">Send</button><button type="button" class="btn btn-secondary" style="padding:4px 8px;font-size:11px;border-radius:6px;color:#b45309;border-color:#fcd34d;white-space:nowrap" onclick="cmtSubmit(\''+kind+'\','+id+',true)" title="Post this comment and notify everyone @mentioned in it">&#128276; Notify</button></div></div>'
     + '</div>'
   + '</div>';
 }
@@ -5825,7 +5839,7 @@ async function cmtNotify(kind, id, commentId, key){
       if(idx>=0 && data.comment) cmtCache[key].comments[idx] = data.comment;
     }
     cmtRender(kind,id);
-    cmtShowNotifiedPopup(data.recipients||[]);
+    cmtShowNotifiedPopup(data.recipients||[], data.assistance||[]);
   } catch(e){
     showToast('Could not send notification — '+((e&&e.message)||'try again'),'error');
   }
@@ -5833,7 +5847,7 @@ async function cmtNotify(kind, id, commentId, key){
 
 // Small standalone overlay (not the shared #modal-container, so it doesn't close the
 // lead/task modal underneath) confirming exactly who the notification email went to.
-function cmtShowNotifiedPopup(recipients){
+function cmtShowNotifiedPopup(recipients, assistance){
   var old = document.getElementById('cmt-notify-popup-overlay'); if(old) old.remove();
   var rows = (recipients||[]).map(function(r){
     return '<div style="padding:9px 0;border-bottom:1px solid var(--border,#e2e8f0)">'
@@ -5841,13 +5855,17 @@ function cmtShowNotifiedPopup(recipients){
       + '<div style="color:var(--text3,#64748b);font-size:12.5px">'+esc(r.email||'no email on file')+'</div>'
     + '</div>';
   }).join('');
-  if(!rows) rows = '<div style="color:var(--text3,#64748b);font-size:13px;padding:8px 0">No one was emailed — the people @mentioned have no email on file.</div>';
+  var arows = (assistance||[]).map(function(r){
+    return '<div style="padding:9px 0;border-bottom:1px solid var(--border,#e2e8f0)"><div style="font-weight:700;font-size:13.5px">'+esc(r.name||'Unknown')+'</div><div style="color:#a16207;font-size:12.5px">\uD83D\uDFE1 Yellow item in their Assistance</div></div>';
+  }).join('');
+  rows = arows + rows;
+  if(!rows) rows = '<div style="color:var(--text3,#64748b);font-size:13px;padding:8px 0">No one was notified — the people @mentioned have no email on file.</div>';
   var ov = document.createElement('div');
   ov.id = 'cmt-notify-popup-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   ov.innerHTML = '<div style="background:var(--surface,#fff);border-radius:14px;max-width:380px;width:100%;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.3)">'
     + '<div style="font-weight:800;font-size:15px;margin-bottom:2px">&#128276; Notification sent</div>'
-    + '<div style="color:var(--text3,#64748b);font-size:12.5px;margin-bottom:8px">Emailed to:</div>'
+    + '<div style="color:var(--text3,#64748b);font-size:12.5px;margin-bottom:8px">Sent to:</div>'
     + rows
     + '<button type="button" class="btn btn-primary btn-sm" style="margin-top:14px;width:100%" onclick="document.getElementById(\'cmt-notify-popup-overlay\').remove()">Got it</button>'
   + '</div>';
@@ -7616,7 +7634,7 @@ async function hoHandled(id){
   if(activeSection==='dashboard' && dashTab==='handoffs') renderHandoffsTab();
 }
 // =================== Assistance (task reminders on every tab) ===================
-var asstTasks=[], asstLast=null, asstOpen=false, asstEditing=null, asstUndoT=null, asstDraft=null;
+var asstNotifs=[], asstNotifDraft={}, asstTasks=[], asstLast=null, asstOpen=false, asstEditing=null, asstUndoT=null, asstDraft=null;
 function asstToday(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Due now = no follow-up date, OR today has reached the follow-up date.
 function asstIsDue(t){ return !t.follow_up_date || asstToday() >= t.follow_up_date; }
@@ -7626,7 +7644,7 @@ function asstMount(){
   if(authProfile && authProfile.role==='recipient') return;
   if(document.getElementById('asst-root')) return;
   var root=document.createElement('div'); root.id='asst-root';
-  root.innerHTML='<button id="asst-fab" class="asst-fab" onclick="asstToggle()" title="Assistance"><span>🗒️</span><span>Assistance</span><span id="asst-badge" class="asst-badge"></span></button>'
+  root.innerHTML='<button id="asst-fab" class="asst-fab" onclick="asstToggle()" title="Assistance"><span>🗒️</span><span>Assistance</span><span id="asst-badge" class="asst-badge"></span><span id="asst-badge2" class="asst-badge2" title="Comments that @mentioned you"></span></button>'
     +'<div id="asst-panel" class="asst-panel">'
       +'<div class="asst-head"><span><b>🗒️ Assistance</b><small>your day-to-day guide</small></span><button class="asst-x" onclick="asstToggle(false)">✕</button></div>'
       +'<div class="asst-add"><input type="text" id="asst-note" placeholder="Quick note… e.g. Meeting with Mike" onkeydown="if(event.key===\'Enter\')asstAdd()">'
@@ -7638,15 +7656,69 @@ function asstMount(){
   document.body.appendChild(root);
   asstLoad();
   setInterval(function(){ if(asstEditing===null) asstRender(); }, 5*60*1000);
+  setInterval(asstNotifLoad, 60*1000);
 }
 async function asstLoad(){
   try{ asstTasks=await sbFetch('assistant_tasks?select=*&order=sort_order.asc,created_at.asc')||[]; }catch(e){ asstTasks=asstTasks||[]; }
   asstRender();
+  asstNotifLoad();
 }
 function asstToggle(open){
   asstOpen=(open===undefined)?!asstOpen:open;
   var p=document.getElementById('asst-panel'); if(p) p.classList.toggle('open',asstOpen);
   if(asstOpen){ asstLoad(); setTimeout(function(){ var i=document.getElementById('asst-note'); if(i) i.focus(); },50); }
+}
+
+// ---- yellow @mention items (comments that @mentioned me) — stay until Handled is pressed ----
+async function asstFn(body){
+  var r=await fetch(AGREEMENT_FN_URL,{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var data=await r.json().catch(function(){return {};});
+  if(!r.ok||data.error) throw new Error(data.error||('HTTP '+r.status));
+  return data;
+}
+async function asstNotifLoad(){
+  var ae=document.activeElement;
+  if(ae && ae.classList && ae.classList.contains('asst-nt-ta')) return; // don't rebuild the list while typing a reply
+  try{ var d=await asstFn({action:'mentions_inbox'}); asstNotifs=d.items||[]; asstRender(); }catch(e){ /* nice-to-have — never block the app */ }
+}
+function asstNotifHTML(n){
+  var when=''; try{ when=new Date(n.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
+  return '<div class="asst-nt" data-nid="'+n.id+'">'
+    +'<div class="asst-nt-h">🟡 '+esc(n.author_name||'Someone')+' mentioned you</div>'
+    +'<div class="asst-nt-l">'+(n.label?esc(n.label)+' · ':'')+esc(when)+'</div>'
+    +'<div class="asst-nt-b">'+esc(n.body||'')+'</div>'
+    +'<div class="asst-nt-rep"><textarea class="asst-nt-ta" id="asst-nt-ta-'+n.id+'" placeholder="Reply to '+esc(n.author_name||'them')+'…" oninput="asstNotifDraft['+n.id+']=this.value">'+esc(asstNotifDraft[n.id]||'')+'</textarea>'
+      +'<div class="row"><button class="asst-nt-send" onclick="asstNotifReply('+n.id+',false)">Send</button><button class="asst-nt-ping" onclick="asstNotifReply('+n.id+',true)">🔔 Notify</button></div></div>'
+    +'<div class="asst-nt-act"><button class="asst-nt-view" onclick="asstNotifView('+n.id+')">View lead</button><button class="asst-nt-done" onclick="asstNotifHandle('+n.id+')">✓ Handled</button></div>'
+  +'</div>';
+}
+function asstNotifView(id){
+  var n=asstNotifs.find(function(x){return x.id===id;}); if(!n) return;
+  asstToggle(false);
+  try{ dashOpen(n.kind,n.lead_id); }catch(e){ showToast('Could not open that lead','error'); }
+}
+async function asstNotifHandle(id){
+  var n=asstNotifs.find(function(x){return x.id===id;}); if(!n) return;
+  asstNotifs=asstNotifs.filter(function(x){return x.id!==id;}); delete asstNotifDraft[id]; asstRender();
+  try{ await asstFn({action:'mentions_handle',commentId:id}); }
+  catch(e){ asstNotifs.push(n); asstRender(); showToast('Could not mark handled — '+(e.message||'try again'),'error'); }
+}
+// Send = post the reply in the lead's thread. Notify = same, plus @mention the original author
+// so it lands (yellow) in their Assistance.
+async function asstNotifReply(id, notify){
+  var n=asstNotifs.find(function(x){return x.id===id;}); if(!n) return;
+  var ta=document.getElementById('asst-nt-ta-'+id); var text=((ta?ta.value:asstNotifDraft[id])||'').trim();
+  if(!text){ showToast('Type a reply first','error'); return; }
+  var mentions=[];
+  if(notify && n.author_id){ text='@'+n.author_name+' '+text; mentions=[n.author_id]; }
+  try{
+    var d=await asstFn({action:'comments_add',kind:n.kind,leadId:n.lead_id,body:text,parentId:n.id,mentions:mentions,token:agreementToken(n.kind,n.lead_id)});
+    if(mentions.length) await asstFn({action:'comments_notify',kind:n.kind,leadId:n.lead_id,commentId:d.comment.id,token:agreementToken(n.kind,n.lead_id)});
+    delete asstNotifDraft[id]; if(ta) ta.value='';
+    delete cmtCache[cmtKey(n.kind,n.lead_id)];
+    showToast(notify&&n.author_id?'Reply sent + '+n.author_name+' notified':'Reply sent','success');
+    asstRender();
+  }catch(e){ showToast('Could not send — '+((e&&e.message)||'try again'),'error'); }
 }
 function asstRowHTML(t,isDue){
   if(asstEditing===t.id){
@@ -7675,8 +7747,11 @@ function asstRender(){
   var due=asstTasks.filter(asstIsDue), up=asstTasks.filter(function(t){return !asstIsDue(t);});
   var b=document.getElementById('asst-badge');
   if(b){ b.textContent=due.length; b.classList.toggle('on',due.length>0); }
+  var b2=document.getElementById('asst-badge2');
+  if(b2){ b2.textContent=asstNotifs.length; b2.classList.toggle('on',asstNotifs.length>0); }
   var l=document.getElementById('asst-list'); if(!l) return;
   var h='';
+  if(asstNotifs.length) h+='<div class="asst-sec" style="color:#a16207">🟡 @MENTIONS · '+asstNotifs.length+'</div><div class="asst-box">'+asstNotifs.map(asstNotifHTML).join('')+'</div>';
   if(due.length) h+='<div class="asst-sec">🔴 NEEDS YOU NOW · '+due.length+'</div><div class="asst-box">'+due.map(function(t){return asstRowHTML(t,true);}).join('')+'</div>';
   if(up.length) h+='<div class="asst-sec">⏳ UPCOMING · '+up.length+'</div><div class="asst-box">'+up.map(function(t){return asstRowHTML(t,false);}).join('')+'</div>';
   if(!h) h='<div class="asst-empty">All clear — nothing on your plate. 🎉</div>';

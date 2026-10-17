@@ -34,3 +34,8 @@ create table if not exists public.lead_comment_reads (
 -- recipient-scope rules already used for portal_save/recipient_save.
 alter table public.lead_comments enable row level security;
 alter table public.lead_comment_reads enable row level security;
+
+-- @mention -> Assistance (yellow notify items). Who pressed "Handled" on a comment's mention.
+-- Backfill: every existing mention counts as handled so nobody gets flooded with old items.
+alter table public.lead_comments add column if not exists handled_by jsonb not null default '[]'::jsonb;
+update public.lead_comments set handled_by = mentions where handled_by = '[]'::jsonb and mentions <> '[]'::jsonb;

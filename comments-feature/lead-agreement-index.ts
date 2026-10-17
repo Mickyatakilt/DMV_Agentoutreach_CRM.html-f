@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
     const leadId = parseInt(payload.leadId, 10);
     // comments_unread scans across every lead the caller has been mentioned on, so it never
     // takes a leadId — every other action operates on one specific lead and requires it.
-    if (action !== 'comments_unread' && !leadId && leadId !== 0) return json({ error: 'Missing leadId' }, 400);
+    if (action !== 'comments_unread' && action !== 'mentions_inbox' && action !== 'mentions_handle' && !leadId && leadId !== 0) return json({ error: 'Missing leadId' }, 400);
 
     const supa = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -418,9 +418,14 @@ Deno.serve(async (req) => {
         if (mentionIds.length === 0) return json({ error: 'No one was @mentioned in this comment' }, 400);
 
         const { data: mentionedUsers } = await withRetry(() => supa
-          .from('app_users').select('id, name, email, notify_email').in('id', mentionIds));
-        const recipients = (mentionedUsers || [])
-          .filter((u: any) => u.id !== me!.id)
+          .from('app_users').select('id, name, email, notify_email, role').in('id', mentionIds));
+        const others = (mentionedUsers || []).filter((u: any) => u.id !== me!.id);
+        // Staff (admin/team: Mike, Biruk, Zablon...) get a yellow item in their Assistance panel
+        // instead of an email, until they press Handled. Everyone else (portal recipients, who
+        // have no Assistance panel) is still emailed.
+        const staffTargets = others.filter((u: any) => u.role === 'admin' || u.role === 'team');
+        const recipients = others
+          .filter((u: any) => !(u.role === 'admin' || u.role === 'team'))
           .map((u: any) => ({ ...u, to: (u.notify_email || u.email || '').trim() }))
           .filter((u: any) => u.to);
 
@@ -431,13 +436,17 @@ Deno.serve(async (req) => {
             mentionEmailHtml(c.author_name, propertyLabel, c.body, link))
         ));
 
+        // A (re)notify puts the item back in the mentioned staff's Assistance, even if handled before.
+        const staffIds = new Set(staffTargets.map((u: any) => u.id));
+        const handledBy: string[] = (Array.isArray(c.handled_by) ? c.handled_by : []).filter((id: string) => !staffIds.has(id));
         const { data: updated } = await withRetry(() => supa.from('lead_comments')
-          .update({ notified_at: new Date().toISOString(), notified_by: me!.name })
+          .update({ notified_at: new Date().toISOString(), notified_by: me!.name, handled_by: handledBy })
           .eq('id', commentId).select('*').maybeSingle());
         return json({
           comment: updated || c,
-          notified: recipients.length,
+          notified: recipients.length + staffTargets.length,
           recipients: recipients.map((u: any) => ({ name: u.name, email: u.to })),
+          assistance: staffTargets.map((u: any) => ({ name: u.name })),
         });
       }
 
@@ -497,6 +506,56 @@ Deno.serve(async (req) => {
         if (!lastRead || new Date(m.created_at) > new Date(lastRead as string)) unread.add(key);
       }
       return json({ unread: Array.from(unread) });
+    }
+
+    // ---- MENTIONS_INBOX: the yellow "notify" items in the caller's Assistance panel — comments
+    // that @mention them, were notified, and that they haven't pressed Handled on yet. ----
+    if (action === 'mentions_inbox') {
+      const auth = await authCaller(supa, req);
+      if (auth.error) return auth.error;
+      const prof = auth.prof;
+      if (prof.role !== 'admin' && prof.role !== 'team') return json({ items: [] });
+      const { data: rows } = await withRetry(() => supa
+        .from('lead_comments')
+        .select('id, kind, lead_id, parent_id, author_id, author_name, body, created_at, notified_at, handled_by')
+        .contains('mentions', [prof.id])
+        .eq('deleted', false)
+        .not('notified_at', 'is', null)
+        .order('notified_at', { ascending: false })
+        .limit(200));
+      const open = (rows || []).filter((c: any) =>
+        c.author_id !== prof.id && !(Array.isArray(c.handled_by) && c.handled_by.includes(prof.id)));
+      const ids = (k: string) => Array.from(new Set(open.filter((c: any) => c.kind === k).map((c: any) => c.lead_id)));
+      const labels: Record<string, string> = {};
+      if (ids('lead').length) {
+        const { data: ls } = await withRetry(() => supa.from('leads').select('id, address, name').in('id', ids('lead')));
+        for (const l of (ls || [])) labels['lead:' + l.id] = l.address || l.name || 'Lead';
+      }
+      if (ids('task').length) {
+        const { data: ts } = await withRetry(() => supa.from('jv_leads').select('id, location, name').in('id', ids('task')));
+        for (const l of (ts || [])) labels['task:' + l.id] = l.location || l.name || 'Deal';
+      }
+      return json({ items: open.map((c: any) => ({
+        id: c.id, kind: c.kind, lead_id: c.lead_id, parent_id: c.parent_id, author_id: c.author_id,
+        author_name: c.author_name, body: c.body, created_at: c.created_at, notified_at: c.notified_at,
+        label: labels[c.kind + ':' + c.lead_id] || '',
+      })) });
+    }
+
+    // ---- MENTIONS_HANDLE: the caller presses Handled on one yellow item; it leaves only their panel. ----
+    if (action === 'mentions_handle') {
+      const auth = await authCaller(supa, req);
+      if (auth.error) return auth.error;
+      const prof = auth.prof;
+      const commentId = parseInt(payload.commentId, 10);
+      if (!commentId) return json({ error: 'Missing commentId' }, 400);
+      const { data: c } = await withRetry(() => supa.from('lead_comments').select('id, mentions, handled_by').eq('id', commentId).maybeSingle());
+      if (!c) return json({ error: 'Comment not found' }, 404);
+      const handled: string[] = Array.isArray(c.handled_by) ? c.handled_by : [];
+      if (!handled.includes(prof.id)) handled.push(prof.id);
+      const { error } = await withRetry(() => supa.from('lead_comments').update({ handled_by: handled }).eq('id', commentId));
+      if (error) return json({ error: 'Could not save: ' + (error as any).message }, 500);
+      return json({ ok: true });
     }
 
     return json({ error: 'Unknown action' }, 400);
