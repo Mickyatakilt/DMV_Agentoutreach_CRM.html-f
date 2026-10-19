@@ -490,7 +490,7 @@ Deno.serve(async (req) => {
 
       const { data: mentionRows } = await withRetry(() => supa
         .from('lead_comments').select('kind, lead_id, created_at')
-        .contains('mentions', [prof.id])
+        .contains('mentions', JSON.stringify([prof.id]))
         .eq('deleted', false)
         .order('created_at', { ascending: false })
         .limit(500));
@@ -518,7 +518,7 @@ Deno.serve(async (req) => {
       const { data: rows } = await withRetry(() => supa
         .from('lead_comments')
         .select('id, kind, lead_id, parent_id, author_id, author_name, body, created_at, notified_at, handled_by')
-        .contains('mentions', [prof.id])
+        .contains('mentions', JSON.stringify([prof.id]))
         .eq('deleted', false)
         .not('notified_at', 'is', null)
         .order('notified_at', { ascending: false })
