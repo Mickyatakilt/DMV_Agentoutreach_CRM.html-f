@@ -7669,7 +7669,7 @@ function asstMount(){
   document.body.appendChild(root);
   asstLoad();
   setInterval(function(){ if(asstEditing===null) asstRender(); }, 5*60*1000);
-  setInterval(asstNotifLoad, 60*1000);
+  setInterval(asstNotifLoad, 30*1000);
 }
 async function asstLoad(){
   try{ asstTasks=await sbFetch('assistant_tasks?select=*&order=sort_order.asc,created_at.asc')||[]; }catch(e){ asstTasks=asstTasks||[]; }
@@ -7692,9 +7692,17 @@ async function asstFn(body){
 async function asstNotifLoad(){
   var ae=document.activeElement;
   if(ae && ae.classList && ae.classList.contains('asst-nt-ta')) return; // don't rebuild the list while typing a reply
-  try{ var d=await asstFn({action:'mentions_inbox'}); asstNotifs=d.items||[]; asstRender(); }catch(e){ /* nice-to-have — never block the app */ }
+  // Never fail silently: retry, then show a red warning in the panel so a broken inbox is noticed at once.
+  var lastErr=null;
+  for(var i=0;i<3;i++){
+    try{ var d=await asstFn({action:'mentions_inbox'}); asstNotifs=d.items||[]; asstNotifErr=''; asstRender(); return; }
+    catch(e){ lastErr=e; await new Promise(function(r){ setTimeout(r,1500*(i+1)); }); }
+  }
+  asstNotifErr=(lastErr&&lastErr.message)||'unknown error'; asstRender();
 }
 function asstNotifHTML(n){
+var asstNotifErr='';
+document.addEventListener('visibilitychange',function(){ if(!document.hidden && document.getElementById('asst-root')) asstNotifLoad(); });
   var when=''; try{ when=new Date(n.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
   return '<div class="asst-nt" data-nid="'+n.id+'">'
     +'<div class="asst-nt-h">🟡 '+esc(n.author_name||'Someone')+' mentioned you</div>'
@@ -7761,13 +7769,14 @@ function asstRender(){
   var b=document.getElementById('asst-badge');
   if(b){ b.textContent=due.length; b.classList.toggle('on',due.length>0); }
   var b2=document.getElementById('asst-badge2');
-  if(b2){ b2.textContent=asstNotifs.length; b2.classList.toggle('on',asstNotifs.length>0); }
+  if(b2){ b2.textContent=asstNotifErr?'!':asstNotifs.length; b2.classList.toggle('on',asstNotifs.length>0||!!asstNotifErr); }
   var l=document.getElementById('asst-list'); if(!l) return;
   var h='';
   if(asstNotifs.length) h+='<div class="asst-sec" style="color:#a16207">🟡 @MENTIONS · '+asstNotifs.length+'</div><div class="asst-box">'+asstNotifs.map(asstNotifHTML).join('')+'</div>';
+  if(asstNotifErr) h+='<div style="background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:10px">&#9888; Can\'t load your @mentions right now ('+esc(asstNotifErr)+'). You may be missing messages &mdash; <a href="#" onclick="asstNotifLoad();return false" style="color:#991b1b">retry</a> or tell Mike.</div>';
   if(due.length) h+='<div class="asst-sec">🔴 NEEDS YOU NOW · '+due.length+'</div><div class="asst-box">'+due.map(function(t){return asstRowHTML(t,true);}).join('')+'</div>';
   if(up.length) h+='<div class="asst-sec">⏳ UPCOMING · '+up.length+'</div><div class="asst-box">'+up.map(function(t){return asstRowHTML(t,false);}).join('')+'</div>';
-  if(!h) h='<div class="asst-empty">All clear — nothing on your plate. 🎉</div>';
+  if(!h&&!asstNotifErr) h='<div class="asst-empty">All clear — nothing on your plate. 🎉</div>';
   l.innerHTML=h;
 }
 async function asstPatch(id,body){
