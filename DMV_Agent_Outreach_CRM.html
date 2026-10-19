@@ -2010,11 +2010,11 @@ function normalizeAddr(a){return(a||'').toLowerCase().trim().replace(/  /g,' ').
 function findDup(addr,excludeId){const n=normalizeAddr(addr); if(!n) return null; return leads.find(l=>!l.deleted&&l.id!==excludeId&&normalizeAddr(l.address)===n)||null;}
 function getNextId(){return leads.length?Math.max(...leads.map(l=>l.id))+1:1;}
 function getFUCounts(){
-  const w=leads.filter(l=>!l.deleted&&!isD4DRow(l)&&l.followUpDate&&l.nationwide!=='Yes'&&!isD4DRow(l)).concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
+  const w=leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&l.nationwide!=='Yes').concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
   return {overdue:w.filter(l=>getFUStatus(l.followUpDate)==='overdue').length,today:w.filter(l=>getFUStatus(l.followUpDate)==='today').length,soon:w.filter(l=>getFUStatus(l.followUpDate)==='soon').length,total:w.length};
 }
 function getNWFUCounts(){
-  const w=leads.filter(l=>!l.deleted&&l.followUpDate&&l.nationwide==='Yes'&&!isD4DRow(l));
+  const w=leads.filter(l=>!l.deleted&&l.followUpDate&&l.nationwide==='Yes'&&!isD4DRow(l)&&!isFbLead(l));
   return {overdue:w.filter(l=>getFUStatus(l.followUpDate)==='overdue').length,today:w.filter(l=>getFUStatus(l.followUpDate)==='today').length,soon:w.filter(l=>getFUStatus(l.followUpDate)==='soon').length,total:w.length};
 }
 function getFiltered(){
@@ -9777,9 +9777,9 @@ function renderLeadsTab(){
   const customizeBtn=`<div class="stat-card" onclick="showStatCustomizer()" style="cursor:pointer;justify-content:center;align-items:center;color:var(--text3)" title="Choose which counters show"><div style="font-size:12px;font-weight:700">&#9881;&#65039; Customize</div></div>`;
 
   // DMV Leads page stats mirror the DMV Follow-Up queue: DMV Leads + Tasks only, Nationwide excluded
-  const allFUCount = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&l.followUpDate&&l.nationwide!=='Yes').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate).length;
-  const allOverdue = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&l.followUpDate&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='overdue').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='overdue').length;
-  const allToday = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&l.followUpDate&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='today').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='today').length;
+  const allFUCount = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&l.nationwide!=='Yes').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate).length;
+  const allOverdue = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='overdue').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='overdue').length;
+  const allToday = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='today').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='today').length;
   const overdueChip=`<div class="stat-card" onclick="setTab('followups')" style="${allOverdue>0?'border-color:#fca5a5;background:#fee2e2;':''}"><div class="stat-dot" style="background:#dc2626"></div><div><div class="stat-num" style="${allOverdue>0?'color:#dc2626':''}">${allOverdue}</div><div class="stat-label" style="${allOverdue>0?'color:#dc2626':''}">Overdue</div></div></div>`;
   const fuChip=`<div class="stat-card" onclick="setTab('followups')" style="${allToday>0?'border-color:#fcd34d;background:#fef3c7;':'border-color:#5eead4;background:#f0fdfa;'}"><div class="stat-dot" style="background:${allToday>0?'#b45309':'#0d9488'}"></div><div><div class="stat-num" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?allToday:allFUCount}</div><div class="stat-label" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?'Due Today':'Follow-Ups'}</div></div></div>`;
 
@@ -10086,13 +10086,13 @@ function buildFollowUpQueueHTML(nationwideOnly){
   var allFU = [];
   if(nationwideOnly){
     leads.forEach(function(l){
-      if(!l.deleted && l.followUpDate && l.nationwide==='Yes' && !isD4DRow(l)){
+      if(!l.deleted && l.followUpDate && l.nationwide==='Yes' && !isD4DRow(l) && !isFbLead(l)){
         allFU.push({lead:l, type:'nationwide', isTask:false});
       }
     });
   } else {
     leads.forEach(function(l){
-      if(!l.deleted && l.followUpDate && l.nationwide!=='Yes' && !isD4DRow(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'){
+      if(!l.deleted && l.followUpDate && l.nationwide!=='Yes' && !isD4DRow(l) && !isFbLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'){
         allFU.push({lead:l, type:'dmv', isTask:false});
       }
     });
@@ -10987,7 +10987,7 @@ function renderNationwideTab(){
       + '</div>';
     return;
   }
-  let nwLeads = leads.filter(l=>!l.deleted&&l.nationwide==='Yes').sort(function(a,b){
+  let nwLeads = leads.filter(l=>!l.deleted&&!isFbLead(l)&&l.nationwide==='Yes').sort(function(a,b){
     // Sort by real entry date, newest first. No hardcoded month list, so new months
     // (July, August, etc) always work automatically without code changes.
     var da = a.date||'', db = b.date||'';
