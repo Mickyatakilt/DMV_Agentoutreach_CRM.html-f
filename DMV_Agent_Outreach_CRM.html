@@ -1152,7 +1152,7 @@ async function loadGhlCalls(contactId){
 async function loadGhlSms(contactId){
   var body = document.getElementById('ghl-sms-body');
   if(!body) return;
-  loadGhlCalls(contactId);
+  // calls load AFTER the thread (via finally) so the two GHL searches don't burst together and trip the 429 rate limit
   body.innerHTML = '<div style="color:var(--text4);font-size:12px;padding:8px 0">Loading messages&hellip;</div>';
   try {
     var r = await ghlConvoFetch({ contactId: contactId });
@@ -1171,6 +1171,7 @@ async function loadGhlSms(contactId){
   } catch(e){
     body.innerHTML = '<div style="color:var(--text4);font-size:12px;padding:8px 0">Could not load messages (network).</div>';
   }
+ finally { loadGhlCalls(contactId); }
 }
 
 // ===== Scheduled SMS (auto-send a text at a future time via GoHighLevel) =====
