@@ -12352,26 +12352,25 @@ function rememberEmailFrom(v){ if(v) localStorage.setItem('crm_email_from', v); 
 // Plain-text MESTATE signature baked into the mailto body (the desktop mail app doesn't have
 // the Gmail signature, and a mailto: body is plain text so the logo image can't be embedded).
 function buildEmailSignature(){
-  return '--\n'
-    + 'Micky Atakilt\n'
+  return 'Micky Atakilt\n'
     + 'Managing Partner\n'
-    + 'Mestate Investment Group\n'
-    + '202-509-5722\n'
-    + '2300 Wilson Blvd, Arlington VA 22201\n'
-    + 'contact@mestate.info\n'
-    + 'https://www.mestate.info/\n';
+    + '\uD83D\uDCDE  202-509-5722\n'
+    + '\uD83D\uDCCD  2300 Wilson Blvd, Arlington VA 22201\n'
+    + '\u2709\uFE0F  contact@mestate.info\n'
+    + '\uD83C\uDF10  https://www.mestate.info/\n';
 }
 function buildOfferBody(addr, price){
   return 'Hello,\n\n'
-    + 'Hope all is well. We are making an offer regarding your listing. A summary of the general terms are below. If the seller is interested in our offer, we will submit a formal offer for your review.\n\n'
-    + 'Thanks,\n\n'
-    + 'Address: ' + (addr||'') + '\n'
-    + 'Buyer: Hiredwise LLC\n'
+    + 'Address: ' + (addr||'') + '\n\n'
+    + 'Buyer: Hiredwise LLC or Entity\n'
     + 'Offer Price: $' + (price||'') + '\n'
     + 'Earnest Money Deposit: $\n'
-    + 'Settlement Date: 30 days Or Less\n'
-    + 'Financing Type: Cash/Hard Money Lending\n'
-    + 'Contingencies: 5 day inspection\n\n'
+    + 'Settlement Date: 30 days or less\n'
+    + 'Financing Type: Cash / Hard Money Lending\n'
+    + 'Contingencies: 5-day inspection period for due diligence. Buyer retains the right to assign the contract, in whole or in part, to a contractor, lender, partner, affiliate, or other permitted assignee.\n\n'
+    + 'Closing Costs: Split between Buyer and Seller\n\n'
+    + 'Agent Commission: Paid by Seller\n\n'
+    + 'We are open to having you or a colleague from your brokerage or another firm represent us on this transaction and work with us to close the deal. Alternatively, we are comfortable proceeding as an unrepresented buyer and reviewing the contract directly.\n\n\n'
     + buildEmailSignature();
 }
 // Save the entered email onto the record (as its Email/contact field) + persist,
