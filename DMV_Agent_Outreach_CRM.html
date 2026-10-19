@@ -7700,9 +7700,9 @@ async function asstNotifLoad(){
   }
   asstNotifErr=(lastErr&&lastErr.message)||'unknown error'; asstRender();
 }
-function asstNotifHTML(n){
 var asstNotifErr='';
 document.addEventListener('visibilitychange',function(){ if(!document.hidden && document.getElementById('asst-root')) asstNotifLoad(); });
+function asstNotifHTML(n){
   var when=''; try{ when=new Date(n.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
   return '<div class="asst-nt" data-nid="'+n.id+'">'
     +'<div class="asst-nt-h">🟡 '+esc(n.author_name||'Someone')+' mentioned you</div>'
@@ -7772,8 +7772,8 @@ function asstRender(){
   if(b2){ b2.textContent=asstNotifErr?'!':asstNotifs.length; b2.classList.toggle('on',asstNotifs.length>0||!!asstNotifErr); }
   var l=document.getElementById('asst-list'); if(!l) return;
   var h='';
-  if(asstNotifs.length) h+='<div class="asst-sec" style="color:#a16207">🟡 @MENTIONS · '+asstNotifs.length+'</div><div class="asst-box">'+asstNotifs.map(asstNotifHTML).join('')+'</div>';
   if(asstNotifErr) h+='<div style="background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:10px">&#9888; Can\'t load your @mentions right now ('+esc(asstNotifErr)+'). You may be missing messages &mdash; <a href="#" onclick="asstNotifLoad();return false" style="color:#991b1b">retry</a> or tell Mike.</div>';
+  if(asstNotifs.length) h+='<div class="asst-sec" style="color:#a16207">🟡 @MENTIONS · '+asstNotifs.length+'</div><div class="asst-box">'+asstNotifs.map(asstNotifHTML).join('')+'</div>';
   if(due.length) h+='<div class="asst-sec">🔴 NEEDS YOU NOW · '+due.length+'</div><div class="asst-box">'+due.map(function(t){return asstRowHTML(t,true);}).join('')+'</div>';
   if(up.length) h+='<div class="asst-sec">⏳ UPCOMING · '+up.length+'</div><div class="asst-box">'+up.map(function(t){return asstRowHTML(t,false);}).join('')+'</div>';
   if(!h&&!asstNotifErr) h='<div class="asst-empty">All clear — nothing on your plate. 🎉</div>';
