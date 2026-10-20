@@ -10083,7 +10083,9 @@ function renderCards(data,start,end){
 function renderFollowUpsTab(){ document.getElementById('tab-content').innerHTML = buildFollowUpQueueHTML(false); }
 function buildFollowUpQueueHTML(nationwideOnly){
   // Source badges
-  function srcBadge(type){
+  function srcBadge(type, lead){
+    // Seller text-bot hand-offs show a BOT chip instead of DMV (they are regular DMV leads with source 'Seller Bot')
+    if(lead && lead.leadSource==='Seller Bot') return '<span style="font-size:9px;font-weight:900;color:#1d4ed8;background:#dbeafe;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px;margin-right:4px">BOT</span>';
     if(type==='dmv')        return '<span style="font-size:9px;font-weight:900;color:#dc2626;background:#fee2e2;border:1px solid #fca5a5;border-radius:4px;padding:1px 5px;margin-right:4px">DMV</span>';
     if(type==='nationwide') return '<span style="font-size:10px;margin-right:4px">&#127758;</span>';
     if(type==='task')       return '<span style="font-size:10px;margin-right:4px">&#9989;</span>';
@@ -10154,7 +10156,7 @@ function buildFollowUpQueueHTML(nationwideOnly){
     var badge = x.isTask ? (l.score ? scoreBadgeHTML(l.score) : jvStatusBadge(l.jvStatus||'')) : statusBadge(l.status);
     return '<div class="followup-item" onclick="'+fn+'" style="cursor:pointer">'
       + '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">'
-      + srcBadge(x.type)
+      + srcBadge(x.type, x.lead)
       + '<div class="followup-item-addr" style="margin:0">'+esc(title)+'</div>'
       + (l.assignedTo?'<span style="margin-left:6px;font-size:10px;font-weight:800;color:#6d28d9;background:#ede9fe;border:1px solid #c4b5fd;border-radius:10px;padding:1px 7px;white-space:nowrap">&#128100; '+esc(l.assignedTo)+'</span>':'')
       + (isFbLead(l)?'<span style="margin-left:6px;font-size:9px;font-weight:900;color:#1d4ed8;background:#dbeafe;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px">FB</span>':'')
