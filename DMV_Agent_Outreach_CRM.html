@@ -7672,7 +7672,8 @@ async function hoDelete(id,leadId){
   if(!confirm('Delete '+label+' from the CRM and clear this handoff?')) return;
   if(l){
     l.deleted=true; l.deletedAt=new Date().toISOString();
-    save(); try{ await saveLeadToSupabase(l); }catch(e){ showToast('Could not delete the lead — try again','error'); l.deleted=false; l.deletedAt=''; save(); return; }
+    save(); var ok=false; try{ ok=await saveLeadToSupabase(l); }catch(e){}
+    if(!ok){ showToast('Could not delete the lead (not saved) — try again','error'); l.deleted=false; l.deletedAt=''; save(); return; }
     showToast('Lead deleted','warning',function(){ l.deleted=false; l.deletedAt=''; save(); render(); saveLeadToSupabase(l); showToast('Restored (handoff stays cleared)','success'); });
     render();
   } else { showToast('Handoff cleared (lead was not found in the CRM list)','warning'); }
