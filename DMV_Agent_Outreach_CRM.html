@@ -4713,7 +4713,7 @@ function renderProbate(){
 function pbLeadBatchStatus(p){
   var v=((pbbGet(p.datePulled,p.state)||{}).skiptraced)||'';
   if(v==='Yes') return 'scraped';
-  if(v==='Texted') return 'texted';
+  if(v==='Texted') return (((pbbGet(p.datePulled,p.state)||{}).followedUp)==='Yes')?'followedup':'texted';   // followed-up batches leave Texted and live only in the Followed up tab
   return 'notscraped';
 }
 function pbFilteredLeads(){
