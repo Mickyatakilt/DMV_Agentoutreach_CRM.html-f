@@ -7622,7 +7622,8 @@ function hoRender(){
     return '<div class="ho-item"><div style="font-weight:800;font-size:14px">'+esc(h.name||'(no name)')+(h.phone?' \u00b7 <span style="color:var(--accent)">'+esc(h.phone)+'</span>':'')+'</div>'
       +'<div style="font-size:12px;color:#92400e;margin:2px 0 8px">'+esc(h.reason||'')+' <span style="color:var(--text3)">\u00b7 '+esc(when)+'</span></div>'
       +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="btn btn-primary btn-sm" onclick="hoGo('+(h.lead_id||0)+')" style="font-weight:700">Open lead</button>'
-      +'<button class="btn btn-secondary btn-sm" onclick="hoHandled('+h.id+')" style="font-weight:700">\u2713 Handled</button>'+hoAssignSelect(h)+'</div></div>';
+      +'<button class="btn btn-secondary btn-sm" onclick="hoHandled('+h.id+')" style="font-weight:700">\u2713 Handled</button>'
+      +'<button class="btn btn-sm" onclick="hoDelete('+h.id+','+(h.lead_id||0)+')" title="Delete this lead from the CRM and clear the handoff" style="font-weight:700;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5">\uD83D\uDDD1 Delete</button>'+hoAssignSelect(h)+'</div></div>';
   }).join('');
 }
 var hoFilter='open';
@@ -7662,6 +7663,20 @@ async function hoHandled(id){
   hoLoad();
   if(activeSection==='fb') renderFBSection();
   if(activeSection==='dashboard' && dashTab==='handoffs') renderHandoffsTab();
+}
+// Delete from the handoff popup: soft-delete the lead (same as the normal lead delete, restorable) and clear the handoff.
+async function hoDelete(id,leadId){
+  var h=(hoList||[]).find(function(x){return +x.id===+id;})||{};
+  var l=leadId?(leads||[]).find(function(x){return +x.id===+leadId;}):null;
+  var label=(l&&(l.name||l.address))||h.name||h.phone||'this lead';
+  if(!confirm('Delete '+label+' from the CRM and clear this handoff?')) return;
+  if(l){
+    l.deleted=true; l.deletedAt=new Date().toISOString();
+    save(); try{ await saveLeadToSupabase(l); }catch(e){ showToast('Could not delete the lead — try again','error'); l.deleted=false; l.deletedAt=''; save(); return; }
+    showToast('Lead deleted','warning',function(){ l.deleted=false; l.deletedAt=''; save(); render(); saveLeadToSupabase(l); showToast('Restored (handoff stays cleared)','success'); });
+    render();
+  } else { showToast('Handoff cleared (lead was not found in the CRM list)','warning'); }
+  await hoHandled(id);
 }
 // =================== Assistance (task reminders on every tab) ===================
 var asstNotifs=[], asstNotifDraft={}, asstTasks=[], asstLast=null, asstOpen=false, asstEditing=null, asstUndoT=null, asstDraft=null;
