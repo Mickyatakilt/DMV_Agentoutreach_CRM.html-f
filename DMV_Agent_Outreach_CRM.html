@@ -4460,13 +4460,13 @@ function pbFromDb(r){ return {
   assessedValue:r.assessed_value, matchMethod:r.match_method||'', prName:r.pr_name||'', prAddress:r.pr_address||'',
   prPhone:r.pr_phone||'', attorney:r.attorney||'', score:r.score, status:r.status||'New',
   datePulled:r.date_pulled||'', ghlTag:r.ghl_tag||'', sentOn:r.sent_on||'', sentTag:r.sent_tag||'',
-  followUpDate:r.follow_up_date||'', followedUp:r.followed_up||'', notes:r.notes||'', touches:Array.isArray(r.touches)?r.touches:[],
+  followUpDate:r.follow_up_date||'', notes:r.notes||'', touches:Array.isArray(r.touches)?r.touches:[],
   skiptraceName:r.skiptrace_name||'', skiptracePhone:r.skiptrace_phone||'', skiptraceAddress:r.skiptrace_address||'', skiptracedAt:r.skiptraced_at||'',
   createdBy:r.created_by||'' }; }
 // Only the CRM-owned workflow fields are written back; the scanned facts are read-only.
 function pbToDb(p){ return {
   status:p.status||'New', ghl_tag:p.ghlTag||'', sent_on:p.sentOn||null, sent_tag:p.sentTag||'',
-  follow_up_date:p.followUpDate||null, followed_up:p.followedUp||'', notes:p.notes||'', touches:p.touches||[],
+  follow_up_date:p.followUpDate||null, notes:p.notes||'', touches:p.touches||[],
   score:(p.score===''||p.score==null||isNaN(+p.score))?null:+p.score,
   updated_at:new Date().toISOString() }; }
 
@@ -4483,14 +4483,6 @@ async function crmProbateSkiptraceUpdate(id, st){
              skiptrace_address:st.address||null, skiptraced_at:new Date().toISOString() };
   return await sbFetch(PB_PATH+'?id=eq.'+(+id),'PATCH',body);
 }
-// "Followed up" Yes/No dropdown on each lead row — saves just that one column.
-async function pbSetFollowedUp(id,val){
-  var p=crmProbateById(id); if(!p) return;
-  var old=p.followedUp; p.followedUp=val;
-  try{ await sbFetch(PB_PATH+'?id=eq.'+p.id,'PATCH',{followed_up:val,updated_at:new Date().toISOString()}); showToast('Saved','success'); }
-  catch(e){ p.followedUp=old; showToast('Could not save — check connection','error'); }
-  if(activeSection==='probate') renderProbate();
-}
 async function crmProbateDeleteDb(id){ await sbFetch(PB_PATH+'?id=eq.'+id,'DELETE'); }
 function crmProbateById(id){ id=+id; return (crmProbate||[]).find(function(p){ return +p.id===id; }); }
 
@@ -4499,9 +4491,9 @@ var crmProbateBatches=null;      // null = not loaded yet
 var pbOpen={};                   // "state|date" -> true when that batch is expanded
 const PBB_PATH='crm_probate_batches';
 function pbbFromDb(r){ return {id:r.id,datePulled:r.date_pulled||'',state:r.state||'',skiptraced:r.skiptraced||'',
-  sendOutDate:r.send_out_date||'',followUpDate:r.follow_up_date||'',ghlLink:r.ghl_link||'',ghlPlacement:r.ghl_placement||'',notes:r.notes||'',name:r.name||''}; }
+  sendOutDate:r.send_out_date||'',followUpDate:r.follow_up_date||'',followedUp:r.followed_up||'',ghlLink:r.ghl_link||'',ghlPlacement:r.ghl_placement||'',notes:r.notes||'',name:r.name||''}; }
 function pbbToDb(b){ return {date_pulled:b.datePulled||null,state:b.state||'',skiptraced:b.skiptraced||'',
-  send_out_date:b.sendOutDate||null,follow_up_date:b.followUpDate||null,ghl_link:b.ghlLink||'',ghl_placement:b.ghlPlacement||'',
+  send_out_date:b.sendOutDate||null,follow_up_date:b.followUpDate||null,followed_up:b.followedUp||'',ghl_link:b.ghlLink||'',ghl_placement:b.ghlPlacement||'',
   notes:b.notes||'',updated_at:new Date().toISOString()}; }
 async function crmProbateBatchesFetch(){
   try { var rows=await sbFetch(PBB_PATH+'?select=*&limit=5000'); crmProbateBatches=(rows||[]).map(pbbFromDb); }
@@ -4509,12 +4501,12 @@ async function crmProbateBatchesFetch(){
 }
 function pbbKey(date,state){ return (state||'')+'|'+(date||''); }
 function pbbFind(date,state){ return (crmProbateBatches||[]).find(function(b){ return b.datePulled===date && b.state===state; }); }
-function pbbGet(date,state){ return pbbFind(date,state) || {id:null,datePulled:date,state:state,skiptraced:'',sendOutDate:'',followUpDate:'',ghlLink:'',ghlPlacement:'',notes:''}; }
+function pbbGet(date,state){ return pbbFind(date,state) || {id:null,datePulled:date,state:state,skiptraced:'',sendOutDate:'',followUpDate:'',followedUp:'',ghlLink:'',ghlPlacement:'',notes:''}; }
 // Persist ONE batch field. No re-render (the control already shows the new value) — keeps focus/scroll steady.
 async function pbbSet(date,state,field,val){
   var b=pbbFind(date,state);
   var isNew=!b;
-  if(isNew) b={id:null,datePulled:date,state:state,skiptraced:'',sendOutDate:'',followUpDate:'',ghlLink:'',ghlPlacement:'',notes:''};
+  if(isNew) b={id:null,datePulled:date,state:state,skiptraced:'',sendOutDate:'',followUpDate:'',followedUp:'',ghlLink:'',ghlPlacement:'',notes:''};
   b[field]=val;
   try {
     if(b.id){ await sbFetch(PBB_PATH+'?id=eq.'+b.id,'PATCH',pbbToDb(b)); }
@@ -4529,6 +4521,11 @@ async function pbbSet(date,state,field,val){
 // without a manual Refresh (a <select> has already committed its value, so re-rendering is safe).
 async function pbSetStatus(date,state,val){
   await pbbSet(date,state,'skiptraced',val);
+  if(activeSection==='probate') renderProbate();
+}
+// Batch-level "Followed up?" Yes/No; re-render so the Followed up chip count updates.
+async function pbSetBatchFU(date,state,val){
+  await pbbSet(date,state,'followedUp',val);
   if(activeSection==='probate') renderProbate();
 }
 async function crmProbateSyncCall(f){
@@ -4648,7 +4645,7 @@ function renderProbate(){
   var scrapedCount=all.filter(function(p){return pbLeadBatchStatus(p)==='scraped';}).length;
   var textedCount=all.filter(function(p){return pbLeadBatchStatus(p)==='texted';}).length;
   var followupCount=all.filter(function(p){return !!p.followUpDate;}).length;
-  var fuYesCount=all.filter(function(p){return p.followedUp==='Yes';}).length;
+  var fuYesCount=all.filter(function(p){return pbbGet(p.datePulled,p.state).followedUp==='Yes';}).length;
   var states=Array.from(new Set(all.map(function(p){return p.state;}).filter(Boolean))).sort();
   // Each view tab is tinted by its status so it reads at a glance:
   // filled/bold when selected, soft-tinted when not.
@@ -4658,8 +4655,7 @@ function renderProbate(){
     scraped:  {solid:'#166534', tint:'#dcfce7', text:'#166534', border:'#86efac'},
     texted:   {solid:'#1e40af', tint:'#dbeafe', text:'#1e40af', border:'#93c5fd'},
     followup: {solid:'#7e22ce', tint:'#f3e8ff', text:'#7e22ce', border:'#d8b4fe'},
-    fuyes:    {solid:'#166534', tint:'#dcfce7', text:'#166534', border:'#86efac'},
-    funo:     {solid:'#991b1b', tint:'#fee2e2', text:'#991b1b', border:'#fca5a5'}
+    fuyes:    {solid:'#166534', tint:'#dcfce7', text:'#166534', border:'#86efac'}
   };
   function starChip(n){
     var on=!!pbStars[n], cnt=all.filter(function(p){return +p.score===n;}).length;
@@ -4706,7 +4702,6 @@ function renderProbate(){
           + viewChip('texted','&#128241; Texted ('+textedCount.toLocaleString()+')')
           + viewChip('followup','&#128197; Follow-up ('+followupCount.toLocaleString()+')')
           + viewChip('fuyes','&#9989; Followed up ('+fuYesCount.toLocaleString()+')')
-          + viewChip('funo','&#9888;&#65039; Not followed up ('+(all.length-fuYesCount).toLocaleString()+')')
         + '</div>'
         + '<div id="pb-list-area"></div>'
       ) : '')
@@ -4730,8 +4725,7 @@ function pbFilteredLeads(){
     if(pbView==='scraped' && pbLeadBatchStatus(p)!=='scraped') return false;
     if(pbView==='texted' && pbLeadBatchStatus(p)!=='texted') return false;
     if(pbView==='followup' && !p.followUpDate) return false;
-    if(pbView==='fuyes' && p.followedUp!=='Yes') return false;
-    if(pbView==='funo' && p.followedUp==='Yes') return false;
+    if(pbView==='fuyes' && pbbGet(p.datePulled,p.state).followedUp!=='Yes') return false;
     if(pbView==='sent' && !p.sentOn) return false;
     if(pbView==='unsent' && p.sentOn) return false;
     if(pbView==='due'){ var n=ltDaysUntil(p.followUpDate); if(n===null || n>0) return false; }
@@ -4767,7 +4761,6 @@ function pbLeadRow(p){
     + '<td style="white-space:nowrap">'+pbScorePill(p.score)+'</td>'
     + '<td onclick="event.stopPropagation()" style="white-space:nowrap">'+sentCell+'</td>'
     + '<td style="white-space:nowrap">'+ltDuePill(p.followUpDate)+(p.followUpDate?' '+gcalBtn('Probate follow-up: '+(p.decedentName||p.propertyAddress||('#'+p.id)),p.followUpDate,['Probate lead',(p.state||'')+' '+(p.county||''),p.prName?('PR: '+p.prName):'',p.skiptracePhone?('Phone: '+p.skiptracePhone):''].filter(Boolean).join('\\n'),[p.propertyAddress,p.propertyCity,p.propertyZip].filter(Boolean).join(', '),true):'')+'</td>'
-    + '<td onclick="event.stopPropagation()" style="white-space:nowrap"><select title="Have we followed up with this lead?" style="font-size:12px;font-weight:700;padding:3px 4px;border-radius:6px;border:1.5px solid '+(p.followedUp==='Yes'?'#86efac;background:#dcfce7;color:#166534':(p.followedUp==='No'?'#fca5a5;background:#fee2e2;color:#991b1b':'#cbd5e1;background:#fff;color:#64748b'))+'" onchange="pbSetFollowedUp('+p.id+',this.value)"><option value="">&mdash;</option><option value="Yes"'+(p.followedUp==='Yes'?' selected':'')+'>Yes</option><option value="No"'+(p.followedUp==='No'?' selected':'')+'>No</option></select></td>'
     + '<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="openProbateEdit('+p.id+')">&#9998;</button> <button class="btn btn-secondary btn-sm" title="Delete" onclick="deleteProbateLead('+p.id+')">&#128465;</button></td>'
   + '</tr>';
 }
@@ -4871,6 +4864,7 @@ function pbRenderArea(){
         + '</select></label>'
       + '<label class="pb-wf-f"><span>Send-out date</span><input type="date" value="'+esc(b.sendOutDate)+'" onchange="pbbSet('+da+',\'sendOutDate\',this.value)"></label>'
       + '<label class="pb-wf-f"><span>Follow-up date</span><input type="date" value="'+esc(b.followUpDate)+'" onchange="pbbSet('+da+',\'followUpDate\',this.value);pbRenderArea()"></label>'
+      + '<label class="pb-wf-f"><span>Followed up?</span><select onchange="pbSetBatchFU('+da+',this.value)"><option value="">&mdash;</option><option value="Yes"'+(b.followedUp==='Yes'?' selected':'')+'>Yes</option><option value="No"'+(b.followedUp==='No'?' selected':'')+'>No</option></select></label>'
       + (b.followUpDate?'<div class="pb-wf-f" style="justify-content:flex-end">'+gcalBtn('Probate batch follow-up: '+(b.name||(dt?ltFmtDate(dt):st)),b.followUpDate,'Probate batch follow-up for '+(b.name||(dt?ltFmtDate(dt):''))+' ('+st+') — '+arr.length+' leads.',st,true)+'</div>':'')
       + '<label class="pb-wf-f"><span>GHL list link</span><input type="url" style="width:190px" placeholder="paste GHL URL" value="'+esc(b.ghlLink)+'" onchange="pbbSet('+da+',\'ghlLink\',this.value)"></label>'
       + '<label class="pb-wf-f"><span>Download</span>'+pbStarSelectHTML(st,dt)+'</label>'
@@ -4888,7 +4882,7 @@ function pbRenderArea(){
       + '</div>'
       + '<div class="pb-wf-panel"><div class="pb-wf-title">&#9881;&#65039; Batch workflow &mdash; applies to all '+arr.length.toLocaleString()+' leads</div>'+wf+'</div>'
       + '<div class="table-container"><div class="table-wrap"><table>'
-      + '<thead><tr><th style="width:34px"><input type="checkbox" '+(gAll?'checked':'')+' onchange=\'pbToggleGroup('+gids+',this.checked)\' style="width:15px;height:15px;cursor:pointer"></th><th>Property</th><th>Decedent / PR</th><th>Score</th><th>Send to GHL</th><th>Lead follow-up</th><th>Followed up?</th><th></th></tr></thead>'
+      + '<thead><tr><th style="width:34px"><input type="checkbox" '+(gAll?'checked':'')+' onchange=\'pbToggleGroup('+gids+',this.checked)\' style="width:15px;height:15px;cursor:pointer"></th><th>Property</th><th>Decedent / PR</th><th>Score</th><th>Send to GHL</th><th>Lead follow-up</th><th></th></tr></thead>'
       + '<tbody>'+arr.slice(0,PB_CAP).map(pbLeadRow).join('')+'</tbody></table></div></div>'
       + (arr.length>PB_CAP?'<div style="font-size:12px;color:var(--text4);padding:8px 14px">Showing first '+PB_CAP+' of '+arr.length.toLocaleString()+' in this batch — use search to narrow.</div>':'')
       + '</div>';
