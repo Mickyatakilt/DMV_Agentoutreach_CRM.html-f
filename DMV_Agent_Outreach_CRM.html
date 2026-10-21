@@ -5969,6 +5969,7 @@ const TC_PATH = 'time_clock';
 var teamTasks = null;   // the signed-in user's own tasks (null = not loaded)
 var myClock = null;     // the signed-in user's recent time_clock rows, newest first
 var teamAllTasks = null, teamAllClock = null, teamPeople = null; // owner "Team Work" data
+var teamActivity = []; // owner: per user/day/app totals from activity_summary()
 var twDays = 7, twPerson = '';
 var teamCorrections = [];
 const TT_STATUSES = [
@@ -6570,8 +6571,10 @@ async function twLoadData(){
       sbFetchAll(TT_PATH+'?deleted=eq.false&select=*&order=created_at.desc,id.desc'),
       sbFetchAll(TC_PATH+'?work_date=gte.'+since+'&select=*&order=work_date.desc,id.desc'),
       adminUsersCall({action:'list'}).catch(function(){ return {users:[]}; }),
-      sbFetch('time_corrections?select=*&order=created_at.desc&limit=100').catch(function(){ return []; })
+      sbFetch('time_corrections?select=*&order=created_at.desc&limit=100').catch(function(){ return []; }),
+      sbFetch('rpc/activity_summary','POST',{since:new Date(Date.now()-twDays*864e5).toISOString()}).catch(function(){ return []; })
     ]);
+    teamActivity=r[4]||[];
     teamCorrections=r[3]||[];
     teamAllTasks=(r[0]||[]).map(ttFromDb); teamAllClock=(r[1]||[]).map(tcFromDb);
     await ttLoadComments();
@@ -6581,6 +6584,25 @@ async function twLoadData(){
 function twToggle(){ twOpen=!twOpen; renderTeamWork(true); }
 var twOpenRows = {};
 function twToggleRow(id){ twOpenRows[id]=!twOpenRows[id]; renderTeamWork(true); }
+// Screen activity (from the Time Clock app; only recorded while the person is clocked in).
+function twActivityRowHTML(uid){
+  var rows=(teamActivity||[]).filter(function(a){return a.user_id===uid;});
+  var cell='padding:4px 16px 16px 28px;border-bottom:1px solid var(--border,#e5e7eb);background:var(--bg2,#f8fafc)';
+  var head='<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin:6px 0 4px">Screen activity (apps, while clocked in)</div>';
+  if(!rows.length) return '<tr><td colspan="6" style="'+cell+'">'+head+'<div style="color:var(--text4);font-size:13px">No screen activity recorded in this range.</div></td></tr>';
+  var act=0, idl=0, byApp={};
+  rows.forEach(function(a){ act+=+a.active_secs; idl+=+a.idle_secs; var b=byApp[a.app]||(byApp[a.app]={a:0,i:0}); b.a+=+a.active_secs; b.i+=+a.idle_secs; });
+  var list=Object.keys(byApp).sort(function(x,y){return byApp[y].a-byApp[x].a;}).slice(0,10);
+  var tot=act+idl||1;
+  var bars=list.map(function(k){
+    var pct=Math.round(byApp[k].a/(act||1)*100);
+    return '<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0"><span style="width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(k)+'</span>'
+      +'<div style="flex:1;max-width:260px;height:8px;background:var(--border,#e5e7eb);border-radius:4px"><div style="width:'+pct+'%;height:8px;background:#2563eb;border-radius:4px"></div></div>'
+      +'<span style="min-width:90px;font-weight:700">'+twFmtDur(byApp[k].a*1000)+' <span style="font-weight:400;color:var(--text4)">'+pct+'%</span></span></div>';
+  }).join('');
+  return '<tr><td colspan="6" style="'+cell+'">'+head
+    +'<div style="font-size:13px;margin-bottom:6px">Active <b>'+twFmtDur(act*1000)+'</b> &middot; Idle <b>'+twFmtDur(idl*1000)+'</b> ('+Math.round(idl/tot*100)+'% idle)</div>'+bars+'</td></tr>';
+}
 async function renderTeamWork(keepData){
   var host=document.getElementById('team-work-host'); if(!host) return;
   var card='background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;';
@@ -6641,7 +6663,7 @@ async function renderTeamWork(keepData){
       +'<div style="flex:1;min-width:300px"><div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Clock in / out</div><button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="twOpenClockAdd(\''+r.id+'\')">+ Add day</button></div>'+logRows+'</div>'
       +'<div style="flex:1.4;min-width:340px"><div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Tasks &mdash; status &amp; finish date</div>'+(r.done?'<button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;color:#dc2626" onclick="ttDeleteCompleted(\''+r.id+'\')">&#128465; Delete completed ('+r.done+')</button>':'')+'</div>'+ttRowsHTML(vis)+'</div>'
       +'</div></td></tr>';
-    return main+detail;
+    return main+detail+twActivityRowHTML(r.id);
   }).join('') : '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4);font-size:13px">No staff accounts or activity yet.</td></tr>';
   host.innerHTML =
     twCorrectionsCardHTML()
