@@ -8609,11 +8609,14 @@ function renderD4DSection(){
         +(hotN?' <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">'+hotN+'</span>':'')
         +(hotOver?' <span title="Overdue follow-ups" style="background:#dc2626;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">'+hotOver+' overdue</span>':'')
       +'</div>'
+      +'<div class="tab '+(d4dTab==='bot'?'active':'')+'" onclick="d4dSetTab(\'bot\')">&#129302; Text Bot'
+        +(d4dBotNeeds?' <span title="Hand-offs waiting" style="background:#0f766e;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">'+d4dBotNeeds+'</span>':'')
+      +'</div>'
       +'<div class="tab '+(d4dTab==='mail'?'active':'')+'" onclick="d4dSetTab(\'mail\')">&#9993; Send Mail'
         +(mailN?' <span style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">'+mailN+'</span>':'')
       +'</div>'
     +'</div>'
-    +(d4dTab==='mail' ? renderD4DMailTabHTML() : d4dTab==='hot' ? renderD4DHotTabHTML() : renderD4DLeadsTabHTML())
+    +(d4dTab==='bot' ? renderD4DBotTabHTML() : d4dTab==='mail' ? renderD4DMailTabHTML() : d4dTab==='hot' ? renderD4DHotTabHTML() : renderD4DLeadsTabHTML())
     +'</div>';
   rvUpdateBar();
 }
@@ -9362,6 +9365,10 @@ function d4dBotFmt(iso){
   var d=new Date(iso); if(isNaN(d.getTime())) return '';
   return d.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
 }
+function d4dBotRowLabel(r){
+  if(r.kind==='handoff') return 'Hand-off';
+  return 'Text '+r.step+' of '+((r.max_step||3)>=3?3:2);
+}
 function d4dBotChipHTML(id){
   var st=d4dBotData[id]; if(!st || !st.rows || !st.rows.length) return '';
   var rows=st.rows, sent=rows.filter(function(r){return r.status==='sent';});
@@ -9370,14 +9377,64 @@ function d4dBotChipHTML(id){
   var canc=rows.filter(function(r){return r.status==='cancelled';});
   var chip=function(bg,fg,bd,txt){ return '<div style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:'+bg+';color:'+fg+';border:1px solid '+bd+';margin-top:2px;white-space:nowrap;display:inline-block">'+txt+'</div><br>'; };
   var h='';
-  if(sent.length){ var ls=sent[sent.length-1]; h+=chip('#dcfce7','#166534','#86efac','&#129302; Text '+ls.step+' of 3 sent '+d4dBotFmt(ls.sent_at)); }
-  if(pend.length){ var np=pend[0]; var late=new Date(np.send_at).getTime()<=Date.now(); h+=chip('#e0f2fe','#075985','#7dd3fc','&#9201; Text '+np.step+(late?' waiting for 9:30am-7pm window':' due '+d4dBotFmt(np.send_at))); }
+  var ho=sent.filter(function(r){return r.kind==='handoff';});
+  var txs=sent.filter(function(r){return r.kind!=='handoff';});
+  if(txs.length){ var ls=txs[txs.length-1]; h+=chip('#dcfce7','#166534','#86efac','&#129302; '+d4dBotRowLabel(ls)+' sent '+d4dBotFmt(ls.sent_at)); }
+  if(ho.length) h+=chip('#fef3c7','#92400e','#fcd34d','&#128222; Handed off '+d4dBotFmt(ho[0].sent_at)+' - needs a call');
+  if(pend.length){ var np=pend[0]; var late=new Date(np.send_at).getTime()<=Date.now(); h+=chip('#e0f2fe','#075985','#7dd3fc','&#9201; '+(np.kind==='handoff'?'Hand-off':'Text '+np.step)+(late?' waiting for 9:30am-7pm window':' due '+d4dBotFmt(np.send_at))); }
   var rep=canc.filter(function(r){return /replied/i.test(r.note||'');});
   if(rep.length) h+=chip('#f3e8ff','#6b21a8','#d8b4fe','&#128172; Seller replied - Seller Bot took over');
   var oth=canc.filter(function(r){return !/replied/i.test(r.note||'');});
   if(oth.length) h+=chip('#f1f5f9','#475569','#cbd5e1','Stopped: '+esc(oth[oth.length-1].note||'cancelled'));
-  if(bad.length) h+=chip('#fee2e2','#b91c1c','#fca5a5','&#9888; Text '+bad[bad.length-1].step+' failed: '+esc(bad[bad.length-1].note||''));
+  if(bad.length) h+=chip('#fee2e2','#b91c1c','#fca5a5','&#9888; '+d4dBotRowLabel(bad[bad.length-1])+' failed: '+esc(bad[bad.length-1].note||''));
   return h;
+}
+// ---- Text Bot tab: every lead in the bot, what it did and what is next ----
+var d4dBotNeeds=0, d4dBotList=null, d4dBotListTimer=null;
+async function d4dBotLoadList(){
+  try{
+    var r=await fetch(SUPABASE_URL+'/rest/v1/rpc/d4d_bot_overview',{ method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:'{}' });
+    if(!r.ok) return;
+    d4dBotList=await r.json();
+    d4dBotNeeds=(d4dBotList||[]).filter(function(x){ return x.rows.some(function(q){return q.kind==='handoff'&&q.status==='sent';}); }).length;
+    if(activeSection==='d4d' && d4dTab==='bot'){ var h=document.getElementById('d4dbot-tab-body'); if(h) h.innerHTML=d4dBotTabRowsHTML(); }
+  }catch(e){}
+}
+function d4dBotCell(rows,step,kind){
+  var q=rows.find(function(r){ return r.step===step && (kind==='handoff'?r.kind==='handoff':r.kind!=='handoff'); });
+  if(!q) return '<span style="color:var(--text4)">&#8212;</span>';
+  if(q.status==='sent') return '<span style="color:#166534;font-weight:700">&#10003; Sent</span><br><span style="font-size:11px;color:var(--text3)">'+d4dBotFmt(q.sent_at)+'</span>';
+  if(q.status==='pending'||q.status==='sending') return '<span style="color:#075985;font-weight:700">&#9201; Scheduled</span><br><span style="font-size:11px;color:var(--text3)">'+d4dBotFmt(q.send_at)+'</span>';
+  if(q.status==='cancelled') return '<span style="color:#475569">Cancelled</span><br><span style="font-size:11px;color:var(--text3)">'+esc(q.note||'')+'</span>';
+  return '<span style="color:#b91c1c;font-weight:700">&#9888; Failed</span><br><span style="font-size:11px;color:var(--text3)">'+esc(q.note||'')+'</span>';
+}
+function d4dBotTabRowsHTML(){
+  var list=d4dBotList||[];
+  if(!list.length) return '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text3)">No leads in the text bot yet. Tick leads in the Leads tab and press D4D Text Bot.</td></tr>';
+  return list.map(function(x){
+    var rows=x.rows, rep=rows.some(function(q){return q.status==='cancelled'&&/replied/i.test(q.note||'');});
+    var ho=rows.some(function(q){return q.kind==='handoff'&&q.status==='sent';});
+    var hasT3=rows.some(function(q){return q.step===3&&q.kind!=='handoff';});
+    var stat=ho?'<span style="color:#92400e;font-weight:800">&#128222; Handed off to '+esc(x.assigned_to||'')+'</span>'
+      : rep?'<span style="color:#6b21a8;font-weight:800">&#128172; Seller replied</span>'
+      : rows.some(function(q){return q.status==='failed';})?'<span style="color:#b91c1c;font-weight:800">&#9888; Problem</span>'
+      : rows.some(function(q){return q.status==='pending'||q.status==='sending';})?'<span style="color:#075985;font-weight:800">Waiting</span>'
+      : '<span style="color:#475569">Done</span>';
+    return '<tr><td style="padding:8px 10px"><b>'+esc(x.name||'')+'</b><br><span style="font-size:12px;color:var(--text2)">'+esc(x.address||'')+'</span></td>'
+      +'<td style="padding:8px 10px;white-space:nowrap">'+esc(rvFmtPhone(x.phone))+'</td>'
+      +'<td style="padding:8px 10px">'+d4dBotCell(rows,1)+'</td>'
+      +'<td style="padding:8px 10px">'+d4dBotCell(rows,2)+'</td>'
+      +'<td style="padding:8px 10px">'+(hasT3?'Text 3<br>'+d4dBotCell(rows,3):d4dBotCell(rows,3,'handoff'))+'</td>'
+      +'<td style="padding:8px 10px">'+stat+'</td>'
+      +'<td style="padding:8px 10px"><button class="btn btn-secondary btn-sm" onclick="openDetail('+x.lead_id+')">Open</button></td></tr>';
+  }).join('');
+}
+function renderD4DBotTabHTML(){
+  d4dBotLoadList();
+  clearTimeout(d4dBotListTimer);
+  d4dBotListTimer=setTimeout(function pollBot(){ if(activeSection==='d4d'&&d4dTab==='bot'){ d4dBotLoadList(); d4dBotListTimer=setTimeout(pollBot,30000); } },30000);
+  return '<p style="font-size:12px;color:var(--text3);margin:-4px 0 12px">Every lead in the D4D text bot. Text 1 goes out when you queue it (9:30am-7pm NY), text 2 about 24 hours later, then the hand-off to the assigned teammate 24 hours after text 2 if the seller never replied. A reply cancels the rest and the Seller Bot takes over. Updates every 30 seconds.</p>'
+    +'<div class="table-container"><div class="table-wrap"><table><thead><tr><th>Lead</th><th>Phone</th><th>Text 1</th><th>Text 2</th><th>Hand-off</th><th>Status</th><th></th></tr></thead><tbody id="d4dbot-tab-body">'+d4dBotTabRowsHTML()+'</tbody></table></div></div>';
 }
 function d4dBotRefreshSoon(){ if(d4dBotTimer) return; d4dBotTimer=setTimeout(function(){ d4dBotTimer=null; d4dBotRefresh(); },400); }
 async function d4dBotRefresh(){
@@ -9413,7 +9470,7 @@ async function d4dBotOpen(){
   o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   o.innerHTML='<div style="background:var(--bg,#fff);color:var(--text1,#0f172a);border-radius:12px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.35)">'
     +'<div style="font-size:16px;font-weight:800;margin-bottom:4px">&#129302; D4D Text Bot &mdash; '+ids.length+' lead'+(ids.length!==1?'s':'')+'</div>'
-    +'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Texts go out only 9:30am-7pm New York. After text 1: text 2 after 24 hours, text 3 on day 3, then it stops. If the seller replies, the normal Seller Bot takes over (same hand-off rules). Circles under Phones tick when each text is sent.</div>'
+    +'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Texts go out only 9:30am-7pm New York. After text 1: text 2 after 24 hours, then 24 hours later (still no reply) the lead is handed off to Zablon to call. If the seller replies, the normal Seller Bot takes over (same hand-off rules). Circles under Phones tick when each text is sent.</div>'
     +'<label style="font-size:12px;font-weight:700">Opener text (use {address})</label>'
     +'<textarea id="d4dbot-text" rows="3" style="width:100%;margin:4px 0 12px;padding:8px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font-size:13px">'+esc(opener)+'</textarea>'
     +'<div style="font-size:12px;font-weight:700;margin-bottom:4px">When</div>'
