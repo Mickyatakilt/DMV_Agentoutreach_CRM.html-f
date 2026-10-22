@@ -9401,6 +9401,7 @@ async function d4dBotRefresh(){
   finally{ d4dBotBusy=false; }
 }
 setInterval(function(){ if(document.querySelector('[id^="d4dbot-chip-"]')) d4dBotRefresh(); }, 60000);
+function d4dBotPick(id,n){ window.__d4dBotOv=window.__d4dBotOv||{}; window.__d4dBotOv[id]=n; d4dBotPreview(); }
 function d4dBotClose(){ var o=document.getElementById('d4dbot-overlay'); if(o) o.remove(); }
 async function d4dBotOpen(){
   var ids=[]; reviewSel.forEach(function(k){ var p=k.split(':'); if(p[0]==='lead') ids.push(+p[1]); });
@@ -9425,14 +9426,14 @@ async function d4dBotOpen(){
       +'<button class="btn btn-sm" id="d4dbot-go-btn" onclick="d4dBotGo()" disabled style="font-weight:800;background:#0f766e;color:#fff;border:1px solid #0f766e">Confirm &amp; queue</button>'
     +'</div></div>';
   document.body.appendChild(o);
-  window.__d4dBotIds=ids;
+  window.__d4dBotIds=ids; window.__d4dBotOv={};
 }
 function d4dBotPayload(mode){
   var when=(document.querySelector('input[name="d4dbot-when"]:checked')||{}).value;
   var at=document.getElementById('d4dbot-at').value;
   var sendAt=null;
   if(when==='at'){ if(!at){ showToast('Pick a date and time','error'); return null; } sendAt=new Date(at).toISOString(); }
-  return { mode:mode, lead_ids:window.__d4dBotIds, opener:document.getElementById('d4dbot-text').value, send_at:sendAt, by:(currentUser&&currentUser.name)||'CRM' };
+  return { mode:mode, lead_ids:window.__d4dBotIds, opener:document.getElementById('d4dbot-text').value, send_at:sendAt, by:(currentUser&&currentUser.name)||'CRM', phone_overrides:(window.__d4dBotOv||{}) };
 }
 async function d4dBotPreview(){
   var pl=d4dBotPayload('preview'); if(!pl) return;
@@ -9440,10 +9441,15 @@ async function d4dBotPreview(){
   var r=await d4dBotCall(pl);
   if(!r||!r.ok){ box.innerHTML='<span style="color:#b91c1c">'+esc((r&&r.message)||'Could not preview')+'</span>'; return; }
   var h='<div style="font-weight:700;margin-bottom:4px">'+r.would_queue+' will be texted, '+r.skipped+' skipped</div><div style="max-height:220px;overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:6px 8px">';
+  function numSel(x){
+    if(!x.numbers || x.numbers.length<2) return '';
+    return ' <select onchange="d4dBotPick('+x.id+',this.value)" style="font-size:11px;padding:1px 3px">'+x.numbers.map(function(n,i){
+      return '<option value="'+n.n+'"'+(n.n===x.phone?' selected':'')+'>'+esc(rvFmtPhone(n.n))+(i===0?' (main)':' (backup '+i+')')+'</option>'; }).join('')+'</select>';
+  }
   r.results.forEach(function(x){
     h+=x.ok
-      ? '<div style="margin-bottom:6px"><b>'+esc(x.name||'')+'</b> &middot; '+esc(x.phone)+'<br><span style="color:var(--text2)">'+esc(x.message)+'</span></div>'
-      : '<div style="margin-bottom:6px;color:#b45309">&#9888; '+esc(x.name||x.address||x.id)+': skipped &mdash; '+esc(x.reason)+'</div>';
+      ? '<div style="margin-bottom:6px"><b>'+esc(x.name||'')+'</b> &middot; '+esc(rvFmtPhone(x.phone))+numSel(x)+'<br><span style="color:var(--text2)">'+esc(x.message)+'</span></div>'
+      : '<div style="margin-bottom:6px;color:#b45309">&#9888; '+esc(x.name||x.address||x.id)+': skipped &mdash; '+esc(x.reason)+numSel(x)+'</div>';
   });
   box.innerHTML=h+'</div>';
   document.getElementById('d4dbot-go-btn').disabled=(r.would_queue===0);
