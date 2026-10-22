@@ -9459,6 +9459,20 @@ async function d4dBotRefresh(){
 }
 setInterval(function(){ if(document.querySelector('[id^="d4dbot-chip-"]')) d4dBotRefresh(); }, 60000);
 function d4dBotPick(id,n){ window.__d4dBotOv=window.__d4dBotOv||{}; window.__d4dBotOv[id]=n; d4dBotPreview(); }
+// ===== BOTS-DOWN BANNER: red bar when a text bot (Seller / JV / D4D) is down (written by the bots-watch job every 5 min) =====
+var BOT_LABELS={seller:'Seller text bot',jv:'JV text bot',d4d:'D4D text bot'};
+async function botsDownRefresh(){
+  try{
+    if(!currentUser) return;
+    var r=await fetch(SUPABASE_URL+'/rest/v1/rpc/bots_down_now',{ method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:'{}' });
+    if(!r.ok) return;
+    var rows=await r.json(), bar=document.getElementById('bots-down-bar');
+    if(!rows||!rows.length){ if(bar) bar.remove(); return; }
+    if(!bar){ bar=document.createElement('div'); bar.id='bots-down-bar'; bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#b91c1c;color:#fff;padding:8px 14px;font-size:13px;font-weight:700;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.3)'; document.body.appendChild(bar); }
+    bar.innerHTML='&#128680; '+rows.map(function(x){ return esc(BOT_LABELS[x.bot]||x.bot)+' is DOWN'+(x.reasons?' ('+esc(String(x.reasons).slice(0,120))+')':''); }).join(' &nbsp;|&nbsp; ');
+  }catch(e){ /* offline: leave the bar as it is */ }
+}
+setInterval(botsDownRefresh, 60000); setTimeout(botsDownRefresh, 4000);
 function d4dBotClose(){ var o=document.getElementById('d4dbot-overlay'); if(o) o.remove(); }
 async function d4dBotOpen(){
   var ids=[]; reviewSel.forEach(function(k){ var p=k.split(':'); if(p[0]==='lead') ids.push(+p[1]); });
