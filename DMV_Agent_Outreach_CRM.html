@@ -8526,6 +8526,7 @@ function rvRowHTML(it){
     +'<td><span class="money-val">'+formatMoney(offer)+'</span></td>'
     +'<td><span class="arv-val">'+formatMoney(l.arv)+'</span></td>'
     +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')
+      +(kind==='lead'?'<div id="d4dbot-chip-'+l.id+'" style="margin-top:4px">'+d4dBotChipHTML(l.id)+'</div>':'')
       +(inHotTab?'<div onclick="event.stopPropagation()" style="margin-top:4px"><input type="date" value="'+esc(l.followUpDate||'')+'" onchange="d4dSetFollowUp('+l.id+',this.value)" title="Set follow-up date" style="font-size:11px;padding:2px 4px;border:1px solid var(--border,#e2e8f0);border-radius:6px"></div>':'')+'</td>'
     +'<td>'+statusBadge(status)+'</td>'
     +'<td onclick="event.stopPropagation()" style="white-space:nowrap">'
@@ -8564,6 +8565,7 @@ function rvBulkBarHTML(items){
     '<div id="rv-bulkbar" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:10px 14px;margin-bottom:12px">'
       +'<span id="rv-bulk-count" style="font-size:13px;font-weight:600;color:var(--text2)">0 selected</span>'
       +'<button id="rv-skiptrace-btn" class="btn btn-primary btn-sm" onclick="rvSkipTraceSelected()" disabled style="font-weight:700">&#128269; Find Numbers (Skip Trace)</button>'
+      +'<button id="rv-d4dbot-btn" class="btn btn-sm" onclick="d4dBotOpen()" disabled style="font-weight:700;background:#0f766e;color:#fff;border:1px solid #0f766e" title="Text the selected leads with the D4D text bot (opener now, 24h + day-3 follow-ups automatic)">&#129302; D4D Text Bot</button>'
       +'<button id="rv-export-btn" class="btn btn-white btn-sm" onclick="rvExportSelected()" disabled style="font-weight:700">&#11015; Download (Name + Phone)</button>'
       +'<button id="rv-delete-btn" class="btn btn-danger btn-sm" onclick="rvDeleteSelected()" disabled style="font-weight:700">&#128465; Remove selected</button>'
       +'<button class="btn btn-secondary btn-sm" onclick="rvClearSel()">Clear</button>'
@@ -9344,11 +9346,124 @@ function rvClearSel(){
   rvUpdateBar();
 }
 // Update the count + enable/disable the button, without re-rendering the list.
+// ===== D4D TEXT BOT (Review/D4D tabs) ===========================================================
+// Button next to Find Numbers: tick leads -> pick the opener -> send now or schedule -> the d4d-bot-enroll
+// function queues text 1; d4d-bot-send (cron) sends it 9:30am-7pm NY, then texts 2 (24h) and 3 (day 3)
+// automatically unless the seller replies (then the normal Seller Bot takes over). Circles tick on send.
+var D4DBOT_URL = SUPABASE_URL + '/functions/v1/d4d-bot-enroll';
+var d4dBotData = {};      // lead id -> {rows:[...], phones:[...]} from the d4d_bot_status RPC
+var d4dBotTimer = null, d4dBotBusy = false;
+async function d4dBotCall(payload){
+  var r=await fetch(D4DBOT_URL,{ method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:JSON.stringify(payload) });
+  return r.json().catch(function(){ return {ok:false,message:'Bad answer from the server'}; });
+}
+function d4dBotFmt(iso){
+  if(!iso) return '';
+  var d=new Date(iso); if(isNaN(d.getTime())) return '';
+  return d.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+}
+function d4dBotChipHTML(id){
+  var st=d4dBotData[id]; if(!st || !st.rows || !st.rows.length) return '';
+  var rows=st.rows, sent=rows.filter(function(r){return r.status==='sent';});
+  var pend=rows.filter(function(r){return r.status==='pending'||r.status==='sending';});
+  var bad=rows.filter(function(r){return r.status==='failed';});
+  var canc=rows.filter(function(r){return r.status==='cancelled';});
+  var chip=function(bg,fg,bd,txt){ return '<div style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:'+bg+';color:'+fg+';border:1px solid '+bd+';margin-top:2px;white-space:nowrap;display:inline-block">'+txt+'</div><br>'; };
+  var h='';
+  if(sent.length){ var ls=sent[sent.length-1]; h+=chip('#dcfce7','#166534','#86efac','&#129302; Text '+ls.step+' of 3 sent '+d4dBotFmt(ls.sent_at)); }
+  if(pend.length){ var np=pend[0]; var late=new Date(np.send_at).getTime()<=Date.now(); h+=chip('#e0f2fe','#075985','#7dd3fc','&#9201; Text '+np.step+(late?' waiting for 9:30am-7pm window':' due '+d4dBotFmt(np.send_at))); }
+  var rep=canc.filter(function(r){return /replied/i.test(r.note||'');});
+  if(rep.length) h+=chip('#f3e8ff','#6b21a8','#d8b4fe','&#128172; Seller replied - Seller Bot took over');
+  var oth=canc.filter(function(r){return !/replied/i.test(r.note||'');});
+  if(oth.length) h+=chip('#f1f5f9','#475569','#cbd5e1','Stopped: '+esc(oth[oth.length-1].note||'cancelled'));
+  if(bad.length) h+=chip('#fee2e2','#b91c1c','#fca5a5','&#9888; Text '+bad[bad.length-1].step+' failed: '+esc(bad[bad.length-1].note||''));
+  return h;
+}
+function d4dBotRefreshSoon(){ if(d4dBotTimer) return; d4dBotTimer=setTimeout(function(){ d4dBotTimer=null; d4dBotRefresh(); },400); }
+async function d4dBotRefresh(){
+  if(d4dBotBusy) return;
+  var ids=[]; document.querySelectorAll('[id^="d4dbot-chip-"]').forEach(function(el){ ids.push(+el.id.replace('d4dbot-chip-','')); });
+  if(!ids.length) return;
+  d4dBotBusy=true;
+  try{
+    var r=await fetch(SUPABASE_URL+'/rest/v1/rpc/d4d_bot_status',{ method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:JSON.stringify({lead_ids:ids}) });
+    if(!r.ok) return;
+    var data=await r.json(); d4dBotData=data||{};
+    var changed=false;
+    ids.forEach(function(id){
+      var el=document.getElementById('d4dbot-chip-'+id); if(el) el.innerHTML=d4dBotChipHTML(id);
+      var st=d4dBotData[id], l=leads.find(function(x){return x.id===id;});
+      // the bot ticks the Texts circles on the server: pull the fresh phone ladder into the local lead
+      if(st && st.phones && l && JSON.stringify(l.phones||null)!==JSON.stringify(st.phones)){ l.phones=st.phones; changed=true; }
+    });
+    if(changed){ try{ localStorage.setItem('crm_leads', JSON.stringify(leads)); }catch(e){} }
+  }catch(e){ /* offline: leave chips as they are */ }
+  finally{ d4dBotBusy=false; }
+}
+setInterval(function(){ if(document.querySelector('[id^="d4dbot-chip-"]')) d4dBotRefresh(); }, 60000);
+function d4dBotClose(){ var o=document.getElementById('d4dbot-overlay'); if(o) o.remove(); }
+async function d4dBotOpen(){
+  var ids=[]; reviewSel.forEach(function(k){ var p=k.split(':'); if(p[0]==='lead') ids.push(+p[1]); });
+  if(!ids.length){ showToast('Select at least one lead first','error'); return; }
+  var t=await d4dBotCall({action:'templates'});
+  var opener=(t&&t.templates&&t.templates.opener)||'Hi this is Zablon from Mestate investment Group, are you looking to sell {address} or any other properties?';
+  d4dBotClose();
+  var o=document.createElement('div'); o.id='d4dbot-overlay';
+  o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  o.innerHTML='<div style="background:var(--bg,#fff);color:var(--text1,#0f172a);border-radius:12px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.35)">'
+    +'<div style="font-size:16px;font-weight:800;margin-bottom:4px">&#129302; D4D Text Bot &mdash; '+ids.length+' lead'+(ids.length!==1?'s':'')+'</div>'
+    +'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Texts go out only 9:30am-7pm New York. After text 1: text 2 after 24 hours, text 3 on day 3, then it stops. If the seller replies, the normal Seller Bot takes over (same hand-off rules). Circles under Phones tick when each text is sent.</div>'
+    +'<label style="font-size:12px;font-weight:700">Opener text (use {address})</label>'
+    +'<textarea id="d4dbot-text" rows="3" style="width:100%;margin:4px 0 12px;padding:8px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font-size:13px">'+esc(opener)+'</textarea>'
+    +'<div style="font-size:12px;font-weight:700;margin-bottom:4px">When</div>'
+    +'<label style="display:block;font-size:13px;margin-bottom:4px"><input type="radio" name="d4dbot-when" value="now" checked onchange="document.getElementById(\'d4dbot-at\').disabled=true"> Send automatically (as soon as the 9:30am-7pm window is open)</label>'
+    +'<label style="display:block;font-size:13px;margin-bottom:12px"><input type="radio" name="d4dbot-when" value="at" onchange="document.getElementById(\'d4dbot-at\').disabled=false"> Schedule for <input type="datetime-local" id="d4dbot-at" disabled style="font-size:12px;padding:2px 4px"></label>'
+    +'<div id="d4dbot-preview" style="font-size:12px;margin-bottom:12px"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
+      +'<button class="btn btn-secondary btn-sm" onclick="d4dBotClose()">Cancel</button>'
+      +'<button class="btn btn-white btn-sm" id="d4dbot-prev-btn" onclick="d4dBotPreview()" style="font-weight:700">Preview texts</button>'
+      +'<button class="btn btn-sm" id="d4dbot-go-btn" onclick="d4dBotGo()" disabled style="font-weight:800;background:#0f766e;color:#fff;border:1px solid #0f766e">Confirm &amp; queue</button>'
+    +'</div></div>';
+  document.body.appendChild(o);
+  window.__d4dBotIds=ids;
+}
+function d4dBotPayload(mode){
+  var when=(document.querySelector('input[name="d4dbot-when"]:checked')||{}).value;
+  var at=document.getElementById('d4dbot-at').value;
+  var sendAt=null;
+  if(when==='at'){ if(!at){ showToast('Pick a date and time','error'); return null; } sendAt=new Date(at).toISOString(); }
+  return { mode:mode, lead_ids:window.__d4dBotIds, opener:document.getElementById('d4dbot-text').value, send_at:sendAt, by:(currentUser&&currentUser.name)||'CRM' };
+}
+async function d4dBotPreview(){
+  var pl=d4dBotPayload('preview'); if(!pl) return;
+  var box=document.getElementById('d4dbot-preview'); box.innerHTML='Checking&hellip;';
+  var r=await d4dBotCall(pl);
+  if(!r||!r.ok){ box.innerHTML='<span style="color:#b91c1c">'+esc((r&&r.message)||'Could not preview')+'</span>'; return; }
+  var h='<div style="font-weight:700;margin-bottom:4px">'+r.would_queue+' will be texted, '+r.skipped+' skipped</div><div style="max-height:220px;overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:6px 8px">';
+  r.results.forEach(function(x){
+    h+=x.ok
+      ? '<div style="margin-bottom:6px"><b>'+esc(x.name||'')+'</b> &middot; '+esc(x.phone)+'<br><span style="color:var(--text2)">'+esc(x.message)+'</span></div>'
+      : '<div style="margin-bottom:6px;color:#b45309">&#9888; '+esc(x.name||x.address||x.id)+': skipped &mdash; '+esc(x.reason)+'</div>';
+  });
+  box.innerHTML=h+'</div>';
+  document.getElementById('d4dbot-go-btn').disabled=(r.would_queue===0);
+}
+async function d4dBotGo(){
+  var pl=d4dBotPayload('queue'); if(!pl) return;
+  var btn=document.getElementById('d4dbot-go-btn'); btn.disabled=true; btn.textContent='Queueing...';
+  var r=await d4dBotCall(pl);
+  if(!r||!r.ok){ showToast((r&&r.message)||'Could not queue','error'); btn.disabled=false; btn.textContent='Confirm & queue'; return; }
+  d4dBotClose();
+  showToast('Queued '+r.queued+' text'+(r.queued!==1?'s':'')+(r.skipped?' ('+r.skipped+' skipped)':''),'success');
+  d4dBotRefresh();
+}
 function rvUpdateBar(){
   var n=reviewSel.size;
   var c=document.getElementById('rv-bulk-count'); if(c) c.textContent=n+' selected';
   var b=document.getElementById('rv-skiptrace-btn'); if(b) b.disabled=(n===0);
   var e=document.getElementById('rv-export-btn'); if(e) e.disabled=(n===0);
+  var bb=document.getElementById('rv-d4dbot-btn'); if(bb) bb.disabled=(n===0);
+  d4dBotRefreshSoon();
   var d=document.getElementById('rv-delete-btn'); if(d) d.disabled=(n===0);
   var mc=document.getElementById('d4d-mail-csv-btn'); if(mc) mc.disabled=(n===0);
   var ms=document.getElementById('d4d-mail-sent-btn'); if(ms) ms.disabled=(n===0);
