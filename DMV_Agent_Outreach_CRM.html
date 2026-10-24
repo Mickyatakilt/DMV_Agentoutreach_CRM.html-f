@@ -2209,7 +2209,8 @@ function fbRowHTML(l){
 var hoPendingLeadIds=[];   // lead ids with a bot handoff that is still waiting (not clicked Handled), for EVERY assignee
 function isBotHandoffLead(l){ return !!l && hoPendingLeadIds.indexOf(+l.id)>-1; }
 function fbHandoffCardHTML(){
-  var hs=(botHandoffs||[]).filter(hoVisible); if(!hs.length) return '';
+  // Facebook tab = JV wholesaler bot only; seller / realtor handoffs live in Tasks, D4D handoffs in the D4D tab
+  var hs=(botHandoffs||[]).filter(function(h){ return hoVisible(h) && (String(h.audience||'jv').toLowerCase()||'jv')==='jv'; }); if(!hs.length) return '';
   var rows=hs.map(function(h){
     var when=h.created_at?new Date(h.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
     return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid #fde68a">'
@@ -7637,7 +7638,7 @@ function hoRender(){
     var when=h.created_at?new Date(h.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
     return '<div class="ho-item"><div style="font-weight:800;font-size:14px">'+esc(h.name||'(no name)')+(h.phone?' \u00b7 <span style="color:var(--accent)">'+esc(h.phone)+'</span>':'')+'</div>'
       +'<div style="font-size:12px;color:#92400e;margin:2px 0 8px">'+esc(h.reason||'')+' <span style="color:var(--text3)">\u00b7 '+esc(when)+'</span></div>'
-      +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="btn btn-primary btn-sm" onclick="hoGo('+(h.lead_id||0)+')" style="font-weight:700">Open lead</button>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="btn btn-primary btn-sm" onclick="hoGo('+(h.lead_id||0)+',\''+esc(h.audience||'')+'\')" style="font-weight:700">Open lead</button>'
       +'<button class="btn btn-secondary btn-sm" onclick="hoHandled('+h.id+')" style="font-weight:700">\u2713 Handled</button>'
       +'<button class="btn btn-sm" onclick="hoDelete('+h.id+','+(h.lead_id||0)+')" title="Delete this lead from the CRM and clear the handoff" style="font-weight:700;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5">\uD83D\uDDD1 Delete</button>'+hoAssignSelect(h)+'</div></div>';
   }).join('');
@@ -7657,7 +7658,7 @@ async function renderHandoffsTab(){
       +'<td><b>'+esc(h.name||'(no name)')+'</b><div style="font-size:12px;color:var(--text3)">'+esc(h.phone||'')+'</div></td>'
       +'<td style="max-width:280px"><div style="font-weight:600">'+esc(h.reason||'')+'</div>'+(h.transcript?'<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px;color:var(--accent)">Last texts</summary><div style="white-space:pre-wrap;font-size:12px;color:var(--text2);margin-top:4px">'+esc(h.transcript)+'</div></details>':'')+'</td>'
       +'<td>'+hoAssignSelect(h)+'</td><td>'+st+'</td>'
-      +'<td style="white-space:nowrap"><button class="btn btn-primary btn-sm" onclick="hoGo('+(h.lead_id||0)+')">Open lead</button> '
+      +'<td style="white-space:nowrap"><button class="btn btn-primary btn-sm" onclick="hoGo('+(h.lead_id||0)+',\''+esc(h.audience||'')+'\')">Open lead</button> '
       +(h.seen_at?'<button class="btn btn-secondary btn-sm" onclick="hoReopen('+h.id+')">Reopen</button>':'<button class="btn btn-secondary btn-sm" onclick="hoHandled('+h.id+')">&#10003; Handled</button>')+'</td></tr>';
   }).join(''):'<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">Nothing here.</td></tr>';
   host.innerHTML='<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'+fb('open','Open ('+open.length+')')+fb('done','Handled ('+done.length+')')+fb('all','All ('+hoAllRows.length+')')+'</div>'
@@ -7672,7 +7673,19 @@ function hoToggle(open){
   var p=document.getElementById('ho-panel'); if(p) p.classList.toggle('open',hoOpenP);
   var t=document.getElementById('ho-toast'); if(t) t.classList.remove('on');
 }
-function hoGo(leadId){ hoToggle(false); if(activeSection!=='fb') setSection('fb'); if(leadId) setTimeout(function(){ openDetail(leadId); },150); }
+// Where a bot handoff opens: JV -> Facebook Scrape; Seller / Realtor -> Tasks tab; D4D -> D4D tab.
+// New seller/realtor handoffs are Tasks (jv_leads, ms-timestamp ids); older seller handoffs still point at a normal lead.
+function hoGo(leadId, aud){
+  hoToggle(false);
+  aud=String(aud||'').toLowerCase();
+  var id=+leadId, task=id?(jvLeads||[]).filter(function(x){return +x.id===id;})[0]:null;
+  if(task){ setSection('outreach'); setTab('jvleads'); setTimeout(function(){ openJVDetail(task.id); },150); return; }
+  var hl=id?(leads||[]).filter(function(x){return +x.id===id;})[0]:null;
+  if(aud==='d4d' || (hl && isD4DRow(hl))) setSection('d4d');
+  else if(aud==='jv' || aud==='') setSection('fb');
+  else { setSection('outreach'); if(aud==='seller'||aud==='realtor') setTab('followups'); }
+  if(id) setTimeout(function(){ openDetail(id); },150);
+}
 async function hoHandled(id){
   hoList=hoList.filter(function(h){return +h.id!==+id;}); botHandoffs=hoList.slice(); hoRender();
   try{ await sbFetch('bot_handoffs?id=eq.'+id,'PATCH',{seen_at:new Date().toISOString(),handled_by:hoMe()}); }catch(e){ showToast('Could not mark handled','error'); }
@@ -7684,9 +7697,16 @@ async function hoHandled(id){
 async function hoDelete(id,leadId){
   var h=(hoList||[]).find(function(x){return +x.id===+id;})||{};
   var l=leadId?(leads||[]).find(function(x){return +x.id===+leadId;}):null;
-  var label=(l&&(l.name||l.address))||h.name||h.phone||'this lead';
+  var tk=(!l&&leadId)?(jvLeads||[]).find(function(x){return +x.id===+leadId;}):null;   // seller/realtor handoffs are Tasks
+  var label=(tk&&(tk.name||tk.location))||(l&&(l.name||l.address))||h.name||h.phone||'this lead';
   if(!confirm('Delete '+label+' from the CRM and clear this handoff?')) return;
-  if(l){
+  if(tk){
+    tk.deleted=true; tk.deletedAt=new Date().toISOString(); saveJV();
+    var okT=false; try{ okT=await saveJVToSupabase(tk); }catch(e){}
+    if(!okT){ showToast('Could not delete the task (not saved) - try again','error'); tk.deleted=false; tk.deletedAt=''; saveJV(); return; }
+    showToast('Task deleted','warning',function(){ tk.deleted=false; tk.deletedAt=''; saveJV(); render(); saveJVToSupabase(tk); showToast('Restored (handoff stays cleared)','success'); });
+    render();
+  } else if(l){
     l.deleted=true; l.deletedAt=new Date().toISOString();
     save(); var ok=false; try{ ok=await saveLeadToSupabase(l); }catch(e){}
     if(!ok){ showToast('Could not delete the lead (not saved) — try again','error'); l.deleted=false; l.deletedAt=''; save(); return; }
