@@ -9019,7 +9019,7 @@ function renderFBSection(){
   host.innerHTML = '<div class="lt-wrap">'
     +'<div class="lt-head"><div><h2>&#128241; Facebook Scraper</h2>'
     +'<p>Pulls fresh <b>Name + Phone</b> seller/investor leads from your Facebook groups. Your Mac scrapes <b>public &amp; private</b> groups when it&#8217;s on; the cloud covers public groups when it&#8217;s off. It rotates <b>5&ndash;7 groups a day</b> automatically, and each run lands below as a dated file with <b>Download CSV</b>. Files from the free Apify cloud backup are marked <b>&#9729;&#65039; Apify</b>.</p></div>'
-    +'<div class="lt-actions" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+fbStatusPillHTML()+'<div>'+fbScanBtnHTML()+'</div></div></div>'
+    +'<div class="lt-actions" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+fbStatusPillHTML()+'<div>'+fbScanBtnHTML()+'</div><button class="btn btn-sm" onclick="fbBotOpen()" style="font-weight:700;background:#0f766e;color:#fff;border:1px solid #0f766e" title="Text the contacts in the files you tick below (or all files not yet marked Texted)">&#129302; FB Text Bot</button></div></div>'
     +fbSystemBanner()
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">'
       +fbStatCard('Groups saved', groupsN, usable+' usable')
@@ -9505,7 +9505,8 @@ async function fbBotCall(payload){
 function fbBotClose(){ var o=document.getElementById('fbbot-overlay'); if(o) o.remove(); }
 function fbBotOpen(){
   var ids=fbCheckedFileIds();
-  if(!ids.length){ showToast('Tick at least one scrape file first','error'); return; }
+  if(!ids.length){ ids=(fbFiles||[]).filter(function(f){ return !f.texted && !f.deleted; }).slice(0,10).map(function(f){ return +f.id; }); }
+  if(!ids.length){ showToast('No scrape files waiting (all are marked Texted)','error'); return; }
   if(ids.length>10){ showToast('Pick 10 files or fewer at a time','error'); return; }
   fbBotClose();
   var o=document.createElement('div'); o.id='fbbot-overlay';
