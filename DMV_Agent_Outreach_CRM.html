@@ -9028,10 +9028,12 @@ function renderFBSection(){
     +'</div>'
     +'<div style="font-size:12px;color:var(--text3);margin-bottom:6px">&#128336; Next automatic run: <b>~6:00 AM</b> (your Mac&#8217;s time), daily</div>'
     +(nextUp?'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Next up: '+nextUp+'&hellip;</div>':'')
+    +fbBotPanelHTML()
     +fbLeadsPanelHTML()
     +fbFilesToolbar(files)
     +batchesTable
     +'</div>';
+  fbBotLoadStatus();
 }
 function fbStatCard(label,val,sub){
   return '<div style="flex:1;min-width:150px;background:var(--bg2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:10px 14px">'
@@ -9501,6 +9503,51 @@ var FBBOT_URL = SUPABASE_URL + '/functions/v1/fb-bot-enroll';
 async function fbBotCall(payload){
   var r=await fetch(FBBOT_URL,{ method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:JSON.stringify(payload) });
   return r.json().catch(function(){ return {ok:false,message:'Bad answer from the server'}; });
+}
+// ---- FB Text Bot status panel: who was texted, when, and what failed / was skipped (read via fb-bot-status) ----
+var fbBotRows=null, fbBotFilter='all', fbBotStatTimer=null;
+function fbBotTime(iso){ return iso ? new Date(iso).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : ''; }
+async function fbBotLoadStatus(){
+  try{
+    var r=await fetch(SUPABASE_URL+'/functions/v1/fb-bot-status',{ method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:'{}' });
+    var j=await r.json(); if(j&&j.ok){ fbBotRows=j.rows||[]; }
+  }catch(e){}
+  var el=document.getElementById('fbbot-status-wrap'); if(el) el.innerHTML=fbBotPanelInner();
+  clearTimeout(fbBotStatTimer);
+  fbBotStatTimer=setTimeout(function(){ if(activeSection==='fb') fbBotLoadStatus(); },20000);
+}
+function fbBotSetFilter(f){ fbBotFilter=f; var el=document.getElementById('fbbot-status-wrap'); if(el) el.innerHTML=fbBotPanelInner(); }
+function fbBotPanelHTML(){ return '<div id="fbbot-status-wrap">'+fbBotPanelInner()+'</div>'; }
+function fbBotPanelInner(){
+  if(fbBotRows===null) return '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Loading FB Text Bot status&hellip;</div>';
+  if(!fbBotRows.length) return '';
+  var c={pending:0,sending:0,sent:0,failed:0,cancelled:0};
+  fbBotRows.forEach(function(x){ c[x.status]=(c[x.status]||0)+1; });
+  var waiting=c.pending+c.sending;
+  var lastSent=''; fbBotRows.forEach(function(x){ if(x.sent_at && x.sent_at>lastSent) lastSent=x.sent_at; });
+  function chip(key,label,n,bg,fg){
+    var on=(fbBotFilter===key);
+    return '<button onclick="fbBotSetFilter(\''+key+'\')" style="cursor:pointer;border:2px solid '+(on?fg:'transparent')+';background:'+bg+';color:'+fg+';border-radius:10px;padding:6px 12px;font-weight:800;font-size:13px">'+label+' '+n+'</button>';
+  }
+  var rows=fbBotRows.filter(function(x){ return fbBotFilter==='all' || (fbBotFilter==='waiting' ? (x.status==='pending'||x.status==='sending') : x.status===fbBotFilter); });
+  var stColor={sent:'#166534',pending:'#075985',sending:'#075985',failed:'#b91c1c',cancelled:'#92400e'};
+  var stLabel={sent:'&#10003; Sent',pending:'&#9201; Waiting',sending:'&#9201; Sending',failed:'&#9888; Failed',cancelled:'Skipped'};
+  var body=rows.slice(0,300).map(function(x){
+    var when = x.status==='sent' ? fbBotTime(x.sent_at) : (x.status==='pending'||x.status==='sending') ? 'due '+fbBotTime(x.send_at) : '';
+    return '<tr><td style="padding:6px 10px;font-weight:600">'+esc(x.name||'(no name)')+'</td><td style="padding:6px 10px">'+esc(rvFmtPhone(x.phone))+'</td>'
+      +'<td style="padding:6px 10px;color:var(--text3)">'+esc(fbPrettyDate(x.file_date))+'</td>'
+      +'<td style="padding:6px 10px;font-weight:700;color:'+(stColor[x.status]||'#334155')+'">'+(stLabel[x.status]||esc(x.status))+'</td>'
+      +'<td style="padding:6px 10px;white-space:nowrap">'+when+'</td>'
+      +'<td style="padding:6px 10px;color:var(--text3);font-size:12px">'+esc(x.note||'')+'</td></tr>';
+  }).join('');
+  return '<div style="margin-bottom:18px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+    +'<div style="font-weight:800;font-size:15px;margin-right:6px">FB Text Bot status</div>'
+    +chip('sent','Sent',c.sent,'#dcfce7','#166534')+chip('waiting','Waiting',waiting,'#e0f2fe','#075985')+chip('failed','Failed',c.failed,'#fee2e2','#b91c1c')+chip('cancelled','Skipped',c.cancelled,'#fef3c7','#92400e')+chip('all','All',fbBotRows.length,'#f1f5f9','#334155')
+    +'<button class="btn btn-secondary btn-sm" onclick="fbBotLoadStatus()">Refresh</button>'
+    +(lastSent?'<span style="font-size:12px;color:var(--text3)">Last text sent '+fbBotTime(lastSent)+'</span>':'')
+    +'</div><div class="table-container" style="padding:0"><div class="table-wrap" style="max-height:340px;overflow:auto"><table><thead><tr><th>Name</th><th>Phone</th><th>File</th><th>Status</th><th>Time</th><th>Note</th></tr></thead><tbody>'
+    +(body||'<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:14px">Nothing in this view.</td></tr>')+'</tbody></table></div></div>'
+    +'<div style="font-size:11.5px;color:var(--text3);margin-top:4px">Skipped = the number was already a contact in GHL, so it was not texted. Updates every 20 seconds. Times are your computer&#39;s clock.</div></div>';
 }
 function fbBotClose(){ var o=document.getElementById('fbbot-overlay'); if(o) o.remove(); }
 function fbBotOpen(){
