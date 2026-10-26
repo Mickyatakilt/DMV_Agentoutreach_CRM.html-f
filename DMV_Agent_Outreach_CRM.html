@@ -9525,19 +9525,19 @@ function fbBotPanelInner(){
   if(!fbBotRows.length) return '';
   var all=fbBotRows;
   var scoped=fbBotDate ? all.filter(function(x){ return fbBotDay(x)===fbBotDate; }) : all;
-  var c={pending:0,sending:0,sent:0,failed:0,cancelled:0};
+  var c={pending:0,sending:0,ready:0,sent:0,failed:0,cancelled:0};
   scoped.forEach(function(x){ c[x.status]=(c[x.status]||0)+1; });
-  var waiting=c.pending+c.sending;
+  var waiting=c.pending+c.sending+c.ready;
   var lastSent=''; scoped.forEach(function(x){ if(x.sent_at && x.sent_at>lastSent) lastSent=x.sent_at; });
   function chip(key,label,n,bg,fg){
     var on=(fbBotFilter===key);
     return '<button onclick="fbBotSetFilter(\''+key+'\')" style="cursor:pointer;border:2px solid '+(on?fg:'transparent')+';background:'+bg+';color:'+fg+';border-radius:10px;padding:6px 12px;font-weight:800;font-size:13px">'+label+' '+n+'</button>';
   }
-  var rows=scoped.filter(function(x){ return fbBotFilter==='all' || (fbBotFilter==='waiting' ? (x.status==='pending'||x.status==='sending') : x.status===fbBotFilter); });
-  var stColor={sent:'#166534',pending:'#075985',sending:'#075985',failed:'#b91c1c',cancelled:'#92400e'};
-  var stLabel={sent:'&#10003; Sent',pending:'&#9201; Waiting',sending:'&#9201; Sending',failed:'&#9888; Failed',cancelled:'Skipped'};
+  var rows=scoped.filter(function(x){ return fbBotFilter==='all' || (fbBotFilter==='waiting' ? (x.status==='pending'||x.status==='sending'||x.status==='ready') : x.status===fbBotFilter); });
+  var stColor={sent:'#166534',pending:'#075985',sending:'#075985',ready:'#075985',failed:'#b91c1c',cancelled:'#92400e'};
+  var stLabel={sent:'&#10003; Sent',pending:'&#9201; Adding to GHL',sending:'&#9201; Working',ready:'&#10003; In GHL, text waiting',failed:'&#9888; Failed',cancelled:'Skipped'};
   var body=rows.slice(0,300).map(function(x){
-    var when = x.status==='sent' ? fbBotTime(x.sent_at) : (x.status==='pending'||x.status==='sending') ? 'due '+fbBotTime(x.send_at) : '';
+    var when = x.status==='sent' ? fbBotTime(x.sent_at) : (x.status==='pending'||x.status==='sending'||x.status==='ready') ? 'queued '+fbBotTime(x.created_at) : '';
     return '<tr><td style="padding:6px 10px;font-weight:600">'+esc(x.name||'(no name)')+'</td><td style="padding:6px 10px">'+esc(rvFmtPhone(x.phone))+'</td>'
       +'<td style="padding:6px 10px;color:var(--text3)">'+esc(fbPrettyDate(x.file_date))+'</td>'
       +'<td style="padding:6px 10px;font-weight:700;color:'+(stColor[x.status]||'#334155')+'">'+(stLabel[x.status]||esc(x.status))+'</td>'
@@ -9566,7 +9566,7 @@ function fbBotOpen(){
   o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   o.innerHTML='<div style="background:var(--bg,#fff);color:var(--text1,#0f172a);border-radius:12px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.35)">'
     +'<div style="font-size:16px;font-weight:800;margin-bottom:4px">FB Text Bot &mdash; '+ids.length+' file'+(ids.length!==1?'s':'')+'</div>'
-    +'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Each Name + Phone becomes a NEW contact in GHL (tagged jv-bot) and gets the text below. Texts go out only 9:30am-7pm New York, about 45 seconds apart. When someone replies, the JV Wholesaler Bot answers. Numbers that already exist in GHL or are in another text bot are skipped.</div>'
+    +'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Step 1: every Name + Phone is added to GHL as a NEW contact (tagged jv-bot), about 5 minutes for ~120 contacts. Step 2: once they are all added, the bulk text goes out (about 15 a minute), only 9:30am-7pm New York. When someone replies, the JV Wholesaler Bot answers. Numbers that already exist in GHL or are in another text bot are skipped.</div>'
     +'<label style="font-size:12px;font-weight:700">Opener text (type it; <b>{name}</b> = their first name, optional)</label>'
     +'<textarea id="fbbot-text" rows="3" placeholder="Type your first text here..." style="width:100%;margin:4px 0 12px;padding:8px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font-size:13px"></textarea>'
     +'<div style="font-size:12px;font-weight:700;margin-bottom:4px">When</div>'
@@ -9593,7 +9593,7 @@ async function fbBotPreview(){
   document.getElementById('fbbot-go-btn').disabled=true;
   var r=await fbBotCall(pl);
   if(!r||!r.ok){ box.innerHTML='<span style="color:#b91c1c">'+esc((r&&r.message)||'Could not preview')+'</span>'; return; }
-  var h='<div style="font-weight:700;margin-bottom:4px">'+r.would_queue+' will be texted, '+r.skipped+' skipped'+(r.finishes?' (last one goes out about '+d4dBotFmt(r.finishes)+' or later)':'')+'</div>'+((r.skipped_files&&r.skipped_files.length)?'<div style="color:#b45309;margin-bottom:4px">&#9888; Files marked Texted = Yes were left out: '+esc(r.skipped_files.join(', '))+'</div>':'')+'<div style="max-height:220px;overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:6px 8px">';
+  var h='<div style="font-weight:700;margin-bottom:4px">'+r.would_queue+' will be texted, '+r.skipped+' skipped'+''+'</div>'+((r.skipped_files&&r.skipped_files.length)?'<div style="color:#b45309;margin-bottom:4px">&#9888; Files marked Texted = Yes were left out: '+esc(r.skipped_files.join(', '))+'</div>':'')+'<div style="max-height:220px;overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:6px 8px">';
   r.results.forEach(function(x){
     h+=x.ok
       ? '<div style="margin-bottom:6px"><b>'+esc(x.name||'(no name)')+'</b> &middot; '+esc(rvFmtPhone(x.phone))+'<br><span style="color:var(--text2)">'+esc(x.message)+'</span></div>'
