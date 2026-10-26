@@ -9555,6 +9555,29 @@ function fbBotPanelInner(){
     +(body||'<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:14px">Nothing in this view.</td></tr>')+'</tbody></table></div></div>'
     +'<div style="font-size:11.5px;color:var(--text3);margin-top:4px">Skipped = the number was already a contact in GHL, so it was not texted. Updates every 20 seconds. Times are your computer&#39;s clock.</div></div>';
 }
+// ---- "Send from" number picker (GHL phone numbers) shared by the D4D and FB text-bot popups ----
+var ghlNumbersCache=null;
+async function ghlNumbersLoad(){
+  if(ghlNumbersCache) return ghlNumbersCache;
+  try{
+    var r=await fetch(SUPABASE_URL+'/functions/v1/ghl-numbers',{ method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:'{}' });
+    var j=await r.json(); if(j&&j.ok){ ghlNumbersCache=j; return j; }
+    return {ok:false,message:(j&&j.message)||'Could not load numbers',numbers:[]};
+  }catch(e){ return {ok:false,message:'Could not load numbers',numbers:[]}; }
+}
+function ghlFromPickerHTML(selId){
+  return '<label style="font-size:12px;font-weight:700">Send from (GHL number)</label>'
+    +'<select id="'+selId+'" style="width:100%;margin:4px 0 12px;padding:7px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font-size:13px"><option value="">Loading numbers&hellip;</option></select>';
+}
+async function ghlFromPickerFill(selId){
+  var j=await ghlNumbersLoad(); var sel=document.getElementById(selId); if(!sel) return;
+  if(!j.ok||!j.numbers||!j.numbers.length){ sel.innerHTML='<option value="">GHL default number ('+esc(j.message||'list not available')+')</option>'; return; }
+  var def=j.numbers.filter(function(n){return n.isDefault;})[0];
+  sel.innerHTML='<option value="">GHL default'+(def?' ('+esc(rvFmtPhone(def.number))+')':'')+'</option>'
+    +j.numbers.filter(function(n){return n.sms;}).map(function(n){ return '<option value="'+esc(n.number)+'">'+esc(rvFmtPhone(n.number))+' &mdash; '+esc(n.name||'')+'</option>'; }).join('');
+  if(j['default']){ sel.value=j['default']; }
+}
+function ghlFromValue(selId){ var e=document.getElementById(selId); return e?e.value:''; }
 function fbBotClose(){ var o=document.getElementById('fbbot-overlay'); if(o) o.remove(); }
 function fbBotOpen(){
   var ids=fbCheckedFileIds();
@@ -9569,6 +9592,7 @@ function fbBotOpen(){
     +'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Step 1: every Name + Phone is added to GHL as a NEW contact (tagged jv-bot), about 5 minutes for ~120 contacts. Step 2: once they are all added, the bulk text goes out (about 15 a minute), only 9:30am-7pm New York. When someone replies, the JV Wholesaler Bot answers. Numbers that already exist in GHL or are in another text bot are skipped.</div>'
     +'<label style="font-size:12px;font-weight:700">Opener text (type it; <b>{name}</b> = their first name, optional)</label>'
     +'<textarea id="fbbot-text" rows="3" placeholder="Type your first text here..." style="width:100%;margin:4px 0 12px;padding:8px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font-size:13px"></textarea>'
+    +ghlFromPickerHTML('fbbot-from')
     +'<div style="font-size:12px;font-weight:700;margin-bottom:4px">When</div>'
     +'<label style="display:block;font-size:13px;margin-bottom:4px"><input type="radio" name="fbbot-when" value="now" checked onchange="document.getElementById(\'fbbot-at\').disabled=true"> Send automatically (as soon as the 9:30am-7pm window is open)</label>'
     +'<label style="display:block;font-size:13px;margin-bottom:12px"><input type="radio" name="fbbot-when" value="at" onchange="document.getElementById(\'fbbot-at\').disabled=false"> Schedule for <input type="datetime-local" id="fbbot-at" disabled style="font-size:12px;padding:2px 4px"></label>'
@@ -9580,12 +9604,13 @@ function fbBotOpen(){
     +'</div></div>';
   document.body.appendChild(o);
   window.__fbBotIds=ids;
+  ghlFromPickerFill('fbbot-from');
 }
 function fbBotPayload(mode){
   var when=(document.querySelector('input[name="fbbot-when"]:checked')||{}).value;
   var at=document.getElementById('fbbot-at').value, sendAt=null;
   if(when==='at'){ if(!at){ showToast('Pick a date and time','error'); return null; } sendAt=new Date(at).toISOString(); }
-  return { mode:mode, file_ids:window.__fbBotIds, opener:document.getElementById('fbbot-text').value, send_at:sendAt, by:(currentUser&&currentUser.name)||'CRM' };
+  return { mode:mode, file_ids:window.__fbBotIds, opener:document.getElementById('fbbot-text').value, from_number:ghlFromValue('fbbot-from'), send_at:sendAt, by:(currentUser&&currentUser.name)||'CRM' };
 }
 async function fbBotPreview(){
   var pl=fbBotPayload('preview'); if(!pl) return;
@@ -9624,6 +9649,7 @@ async function d4dBotOpen(){
     +'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Texts go out only 9:30am-7pm New York. After text 1: text 2 after 24 hours, then 24 hours later (still no reply) the lead is handed off to Zablon to call. If the seller replies, the normal Seller Bot takes over (same hand-off rules). Circles under Phones tick when each text is sent.</div>'
     +'<label style="font-size:12px;font-weight:700">Opener text (use {address})</label>'
     +'<textarea id="d4dbot-text" rows="3" style="width:100%;margin:4px 0 12px;padding:8px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font-size:13px">'+esc(opener)+'</textarea>'
+    +ghlFromPickerHTML('d4dbot-from')
     +'<div style="font-size:12px;font-weight:700;margin-bottom:4px">When</div>'
     +'<label style="display:block;font-size:13px;margin-bottom:4px"><input type="radio" name="d4dbot-when" value="now" checked onchange="document.getElementById(\'d4dbot-at\').disabled=true"> Send automatically (as soon as the 9:30am-7pm window is open)</label>'
     +'<label style="display:block;font-size:13px;margin-bottom:12px"><input type="radio" name="d4dbot-when" value="at" onchange="document.getElementById(\'d4dbot-at\').disabled=false"> Schedule for <input type="datetime-local" id="d4dbot-at" disabled style="font-size:12px;padding:2px 4px"></label>'
@@ -9635,13 +9661,14 @@ async function d4dBotOpen(){
     +'</div></div>';
   document.body.appendChild(o);
   window.__d4dBotIds=ids; window.__d4dBotOv={};
+  ghlFromPickerFill('d4dbot-from');
 }
 function d4dBotPayload(mode){
   var when=(document.querySelector('input[name="d4dbot-when"]:checked')||{}).value;
   var at=document.getElementById('d4dbot-at').value;
   var sendAt=null;
   if(when==='at'){ if(!at){ showToast('Pick a date and time','error'); return null; } sendAt=new Date(at).toISOString(); }
-  return { mode:mode, lead_ids:window.__d4dBotIds, opener:document.getElementById('d4dbot-text').value, send_at:sendAt, by:(currentUser&&currentUser.name)||'CRM', phone_overrides:(window.__d4dBotOv||{}) };
+  return { mode:mode, lead_ids:window.__d4dBotIds, opener:document.getElementById('d4dbot-text').value, from_number:ghlFromValue('d4dbot-from'), send_at:sendAt, by:(currentUser&&currentUser.name)||'CRM', phone_overrides:(window.__d4dBotOv||{}) };
 }
 async function d4dBotPreview(){
   var pl=d4dBotPayload('preview'); if(!pl) return;
