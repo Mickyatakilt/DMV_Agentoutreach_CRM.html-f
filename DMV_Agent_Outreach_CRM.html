@@ -9505,7 +9505,9 @@ async function fbBotCall(payload){
   return r.json().catch(function(){ return {ok:false,message:'Bad answer from the server'}; });
 }
 // ---- FB Text Bot status panel: who was texted, when, and what failed / was skipped (read via fb-bot-status) ----
-var fbBotRows=null, fbBotFilter='all', fbBotStatTimer=null;
+var fbBotRows=null, fbBotFilter='all', fbBotStatTimer=null, fbBotDate='';
+function fbBotDay(x){ var iso=x.sent_at||x.send_at||x.created_at; if(!iso) return ''; var d=new Date(iso); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+function fbBotSetDate(v){ fbBotDate=v||''; var el=document.getElementById('fbbot-status-wrap'); if(el) el.innerHTML=fbBotPanelInner(); }
 function fbBotTime(iso){ return iso ? new Date(iso).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : ''; }
 async function fbBotLoadStatus(){
   try{
@@ -9521,15 +9523,17 @@ function fbBotPanelHTML(){ return '<div id="fbbot-status-wrap">'+fbBotPanelInner
 function fbBotPanelInner(){
   if(fbBotRows===null) return '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Loading FB Text Bot status&hellip;</div>';
   if(!fbBotRows.length) return '';
+  var all=fbBotRows;
+  var scoped=fbBotDate ? all.filter(function(x){ return fbBotDay(x)===fbBotDate; }) : all;
   var c={pending:0,sending:0,sent:0,failed:0,cancelled:0};
-  fbBotRows.forEach(function(x){ c[x.status]=(c[x.status]||0)+1; });
+  scoped.forEach(function(x){ c[x.status]=(c[x.status]||0)+1; });
   var waiting=c.pending+c.sending;
-  var lastSent=''; fbBotRows.forEach(function(x){ if(x.sent_at && x.sent_at>lastSent) lastSent=x.sent_at; });
+  var lastSent=''; scoped.forEach(function(x){ if(x.sent_at && x.sent_at>lastSent) lastSent=x.sent_at; });
   function chip(key,label,n,bg,fg){
     var on=(fbBotFilter===key);
     return '<button onclick="fbBotSetFilter(\''+key+'\')" style="cursor:pointer;border:2px solid '+(on?fg:'transparent')+';background:'+bg+';color:'+fg+';border-radius:10px;padding:6px 12px;font-weight:800;font-size:13px">'+label+' '+n+'</button>';
   }
-  var rows=fbBotRows.filter(function(x){ return fbBotFilter==='all' || (fbBotFilter==='waiting' ? (x.status==='pending'||x.status==='sending') : x.status===fbBotFilter); });
+  var rows=scoped.filter(function(x){ return fbBotFilter==='all' || (fbBotFilter==='waiting' ? (x.status==='pending'||x.status==='sending') : x.status===fbBotFilter); });
   var stColor={sent:'#166534',pending:'#075985',sending:'#075985',failed:'#b91c1c',cancelled:'#92400e'};
   var stLabel={sent:'&#10003; Sent',pending:'&#9201; Waiting',sending:'&#9201; Sending',failed:'&#9888; Failed',cancelled:'Skipped'};
   var body=rows.slice(0,300).map(function(x){
@@ -9542,7 +9546,9 @@ function fbBotPanelInner(){
   }).join('');
   return '<div style="margin-bottom:18px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
     +'<div style="font-weight:800;font-size:15px;margin-right:6px">FB Text Bot status</div>'
-    +chip('sent','Sent',c.sent,'#dcfce7','#166534')+chip('waiting','Waiting',waiting,'#e0f2fe','#075985')+chip('failed','Failed',c.failed,'#fee2e2','#b91c1c')+chip('cancelled','Skipped',c.cancelled,'#fef3c7','#92400e')+chip('all','All',fbBotRows.length,'#f1f5f9','#334155')
+    +chip('sent','Sent',c.sent,'#dcfce7','#166534')+chip('waiting','Waiting',waiting,'#e0f2fe','#075985')+chip('failed','Failed',c.failed,'#fee2e2','#b91c1c')+chip('cancelled','Skipped',c.cancelled,'#fef3c7','#92400e')+chip('all','All',scoped.length,'#f1f5f9','#334155')
+    +'<label style="font-size:12px;font-weight:700;color:var(--text2)">Date <input type="date" value="'+esc(fbBotDate)+'" onchange="fbBotSetDate(this.value)" style="font-size:12px;padding:2px 4px"></label>'
+    +(fbBotDate?'<button class="btn btn-secondary btn-sm" onclick="fbBotSetDate(\'\')">All dates</button>':'')
     +'<button class="btn btn-secondary btn-sm" onclick="fbBotLoadStatus()">Refresh</button>'
     +(lastSent?'<span style="font-size:12px;color:var(--text3)">Last text sent '+fbBotTime(lastSent)+'</span>':'')
     +'</div><div class="table-container" style="padding:0"><div class="table-wrap" style="max-height:340px;overflow:auto"><table><thead><tr><th>Name</th><th>Phone</th><th>File</th><th>Status</th><th>Time</th><th>Note</th></tr></thead><tbody>'
