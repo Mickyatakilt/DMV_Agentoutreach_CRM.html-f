@@ -9410,6 +9410,8 @@ function d4dBotChipHTML(id){
   var oth=canc.filter(function(r){return !/replied/i.test(r.note||'');});
   if(oth.length) h+=chip('#f1f5f9','#475569','#cbd5e1','Stopped: '+esc(oth[oth.length-1].note||'cancelled'));
   if(bad.length) h+=chip('#fee2e2','#b91c1c','#fca5a5','&#9888; '+d4dBotRowLabel(bad[bad.length-1])+' failed: '+esc(bad[bad.length-1].note||''));
+  // label every bot-handled lead so it is obvious in Hot Leads why it is there (the bot owns the follow-up date)
+  if(h) h='<div style="font-size:10px;font-weight:900;letter-spacing:.3px;padding:2px 7px;border-radius:8px;background:#0f766e;color:#fff;margin-bottom:2px;white-space:nowrap;display:inline-block">&#129302; BOT FOLLOW-UP</div><br>'+h;
   return h;
 }
 // ---- Text Bot tab: every lead in the bot, what it did and what is next ----
@@ -9432,8 +9434,10 @@ function d4dBotCell(rows,step,kind){
   return '<span style="color:#b91c1c;font-weight:700">&#9888; Failed</span><br><span style="font-size:11px;color:var(--text3)">'+esc(q.note||'')+'</span>';
 }
 function d4dBotTabRowsHTML(){
-  var list=d4dBotList||[];
-  if(!list.length) return '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text3)">No leads in the text bot yet. Tick leads in the Leads tab and press D4D Text Bot.</td></tr>';
+  // follow-up date lives on the lead; soonest/overdue first, leads without a date last
+  var fuOf=function(x){ var l=leads.find(function(y){return y.id===x.lead_id;}); return (l&&l.followUpDate)||''; };
+  var list=(d4dBotList||[]).slice().sort(function(a,b){ var fa=fuOf(a)||'9999', fb=fuOf(b)||'9999'; return fa>fb?1:fa<fb?-1:0; });
+  if(!list.length) return '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--text3)">No leads in the text bot yet. Tick leads in the Leads tab and press D4D Text Bot.</td></tr>';
   return list.map(function(x){
     var rows=x.rows, rep=rows.some(function(q){return q.status==='cancelled'&&/replied/i.test(q.note||'');});
     var ho=rows.some(function(q){return q.kind==='handoff'&&q.status==='sent';});
@@ -9448,6 +9452,7 @@ function d4dBotTabRowsHTML(){
       +'<td style="padding:8px 10px">'+d4dBotCell(rows,1)+'</td>'
       +'<td style="padding:8px 10px">'+d4dBotCell(rows,2)+'</td>'
       +'<td style="padding:8px 10px">'+(hasT3?'Text 3<br>'+d4dBotCell(rows,3):d4dBotCell(rows,3,'handoff'))+'</td>'
+      +'<td style="padding:8px 10px;white-space:nowrap">'+(fuOf(x)?followUpChip(fuOf(x)):'<span style="color:var(--text4)">&#8212;</span>')+'</td>'
       +'<td style="padding:8px 10px">'+stat+'</td>'
       +'<td style="padding:8px 10px"><button class="btn btn-secondary btn-sm" onclick="openDetail('+x.lead_id+')">Open</button></td></tr>';
   }).join('');
@@ -9457,7 +9462,7 @@ function renderD4DBotTabHTML(){
   clearTimeout(d4dBotListTimer);
   d4dBotListTimer=setTimeout(function pollBot(){ if(activeSection==='d4d'&&d4dTab==='bot'){ d4dBotLoadList(); d4dBotListTimer=setTimeout(pollBot,30000); } },30000);
   return '<p style="font-size:12px;color:var(--text3);margin:-4px 0 12px">Every lead in the D4D text bot. Text 1 goes out when you queue it (9:30am-7pm NY), text 2 about 24 hours later, then the hand-off to the assigned teammate 24 hours after text 2 if the seller never replied. A reply cancels the rest and the Seller Bot takes over. Updates every 30 seconds.</p>'
-    +'<div class="table-container"><div class="table-wrap"><table><thead><tr><th>Lead</th><th>Phone</th><th>Text 1</th><th>Text 2</th><th>Hand-off</th><th>Status</th><th></th></tr></thead><tbody id="d4dbot-tab-body">'+d4dBotTabRowsHTML()+'</tbody></table></div></div>';
+    +'<div class="table-container"><div class="table-wrap"><table><thead><tr><th>Lead</th><th>Phone</th><th>Text 1</th><th>Text 2</th><th>Hand-off</th><th>Follow-up</th><th>Status</th><th></th></tr></thead><tbody id="d4dbot-tab-body">'+d4dBotTabRowsHTML()+'</tbody></table></div></div>';
 }
 function d4dBotRefreshSoon(){ if(d4dBotTimer) return; d4dBotTimer=setTimeout(function(){ d4dBotTimer=null; d4dBotRefresh(); },400); }
 async function d4dBotRefresh(){
