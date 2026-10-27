@@ -1606,6 +1606,7 @@ function fromRow(r) {
     shared: r.shared||false, sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
     recipientFollowUpDate: r.recipient_follow_up_date||'',
+    botFuBot: r.bot_fu_bot||'', botFuLabel: r.bot_fu_label||'', botFuDue: r.bot_fu_due||'',
     deleted: r.deleted||false, deletedAt: r.deleted_at||''
   };
 }
@@ -7693,6 +7694,14 @@ async function hoHandled(id){
   if(activeSection==='fb') renderFBSection();
   if(activeSection==='dashboard' && dashTab==='handoffs') renderHandoffsTab();
 }
+// When a lead / task is deleted from its own screen, its open bot handoff notification clears too (marked handled, so the history stays on Dashboard > Handoffs).
+async function hoClearForLead(leadId){
+  var id=+leadId; if(!id) return;
+  hoList=(hoList||[]).filter(function(h){return +h.lead_id!==id;}); botHandoffs=hoList.slice(); try{ hoRender(); }catch(e){}
+  try{ await sbFetch('bot_handoffs?lead_id=eq.'+id+'&seen_at=is.null','PATCH',{seen_at:new Date().toISOString(),handled_by:(hoMe()||'')+' (lead deleted)'}); }catch(e){}
+  try{ hoLoad(); }catch(e){}
+  if(activeSection==='dashboard' && dashTab==='handoffs') renderHandoffsTab();
+}
 // Delete from the handoff popup: soft-delete the lead (same as the normal lead delete, restorable) and clear the handoff.
 async function hoDelete(id,leadId){
   var h=(hoList||[]).find(function(x){return +x.id===+id;})||{};
@@ -10543,6 +10552,38 @@ function buildFollowUpQueueHTML(nationwideOnly){
   var future   = allFU.filter(function(x){ return getFUStatus(x.lead.followUpDate)==='future'; });
   var total    = allFU.length;
 
+  // Bot follow-ups: one section per bot, only the leads that bot is following up on (Nationwide tab = Nationwide leads, DMV tab = DMV leads)
+  var botLeads = leads.filter(function(l){
+    return !l.deleted && l.botFuBot && l.botFuDue && (nationwideOnly ? l.nationwide==='Yes' : l.nationwide!=='Yes') && (!fuAssignee || l.assignedTo===fuAssignee);
+  }).sort(function(a,b){ return a.botFuDue > b.botFuDue ? 1 : -1; });
+  function botFuItem(l){
+    var d = daysDiff(l.botFuDue);
+    var lbl = d<0 ? Math.abs(d)+'d overdue' : d===0 ? 'Today' : d===1 ? 'Tomorrow' : 'In '+d+'d';
+    var col = d<0 ? '#dc2626' : d===0 ? '#b45309' : '#0f766e';
+    return '<div class="followup-item" onclick="openDetail('+l.id+')" style="cursor:pointer">'
+      + '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">'
+      + '<span style="font-size:9px;font-weight:900;color:#fff;background:#0f766e;border-radius:4px;padding:1px 5px">&#129302; BOT</span>'
+      + '<div class="followup-item-addr" style="margin:0">'+esc(l.address||l.name||'—')+'</div>'
+      + (l.assignedTo?'<span style="margin-left:6px;font-size:10px;font-weight:800;color:#6d28d9;background:#ede9fe;border:1px solid #c4b5fd;border-radius:10px;padding:1px 7px;white-space:nowrap">&#128100; '+esc(l.assignedTo)+'</span>':'')
+      + '</div>'
+      + '<div class="followup-item-meta"><span style="font-weight:700">'+esc(l.botFuLabel||'')+'</span><span>'+esc(l.name||'')+'</span>'
+      + (l.phone?'<span style="color:#059669;font-weight:600">&#128222; '+esc(String(l.phone).split('/')[0].trim())+'</span>':'')+'</div>'
+      + '<div class="followup-item-date" style="color:'+col+'">'+l.botFuDue+' &middot; '+lbl+'</div>'
+      + '</div>';
+  }
+  function botFuSections(){
+    if(!botLeads.length) return '';
+    var names = []; botLeads.forEach(function(l){ if(names.indexOf(l.botFuBot)<0) names.push(l.botFuBot); });
+    return names.map(function(n){
+      var items = botLeads.filter(function(l){ return l.botFuBot===n; });
+      return '<div class="followup-group" style="margin-top:14px">'
+        + '<div class="followup-group-header" style="background:#ccfbf1;color:#0f766e">'
+        + '<span>&#129302; '+esc(n)+' Bot Follow-Ups</span>'
+        + '<span style="background:#0f766e;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px">'+items.length+'</span>'
+        + '</div><div style="max-height:420px;overflow-y:auto">'+items.map(botFuItem).join('')+'</div></div>';
+    }).join('');
+  }
+
   function fuItem(x){
     var l = x.lead;
     var d = daysDiff(l.followUpDate);
@@ -10616,6 +10657,7 @@ function buildFollowUpQueueHTML(nationwideOnly){
     + fuCard('Due Today', dueToday, '#b45309', '#fef3c7', '&#128993;')
     + fuCard('Next 3 Days', soon, '#0d9488', '#f0fdfa', '&#128994;')
     + '</div>'
+    + botFuSections()
     + '<div class="followup-group" style="margin-top:14px">'
     + '<div class="followup-group-header" style="background:var(--surface3);color:var(--text2)">'
     + '<span>&#128198; All Upcoming</span>'
@@ -11163,6 +11205,7 @@ function deleteLead(){
     showToast('Restored','success');
   });
   saveLeadToSupabase(l);
+  hoClearForLead(delId);
 }
 
 function showSetupModal(){
@@ -12065,6 +12108,7 @@ function deleteJVLead(id){
   if(!l) return;
   l.deleted=true; l.deletedAt=new Date().toISOString();
   saveJV();renderJVLeadsTab();saveJVToSupabase(l);
+  hoClearForLead(id);
   showToast('JV lead deleted','warning',function(){
     l.deleted=false; l.deletedAt='';
     saveJV(); renderJVLeadsTab(); saveJVToSupabase(l);
