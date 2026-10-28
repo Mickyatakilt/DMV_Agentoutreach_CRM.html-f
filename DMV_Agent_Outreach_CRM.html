@@ -2236,7 +2236,7 @@ function fbFollowUpDashHTML(){
   function item(l){
     var d=daysDiff(l.followUpDate), lbl=d<0?Math.abs(d)+'d overdue':d===0?'Today':d===1?'Tomorrow':'In '+d+'d';
     return '<div class="followup-item" onclick="openDetail('+l.id+')" style="cursor:pointer">'
-      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><div class="followup-item-addr" style="margin:0">'+esc(l.name||l.address||'&#8212;')+'</div>'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><div class="followup-item-addr" style="margin:0">'+esc(l.name||l.address||'&#8212;')+'</div>'+botIconHTML(l)
       +(l.assignedTo?'<span style="font-size:10px;font-weight:800;color:#6d28d9;background:#ede9fe;border:1px solid #c4b5fd;border-radius:10px;padding:1px 7px">&#128100; '+esc(l.assignedTo)+'</span>':'')+'</div>'
       +'<div class="followup-item-meta">'+(l.address?'<span>'+esc(l.address)+'</span>':'')+(l.phone?'<a href="#" data-phone="'+esc(l.phone.split('/')[0].trim())+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);font-weight:600;text-decoration:none">'+esc(l.phone)+' &#8599;</a>':'')+'</div>'
       +'<div class="followup-item-date">'+l.followUpDate+' &middot; '+lbl+'</div>'
@@ -8712,7 +8712,7 @@ function d4dHotFollowUpHTML(hot){
     var lbl=d<0?Math.abs(d)+'d overdue':d===0?'Today':d===1?'Tomorrow':'In '+d+'d';
     var ph=l.phone?String(l.phone).split('/')[0].trim():'';
     return '<div class="followup-item" onclick="openDetail('+l.id+')" style="cursor:pointer">'
-      +'<div class="followup-item-addr" style="margin:0 0 3px">'+esc(l.address||l.name||'&#8212;')+'</div>'
+      +'<div class="followup-item-addr" style="margin:0 0 3px">'+esc(l.address||l.name||'&#8212;')+botIconHTML(l)+'</div>'
       +'<div class="followup-item-meta"><span>'+esc(l.name||'')+'</span>'+(ph?'<a href="tel:'+esc(ph.replace(/[^\d+]/g,''))+'" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:none">'+esc(ph)+'</a>':'')+'</div>'
       +'<div class="followup-item-date">'+l.followUpDate+' &middot; '+lbl+'</div>'
       +(l.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+esc(l.notes.substring(0,80))+(l.notes.length>80?'&#8230;':'')+'</div>':'')
@@ -10580,7 +10580,7 @@ function buildFollowUpQueueHTML(nationwideOnly){
     return '<div class="followup-item" onclick="openDetail('+l.id+')" style="cursor:pointer">'
       + '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">'
       + '<span style="font-size:9px;font-weight:900;color:#fff;background:#0f766e;border-radius:4px;padding:1px 5px">&#129302; BOT</span>'
-      + '<div class="followup-item-addr" style="margin:0">'+esc(l.address||l.name||'—')+'</div>'
+      + '<div class="followup-item-addr" style="margin:0">'+esc(l.address||l.name||'—')+botIconHTML(l)+'</div>'
       + (l.assignedTo?'<span style="margin-left:6px;font-size:10px;font-weight:800;color:#6d28d9;background:#ede9fe;border:1px solid #c4b5fd;border-radius:10px;padding:1px 7px;white-space:nowrap">&#128100; '+esc(l.assignedTo)+'</span>':'')
       + '</div>'
       + '<div class="followup-item-meta"><span style="font-weight:700">'+esc(l.botFuLabel||'')+'</span><span>'+esc(l.name||'')+'</span>'
@@ -10625,6 +10625,7 @@ function buildFollowUpQueueHTML(nationwideOnly){
       + '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">'
       + srcBadge(x.type, x.lead)
       + '<div class="followup-item-addr" style="margin:0">'+esc(title)+'</div>'
+      + botIconHTML(l)
       + (l.assignedTo?'<span style="margin-left:6px;font-size:10px;font-weight:800;color:#6d28d9;background:#ede9fe;border:1px solid #c4b5fd;border-radius:10px;padding:1px 7px;white-space:nowrap">&#128100; '+esc(l.assignedTo)+'</span>':'')
       + (isFbLead(l)?'<span style="margin-left:6px;font-size:9px;font-weight:900;color:#1d4ed8;background:#dbeafe;border:1px solid #93c5fd;border-radius:4px;padding:1px 5px">FB</span>':'')
       + '</div>'
@@ -11625,7 +11626,7 @@ function renderJVLeadsTab(){
         var d=daysDiff(l.followUpDate);
         var lbl=d<0?Math.abs(d)+'d overdue':d===0?'Today':'In '+d+'d';
         return '<div onclick="openJVDetail('+l.id+')" style="cursor:pointer;padding:5px 0;border-bottom:1px solid '+color+'33;display:flex;justify-content:space-between;align-items:center">'
-          +'<div><div style="font-weight:600;font-size:13px">'+esc(l.name||'Unknown')+'</div>'
+          +'<div><div style="font-weight:600;font-size:13px">'+esc(l.name||'Unknown')+botIconHTML(l)+'</div>'
           +(l.phone?'<div style="font-size:11px;color:var(--text3)">'+esc(l.phone)+'</div>':'')+'</div>'
           +'<div style="text-align:right"><div style="font-size:11px;font-weight:700;color:'+color+'">'+lbl+'</div>'
           +'<div style="font-size:10px;color:var(--text3)">'+l.followUpDate+'</div></div></div>';
