@@ -2209,6 +2209,10 @@ function fbRowHTML(l){
 }
 var hoPendingLeadIds=[];   // lead ids with a bot handoff that is still waiting (not clicked Handled), for EVERY assignee
 function isBotHandoffLead(l){ return !!l && hoPendingLeadIds.indexOf(+l.id)>-1; }
+var hoEverLeadIds=[];   // lead ids that EVER had a bot handoff (handled or not) -> permanent bot icon
+var hoEverSig=null;
+// Small robot icon shown next to any lead/task that came through a text-bot handoff (ever, or Seller Bot source)
+function botIconHTML(l){ if(!l || !(isBotHandoffLead(l) || hoEverLeadIds.indexOf(+l.id)>-1 || l.leadSource==='Seller Bot')) return ''; return ' <span title="Came through a text-bot handoff" style="font-size:14px;vertical-align:middle">&#129302;</span>'; }
 function fbHandoffCardHTML(){
   // Facebook tab = JV wholesaler bot only; seller / realtor handoffs live in Tasks, D4D handoffs in the D4D tab
   var hs=(botHandoffs||[]).filter(function(h){ return hoVisible(h) && (String(h.audience||'jv').toLowerCase()||'jv')==='jv'; }); if(!hs.length) return '';
@@ -7623,6 +7627,19 @@ async function hoLoad(){
   try{ if(hoBaseTitle===null) hoBaseTitle=document.title.replace(/^\(\d+\)\s*/,''); document.title=(hoList.length?'('+hoList.length+') ':'')+hoBaseTitle; }catch(e){}
   // re-draw the Facebook list only when the set of waiting handoffs actually changed (we poll every 15 s now; do not disturb typing)
   var sig=raw.map(function(h){return h.id;}).join(',');
+  // permanent bot icon: every lead that ever had a handoff; reload only when the waiting set changes (or first run)
+  if(hoEverSig===null || sig!==hoPendingSig){
+    try{
+      var allH=(await sbFetch('bot_handoffs?select=lead_id&order=created_at.desc&limit=2000'))||[];
+      var ever=allH.map(function(h){ return +h.lead_id; }).filter(Boolean);
+      var esig=ever.length+':'+ever.slice(0,20).join(',');
+      if(esig!==hoEverSig){
+        hoEverLeadIds=ever; hoEverSig=esig;
+        var ae=document.activeElement, typing=ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+        if(!typing && (activeSection==='outreach'||activeSection==='dashboard') && typeof render==='function') render();
+      }
+    }catch(e){}
+  }
   if(sig!==hoPendingSig){ hoPendingSig=sig; if(activeSection==='fb' && typeof renderFBSection==='function' && fbGroups!==null) renderFBSection(); }
 }
 function hoToast(fresh){
@@ -10273,7 +10290,7 @@ function renderTable(data,start,end){
   const rows=data.slice(start,end).map(l=>`
     <tr style="${selectedLeads.has(l.id)?'background:#eff6ff;':''}">
       <td onclick="event.stopPropagation()"><input type="checkbox" ${selectedLeads.has(l.id)?'checked':''} onchange="toggleSelect(${l.id},this.checked)" style="width:15px;height:15px;cursor:pointer"></td>
-      <td onclick="openDetail(${l.id})"><div style="display:flex;align-items:center;gap:4px"><div class="address-cell">${esc(l.address)||''}${cmtRowDot('lead',l.id)}</div>${pwIcon(l.address)}</div></td>
+      <td onclick="openDetail(${l.id})"><div style="display:flex;align-items:center;gap:4px"><div class="address-cell">${esc(l.address)||''}${botIconHTML(l)}${cmtRowDot('lead',l.id)}</div>${pwIcon(l.address)}</div></td>
       <td onclick="openDetail(${l.id})"><div class="phone-cell">${l.phone?`<a href="#" data-phone="${l.phone.split('/')[0].trim()}" data-cid="${l.ghlContactId||''}" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-weight:600" title="${l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel'}">${esc(l.phone.split('/')[0].trim())} &#8599;</a>${ghlCallBtn(l.ghlContactId)}`:''}</div></td>
       <td onclick="openDetail(${l.id})"><span class="money-val">${formatMoney(l.offer)}</span></td>
       <td onclick="openDetail(${l.id})"><span class="arv-val">${formatMoney(l.arv)}</span></td>
@@ -10474,7 +10491,7 @@ function renderCards(data,start,end){
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
           <input type="checkbox" ${selectedLeads.has(l.id)?'checked':''} onchange="toggleSelect(${l.id},this.checked)" style="width:15px;height:15px;cursor:pointer" onclick="event.stopPropagation()">
           <div style="flex:1;cursor:pointer" onclick="openDetail(${l.id})">
-            <div class="card-address">${esc(l.address)||''}${cmtRowDot('lead',l.id)}</div>
+            <div class="card-address">${esc(l.address)||''}${botIconHTML(l)}${cmtRowDot('lead',l.id)}</div>
             <div class="card-phone">${l.phone?'&#128222; '+esc(l.phone.split('/')[0].trim()):''}</div>
           </div>
           <div onclick="openDetail(${l.id})" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${statusBadge(l.status)}${l.score?leadScoreBadgeHTML(l.score):''}</div>
@@ -11632,7 +11649,7 @@ function renderJVLeadsTab(){
       + filtered.map(function(l){
           return '<tr onclick="openJVDetail('+l.id+')" style="'+(jvSelectedLeads.has(l.id)?'background:#eff6ff;':'')+'">'
             + '<td onclick="event.stopPropagation()"><input type="checkbox" '+(jvSelectedLeads.has(l.id)?'checked':'')+' onchange="jvToggleSelect('+l.id+',this.checked)" style="width:15px;height:15px;cursor:pointer"></td>'
-            + '<td style="font-weight:600">'+esc(l.name||'')+cmtRowDot('task',l.id)+'</td>'
+            + '<td style="font-weight:600">'+esc(l.name||'')+botIconHTML(l)+cmtRowDot('task',l.id)+'</td>'
             + '<td style="font-size:12px">'+esc(l.location||l.address||'')+(l.location?'<br><a href="'+buildZillowUrl(l.location)+'" target="_blank" onclick="event.stopPropagation()" class="detail-link" style="font-size:11px">&#127968; Zillow &#8599;</a>':'')+'</td>'
             + '<td>'+(l.phone&&l.phone!=='No phone -- DM only'?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):esc(l.phone||''))+'</td>'
             + '<td>'+scoreBadgeHTML(l.score)+'</td>'
