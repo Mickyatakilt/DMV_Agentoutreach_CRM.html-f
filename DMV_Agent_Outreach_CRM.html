@@ -10329,7 +10329,7 @@ function renderLeadsTab(){
     <div style="background:#fff3cd;border:1.5px solid #fcd34d;border-radius:8px;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;margin:8px 24px 0;">
       <span style="font-size:13px;font-weight:600;color:#b45309">&#10003; ${selCount} lead${selCount!==1?'s':''} selected</span>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-secondary btn-sm" onclick="clearSelection()">Clear</button>
+        <button class="btn btn-primary btn-sm" onclick="downloadSelectedLeads()" title="Download the selected leads as CSV (address, phone, agent)">&#11015; Download CSV</button><button class="btn btn-secondary btn-sm" onclick="clearSelection()">Clear</button>
         <button class="btn btn-danger btn-sm" onclick="deleteSelected()">&#128465; Delete ${selCount} Selected</button>
       </div>
     </div>`:'';
@@ -10410,6 +10410,45 @@ function renderTable(data,start,end){
 function toggleSelect(id,checked){if(checked)selectedLeads.add(id);else selectedLeads.delete(id);renderLeadsTab();}
 function toggleSelectAll(checked){const filtered=getFiltered();const page=filtered.slice((currentPage-1)*PAGE_SIZE,currentPage*PAGE_SIZE);if(checked)page.forEach(l=>selectedLeads.add(l.id));else page.forEach(l=>selectedLeads.delete(l.id));renderLeadsTab();}
 function clearSelection(){selectedLeads.clear();renderLeadsTab();}
+// ---- Download selected leads (Property Address, Phone Number, Agent Name): together or separate per agent ----
+function leadCsvCell(v){ v=String(v==null?'':v); return /[",\r\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function leadsToCsv(list){
+  var out=['Property Address,Phone Number,Agent Name'];
+  list.forEach(function(l){ out.push([l.address,l.phone,l.name].map(leadCsvCell).join(',')); });
+  return out.join('\r\n');
+}
+function selectedLeadList(){ return leads.filter(function(l){ return selectedLeads.has(l.id); }); }
+function downloadSelectedLeads(){
+  var list=selectedLeadList();
+  if(!list.length){ showToast('Select at least one lead first','error'); return; }
+  var agents={}; list.forEach(function(l){ agents[(l.name||'').trim().toLowerCase()]=1; });
+  var na=Object.keys(agents).length;
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:460px">'
+    +'<div class="modal-header"><div class="modal-title">&#11015; Download '+list.length+' lead'+(list.length!==1?'s':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    +'<div class="modal-body"><p style="margin:0 0 14px;font-size:13.5px;color:var(--text2)">'+list.length+' leads from '+na+' agent'+(na!==1?'s':'')+' (Property Address, Phone Number, Agent Name). How do you want them?</p>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
+      +'<button class="btn btn-primary" style="font-weight:700;flex:1" onclick="downloadLeadsChosen(\'together\')">&#128196; Together<br><span style="font-weight:500;font-size:11.5px">one combined CSV</span></button>'
+      +'<button class="btn btn-secondary" style="font-weight:700;flex:1" onclick="downloadLeadsChosen(\'separate\')">&#128209; Separate<br><span style="font-weight:500;font-size:11.5px">one CSV per agent ('+na+')</span></button>'
+    +'</div></div></div></div>';
+}
+function downloadLeadsChosen(mode){
+  var list=selectedLeadList(); closeModal();
+  if(!list.length) return;
+  var today=new Date().toISOString().slice(0,10);
+  if(mode==='together'){
+    fbSaveCsv(leadsToCsv(list),'selected-leads-'+list.length+'-'+today+'.csv');
+    showToast('Downloaded 1 CSV ('+list.length+' leads)','success');
+    return;
+  }
+  var groups={}, order=[];
+  list.forEach(function(l){ var k=(l.name||'').trim()||'No agent name'; var kk=k.toLowerCase(); if(!groups[kk]){ groups[kk]={name:k,rows:[]}; order.push(kk); } groups[kk].rows.push(l); });
+  order.forEach(function(kk,i){
+    var g=groups[kk], safe=g.name.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'')||'agent';
+    setTimeout(function(){ fbSaveCsv(leadsToCsv(g.rows),'leads-'+safe+'-'+today+'.csv'); }, i*500);
+  });
+  showToast('Downloading '+order.length+' CSV file'+(order.length!==1?'s':'')+'... (allow multiple downloads if your browser asks)','success');
+}
 function deleteSelected(){
   const count=selectedLeads.size;
   if(!count) return;
@@ -12227,7 +12266,7 @@ function onSearch(v){
   var hasFilter=filters.status||filters.month||filters.source||filters.search||activeStatFilter;
   var delFilterBtn=hasFilter?'<button class="btn btn-danger btn-sm" onclick="deleteAllFiltered()">&#128465; Delete All '+filtered.length+'</button>':'';
   var selCount=selectedLeads.size;
-  var bulkBar=selCount>0?'<div style="background:#fff3cd;border:1.5px solid #fcd34d;border-radius:8px;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;margin:8px 24px 0;"><span style="font-size:13px;font-weight:600;color:#b45309">&#10003; '+selCount+' lead'+(selCount!==1?'s':'')+' selected</span><div style="display:flex;gap:8px"><button class="btn btn-secondary btn-sm" onclick="clearSelection()">Clear</button><button class="btn btn-danger btn-sm" onclick="deleteSelected()">&#128465; Delete '+selCount+'</button></div></div>':'';
+  var bulkBar=selCount>0?'<div style="background:#fff3cd;border:1.5px solid #fcd34d;border-radius:8px;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;margin:8px 24px 0;"><span style="font-size:13px;font-weight:600;color:#b45309">&#10003; '+selCount+' lead'+(selCount!==1?'s':'')+' selected</span><div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="downloadSelectedLeads()" title="Download the selected leads as CSV (address, phone, agent)">&#11015; Download CSV</button><button class="btn btn-secondary btn-sm" onclick="clearSelection()">Clear</button><button class="btn btn-danger btn-sm" onclick="deleteSelected()">&#128465; Delete '+selCount+'</button></div></div>':'';
   var content2=filtered.length===0?'<div class="empty"><div class="empty-icon">&#128269;</div><h3>No leads match your search</h3></div>':(view==='table'?renderTable(filtered,start,end):renderCards(filtered,start,end));
   var pagination=filtered.length>PAGE_SIZE?renderPagination(filtered.length):'';
   // Update result count
