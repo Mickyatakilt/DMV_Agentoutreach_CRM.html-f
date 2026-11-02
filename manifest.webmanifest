@@ -1,7 +1,7 @@
 {
-  "name": "Mestate Agent Outreach CRM",
-  "short_name": "Mestate CRM",
-  "description": "Mestate DMV agent outreach, probate, list tracking, and dispo CRM.",
+  "name": "GoMestate",
+  "short_name": "GoMestate",
+  "description": "GoMestate: DMV agent outreach, probate, list tracking, and dispo CRM.",
   "start_url": "./DMV_Agent_Outreach_CRM.html",
   "scope": "/DMV_Agentoutreach_CRM.html-f/",
   "display": "standalone",
