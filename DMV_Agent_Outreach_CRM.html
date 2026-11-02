@@ -9206,6 +9206,7 @@ function fbFilesToolbar(files){
     +'<label style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--text2);cursor:pointer">'
       +'<input type="checkbox" id="fb-sel-all" onchange="fbToggleAllFiles(this.checked)" style="width:16px;height:16px;cursor:pointer"> Select all</label>'
     +'<button class="btn btn-sm" onclick="fbBotOpen()" style="font-weight:700;background:#0f766e;color:#fff;border:1px solid #0f766e" title="Create each Name + Phone in the selected files as a NEW GHL contact and text them (JV Wholesaler Bot answers replies)">FB Text Bot</button>'
+    +'<button class="btn btn-primary btn-sm" onclick="fbDownloadSelected()" style="font-weight:700" title="Download the selected files as CSV (one at a time, or combined into one file)">&#11015; Download selected CSV</button>'
     +'<button class="btn btn-danger btn-sm" onclick="fbDeleteSelectedFiles()" style="font-weight:700">&#128465; Delete selected (<span id="fb-sel-count">0</span>)</button>'
   +'</div>';
 }
@@ -9221,6 +9222,55 @@ function fbUpdateSelCount(){
 function fbToggleAllFiles(checked){
   Array.prototype.slice.call(document.querySelectorAll('.fb-file-cb')).forEach(function(c){ c.checked=checked; });
   fbUpdateSelCount();
+}
+// ---- Download the selected files: separate CSVs, or ONE combined CSV ----
+function fbSaveCsv(text, filename){
+  var blob=new Blob([text],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ try{URL.revokeObjectURL(a.href);}catch(e){} },1500);
+}
+// One header row, then every data row from every selected file (oldest file first).
+function fbCombineCsv(files){
+  var out=['Name,Phone'];
+  files.forEach(function(f){
+    String(f.csv||'').split(/\r?\n/).forEach(function(line,i){
+      if(i===0 && /^\s*name\s*,\s*phone\s*$/i.test(line)) return;
+      if(line.trim()) out.push(line);
+    });
+  });
+  return out.join('\r\n');
+}
+function fbDownloadSelected(){
+  var ids=fbCheckedFileIds();
+  if(!ids.length){ showToast('Select at least one file first','error'); return; }
+  var files=ids.map(fbFileById).filter(Boolean).sort(function(a,b){ return String(a.date_scraped||'')<String(b.date_scraped||'')?-1:(String(a.date_scraped||'')>String(b.date_scraped||'')?1:(+a.id-+b.id)); });
+  if(!files.length) return;
+  if(files.length===1){ fbFileDownloadCsv(files[0].id); return; }
+  var n=files.length, total=files.reduce(function(s,f){ return s+(f.lead_count||0); },0);
+  document.getElementById('modal-container').innerHTML =
+    '<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:460px">'
+    +'<div class="modal-header"><div class="modal-title">&#11015; Download '+n+' files</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div>'
+    +'<div class="modal-body"><p style="margin:0 0 14px;font-size:13.5px;color:var(--text2)">'+n+' files selected ('+total+' numbers). How do you want them?</p>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
+      +'<button class="btn btn-primary" style="font-weight:700;flex:1" onclick="fbDownloadChosen(\'together\')">&#128196; Together<br><span style="font-weight:500;font-size:11.5px">one combined CSV</span></button>'
+      +'<button class="btn btn-secondary" style="font-weight:700;flex:1" onclick="fbDownloadChosen(\'separate\')">&#128209; Separate<br><span style="font-weight:500;font-size:11.5px">one CSV per file</span></button>'
+    +'</div></div></div></div>';
+}
+function fbDownloadChosen(mode){
+  var ids=fbCheckedFileIds();
+  var files=ids.map(fbFileById).filter(Boolean).sort(function(a,b){ return String(a.date_scraped||'')<String(b.date_scraped||'')?-1:(String(a.date_scraped||'')>String(b.date_scraped||'')?1:(+a.id-+b.id)); });
+  closeModal();
+  if(!files.length) return;
+  if(mode==='together'){
+    var today=new Date().toISOString().slice(0,10);
+    fbSaveCsv(fbCombineCsv(files), 'facebook-scrape-combined-'+files.length+'-files-'+today+'.csv');
+    showToast('Downloaded 1 combined CSV ('+files.length+' files)','success');
+  } else {
+    // staggered so the browser does not block the extra downloads; filenames carry the id so same-day files do not collide
+    files.forEach(function(f,i){ setTimeout(function(){ fbSaveCsv(f.csv||'Name,Phone', 'facebook-scrape-'+(f.date_scraped||'file')+'-'+f.id+'.csv'); }, i*500); });
+    showToast('Downloading '+files.length+' CSV files&hellip; (allow multiple downloads if your browser asks)','success');
+  }
 }
 async function fbDeleteSelectedFiles(){
   var ids=fbCheckedFileIds();
