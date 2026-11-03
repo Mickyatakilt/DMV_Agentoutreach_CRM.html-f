@@ -8566,6 +8566,9 @@ function rvRowHTML(it){
   var mailBtn = (isD4D && l.address && mailStatus!=='mail_queued' && mailStatus!=='mail_sent')
     ? '<button class="btn btn-sm" onclick="d4dQueueForMail('+l.id+')" title="Queue this property for a direct-mail postcard/letter" style="margin-right:6px;background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>'
     : '';
+  var munaBtn = (isD4D && l.address && mailStatus!=='muna')
+    ? '<button class="btn btn-sm" onclick="d4dQueueForMuna(\'lead\','+l.id+')" title="Send this property to Muna" style="margin-right:6px;background:#fff7ed;color:#c2410c;border:1px solid #fdba74;font-weight:700">&#10145;&#65039; Send to Muna</button>'
+    : '';
   var mailBadge = mailStatus==='mail_sent'
     ? '<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;background:#dcfce7;color:#166534;border:1px solid #86efac;margin-right:6px;white-space:nowrap">&#9993; Mail sent</span>'
     : mailStatus==='mail_queued'
@@ -8597,7 +8600,7 @@ function rvRowHTML(it){
             : '<button class="btn btn-sm" onclick="d4dSendForReview('+l.id+')" title="Send this lead to the admin Review queue" style="margin-right:6px;background:#fef9c3;color:#92400e;border:1px solid #facc15;font-weight:700">&#128232; Send for Review</button>')
         : '')
       +propwireBtn
-      +mailBtn
+      +mailBtn+munaBtn
       +'<button class="btn btn-secondary btn-sm" onclick="'+openFn+'">Open</button> '
       +(inHotTab
         ? '<button class="btn btn-secondary btn-sm" onclick="d4dUnhot('+l.id+')" title="Put this lead back in the D4D Leads list" style="font-weight:700">&#8617; Back to Leads</button> '
@@ -8632,8 +8635,8 @@ function rvBulkBarHTML(items){
 }
 function renderReviewTab(){
   // Review = team/recipient-flagged leads + Tasks. D4D auto-scan leads live in the D4D tab now.
-  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && (l.d4dStatus==='review_sent' || (!isD4DLead(l) && !isFbBatchLead(l))) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'; }).map(function(l){ return {kind:'lead', l:l}; })
-    .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview && t.d4dStatus!=='mail_queued' && t.d4dStatus!=='mail_sent'; }).map(function(t){ return {kind:'task', l:t}; }))
+  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && (l.d4dStatus==='review_sent' || (!isD4DLead(l) && !isFbBatchLead(l))) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna'; }).map(function(l){ return {kind:'lead', l:l}; })
+    .concat(jvLeads.filter(function(t){ return !t.deleted && t.needsReview && t.d4dStatus!=='mail_queued' && t.d4dStatus!=='mail_sent' && t.d4dStatus!=='muna'; }).map(function(t){ return {kind:'task', l:t}; }))
     .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
     // Note: Hot rows stay in place (turn red where they are) — no reordering, so clicks never shift the list under you.
   document.getElementById('tab-content').innerHTML = '<div style="padding:16px 24px">'
@@ -8653,6 +8656,8 @@ function renderD4DSection(){
   var host=document.getElementById('section-main'); if(!host) return;
   var mailN = leads.filter(function(l){ return !l.deleted && l.d4dStatus==='mail_queued'; }).length
     + jvLeads.filter(function(l){ return !l.deleted && l.d4dStatus==='mail_queued'; }).length;
+  var munaN = leads.filter(function(l){ return !l.deleted && l.d4dStatus==='muna'; }).length
+    + jvLeads.filter(function(l){ return !l.deleted && l.d4dStatus==='muna'; }).length;
   var hotLeads = d4dHotList();
   var hotN = hotLeads.length;
   var hotOver = hotLeads.filter(function(l){ return l.followUpDate && getFUStatus(l.followUpDate)==='overdue'; }).length;
@@ -8673,13 +8678,16 @@ function renderD4DSection(){
       +'<div class="tab '+(d4dTab==='mail'?'active':'')+'" onclick="d4dSetTab(\'mail\')">&#9993; Send Mail'
         +(mailN?' <span style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">'+mailN+'</span>':'')
       +'</div>'
+      +'<div class="tab '+(d4dTab==='muna'?'active':'')+'" onclick="d4dSetTab(\'muna\')">&#10145;&#65039; Send to Muna'
+        +(munaN?' <span style="background:#fff7ed;color:#c2410c;border:1px solid #fdba74;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">'+munaN+'</span>':'')
+      +'</div>'
     +'</div>'
-    +(d4dTab==='bot' ? renderD4DBotTabHTML() : d4dTab==='mail' ? renderD4DMailTabHTML() : d4dTab==='hot' ? renderD4DHotTabHTML() : renderD4DLeadsTabHTML())
+    +(d4dTab==='bot' ? renderD4DBotTabHTML() : d4dTab==='muna' ? renderD4DMunaTabHTML() : d4dTab==='mail' ? renderD4DMailTabHTML() : d4dTab==='hot' ? renderD4DHotTabHTML() : renderD4DLeadsTabHTML())
     +'</div>';
   rvUpdateBar();
 }
 function renderD4DLeadsTabHTML(){
-  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && isD4DLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && !d4dIsHot(l); }).map(function(l){ return {kind:'lead', l:l}; })
+  var items = leads.filter(function(l){ return !l.deleted && l.needsReview && isD4DLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna' && !d4dIsHot(l); }).map(function(l){ return {kind:'lead', l:l}; })
     .sort(function(a,b){ return ((b.l.reviewSentAt||b.l.updatedAt||'') > (a.l.reviewSentAt||a.l.updatedAt||'')) ? 1 : -1; });
   return rvBulkBarHTML(items)+rvTableHTML(items,'&#128663;','No D4D leads yet — click &#9889; Scan Now');
 }
@@ -8687,7 +8695,7 @@ function renderD4DLeadsTabHTML(){
 // D4D follow-up board below) -- never in the CRM Tasks tab or CRM Follow-Ups. Uses the existing
 // d4d_status column (value 'hot'), so no DB migration is needed.
 // A D4D lead with a follow-up date set belongs on this D4D follow-up side, never in DMV Follow-Ups.
-function d4dIsHot(l){ return !!l && l.d4dStatus==='hot' || (isD4DRow(l) && !!l.followUpDate && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'); }
+function d4dIsHot(l){ return !!l && l.d4dStatus==='hot' || (isD4DRow(l) && !!l.followUpDate && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna'); }
 function d4dHotList(){ return leads.filter(function(l){ return !l.deleted && d4dIsHot(l); }); }
 async function d4dSendHot(id){
   var l=leads.find(function(x){return x.id===id;});
@@ -8712,7 +8720,7 @@ async function d4dSetFollowUp(id,val){
   var l=leads.find(function(x){return x.id===id;});
   if(!l) return;
   l.followUpDate=val||'';
-  if(val && isD4DRow(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent') l.d4dStatus='hot';
+  if(val && isD4DRow(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna') l.d4dStatus='hot';
   save(); d4dRefreshTab();
   var ok=await saveLeadToSupabase(l);
   if(!ok) showToast('Cloud sync failed -- check your connection','error');
@@ -8823,6 +8831,7 @@ function d4dMailRowHTML(item){
       +(sent
         ? '<button class="btn btn-secondary btn-sm" onclick="d4dUnmarkMailSent(\''+kind+'\','+l.id+')" title="Undo — mark as queued again">Undo Sent</button> '
         : '<button class="btn btn-green btn-sm" onclick="d4dMarkMailSent(\''+kind+'\','+l.id+')" title="Mark this postcard/letter as mailed">&#9989; Mark Mail Sent</button> ')
+      +'<button class="btn btn-sm" onclick="d4dQueueForMuna(\''+kind+'\','+l.id+')" title="Send this property to Muna" style="background:#fff7ed;color:#c2410c;border:1px solid #fdba74;font-weight:700">&#10145;&#65039; Muna</button> '
       +'<button class="btn btn-danger btn-sm" onclick="d4dRemoveFromMailQueue(\''+kind+'\','+l.id+')" title="Take this off the mail list">Remove</button>'
     +'</td>'
   +'</tr>';
@@ -8841,6 +8850,7 @@ function d4dMailBulkBarHTML(items){
       +'<span id="rv-bulk-count" style="font-size:13px;font-weight:600;color:var(--text2)">0 selected</span>'
       +'<button id="d4d-mail-csv-btn" class="btn btn-primary btn-sm" onclick="d4dMailExportSelected()" disabled style="font-weight:700">&#11015; Download Mailing List (CSV)</button>'
       +'<button id="d4d-mail-sent-btn" class="btn btn-green btn-sm" onclick="d4dMarkMailSentSelected()" disabled style="font-weight:700">&#9989; Mark Mail Sent</button>'
+      +'<button id="d4d-muna-btn" class="btn btn-sm" onclick="d4dMunaSendSelected()" disabled style="font-weight:700;background:#fff7ed;color:#c2410c;border:1px solid #fdba74">&#10145;&#65039; Send to Muna</button>'
       +'<button id="d4d-mail-remove-btn" class="btn btn-danger btn-sm" onclick="d4dRemoveFromMailQueueSelected()" disabled style="font-weight:700">&#128465; Remove selected</button>'
       +'<button class="btn btn-secondary btn-sm" onclick="rvClearSel()">Clear</button>'
     +'</div>';
@@ -8924,6 +8934,94 @@ function d4dRemoveFromMailQueueSelected(){
   save(); saveJV(); rvClearSel(); d4dRefreshTab();
   sel.forEach(function(item){ d4dMailSaveFn(item.kind)(item.l); });
   showToast('Removed '+sel.length+' from mail list','success');
+}
+// ============================================================================
+// D4D ➡️ SEND TO MUNA sub-tab — a second queue next to ✉️ Send Mail. Same mechanics: d4d_status
+// = 'muna' (no schema change), the item leaves every other list and lives only here until
+// Remove sends it back. Works for leads and tasks; reuses reviewSel/rvToggle selection.
+// ============================================================================
+async function d4dQueueForMuna(kind,id){
+  if(typeof id==='undefined'){ id=kind; kind='lead'; }
+  var l=d4dMailArr(kind).find(function(x){return x.id===id;});
+  if(!l){ showToast('Lead not found','error'); return; }
+  l.d4dStatus='muna';
+  var tag='Sent to Muna — '+new Date().toLocaleDateString();
+  l.notes=l.notes?(l.notes+'\n'+tag):tag;
+  d4dMailLocalSave(kind); render();
+  var ok=await d4dMailSaveFn(kind)(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+  else showToast('Moved to the Send to Muna tab','success');
+}
+function d4dSendMunaFromModal(kind,id){
+  closeModal();
+  d4dQueueForMuna(kind,id);
+}
+function d4dMunaSendSelected(){
+  var sel=d4dMailSelectedLeads();
+  if(!sel.length){ showToast('Select at least one first','error'); return; }
+  var stamp=new Date().toLocaleDateString();
+  sel.forEach(function(item){
+    item.l.d4dStatus='muna';
+    var tag='Sent to Muna — '+stamp;
+    item.l.notes=item.l.notes?(item.l.notes+'\n'+tag):tag;
+  });
+  save(); saveJV(); rvClearSel(); d4dRefreshTab();
+  sel.forEach(function(item){ d4dMailSaveFn(item.kind)(item.l); });
+  showToast('Sent '+sel.length+' to Muna','success');
+}
+async function d4dRemoveFromMuna(kind,id){
+  var l=d4dMailArr(kind).find(function(x){return x.id===id;});
+  if(!l) return;
+  l.d4dStatus='';
+  d4dMailLocalSave(kind); d4dRefreshTab();
+  var ok=await d4dMailSaveFn(kind)(l);
+  if(!ok) showToast('Cloud sync failed -- check your connection','error');
+}
+function d4dMunaRemoveSelected(){
+  var sel=d4dMailSelectedLeads();
+  if(!sel.length){ showToast('Select at least one first','error'); return; }
+  if(!confirm('Take '+sel.length+' propert'+(sel.length===1?'y':'ies')+' back out of Send to Muna?')) return;
+  sel.forEach(function(item){ item.l.d4dStatus=''; });
+  save(); saveJV(); rvClearSel(); d4dRefreshTab();
+  sel.forEach(function(item){ d4dMailSaveFn(item.kind)(item.l); });
+  showToast('Removed '+sel.length+' from Send to Muna','success');
+}
+function d4dMunaRowHTML(item){
+  var kind=item.kind, l=item.l;
+  var addr = (kind==='task' ? l.location : l.address) || l.name || 'Untitled';
+  var mapHref = (l.webLink && /^https?:/i.test(l.webLink)) ? l.webLink : 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(addr);
+  var p = rvParseAddr(addr||'');
+  var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
+  var typeTag = kind==='task' ? '<span style="font-size:9px;font-weight:900;color:#0369a1;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:4px;padding:1px 4px;margin-right:5px">TASK</span>' : '';
+  var nm=(l.name||'').trim();
+  var ownerHtml = (nm && !/^(D4D Lead —|Name Not Available)/i.test(nm) && nm!==addr) ? esc(nm) : '&mdash;';
+  return '<tr>'
+    +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>'
+    +'<td onclick="'+openFn+'" style="cursor:pointer">'+typeTag+'<a href="'+esc(mapHref)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#2563eb;text-decoration:underline;font-weight:600">'+esc(addr)+'</a> '+pwIcon(addr)+'</td>'
+    +'<td style="font-size:12.5px">'+ownerHtml+'</td>'
+    +'<td style="font-size:12.5px">'+esc(p.city||'&mdash;')+'</td>'
+    +'<td style="font-size:12.5px">'+esc(p.state||'&mdash;')+'</td>'
+    +'<td style="font-size:12.5px">'+esc(p.zip||'&mdash;')+'</td>'
+    +'<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-danger btn-sm" onclick="d4dRemoveFromMuna(\''+kind+'\','+l.id+')" title="Take this back out of Send to Muna">Remove</button></td>'
+  +'</tr>';
+}
+function renderD4DMunaTabHTML(){
+  var items = leads.filter(function(l){ return !l.deleted && l.d4dStatus==='muna'; }).map(function(l){ return {kind:'lead', l:l}; })
+    .concat(jvLeads.filter(function(l){ return !l.deleted && l.d4dStatus==='muna'; }).map(function(l){ return {kind:'task', l:l}; }));
+  var intro='<p style="font-size:12px;color:var(--text3);margin:-4px 0 12px">Properties sent to Muna from a D4D lead, task, or the &#9993; Send Mail tab. They live only here until you click <b>Remove</b>, which puts them back where they came from.</p>';
+  var bar = items.length===0 ? '' :
+    '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:10px 14px;margin-bottom:12px">'
+      +'<span id="rv-bulk-count" style="font-size:13px;font-weight:600;color:var(--text2)">0 selected</span>'
+      +'<button id="d4d-muna-remove-btn" class="btn btn-danger btn-sm" onclick="d4dMunaRemoveSelected()" disabled style="font-weight:700">&#128465; Remove selected</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="rvClearSel()">Clear</button>'
+    +'</div>';
+  var table = items.length===0
+    ? '<div class="empty"><div class="empty-icon">&#10145;&#65039;</div><h3>Nothing sent to Muna yet &mdash; click Send to Muna on a D4D lead or in the Send Mail tab</h3></div>'
+    : '<div class="table-container"><div class="table-wrap"><table>'
+      +'<thead><tr><th style="width:30px;text-align:center"><input type="checkbox" title="Select all" onclick="rvToggleAll(this.checked)"></th><th>Property</th><th>Owner</th><th>City</th><th>State</th><th>Zip</th><th></th></tr></thead><tbody>'
+      + items.map(d4dMunaRowHTML).join('')
+      +'</tbody></table></div></div>';
+  return intro+bar+table;
 }
 // Download the selected properties as a mail-merge-ready CSV (Name/Street/City/State/Zip) for an
 // outside mail house or postcard service. "Current Resident" is used whenever no owner name is on
@@ -9826,6 +9924,8 @@ function rvUpdateBar(){
   var mc=document.getElementById('d4d-mail-csv-btn'); if(mc) mc.disabled=(n===0);
   var ms=document.getElementById('d4d-mail-sent-btn'); if(ms) ms.disabled=(n===0);
   var mr=document.getElementById('d4d-mail-remove-btn'); if(mr) mr.disabled=(n===0);
+  var mu=document.getElementById('d4d-muna-btn'); if(mu) mu.disabled=(n===0);
+  var mur=document.getElementById('d4d-muna-remove-btn'); if(mur) mur.disabled=(n===0);
 }
 // Bulk-remove every selected Review/D4D row in one go (soft-delete, same as the
 // single-lead Delete button, with an undo toast). Works across leads + tasks.
@@ -10664,12 +10764,12 @@ function buildFollowUpQueueHTML(nationwideOnly){
     });
   } else {
     leads.forEach(function(l){
-      if(!l.deleted && l.followUpDate && l.nationwide!=='Yes' && !isD4DRow(l) && !isFbLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'){
+      if(!l.deleted && l.followUpDate && l.nationwide!=='Yes' && !isD4DRow(l) && !isFbLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna'){
         allFU.push({lead:l, type:'dmv', isTask:false});
       }
     });
     jvLeads.forEach(function(l){
-      if(!l.deleted && l.followUpDate && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent'){
+      if(!l.deleted && l.followUpDate && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna'){
         allFU.push({lead:l, type:'task', isTask:true});
       }
     });
@@ -11043,7 +11143,8 @@ function renderDetailModal(){
           ${d4dOrigin(l)&&!d4dIsHot(l)
             ? `<button class="btn btn-sm" onclick="closeModal();d4dSendHot(${l.id})" title="Move this lead to the D4D Hot Leads tab" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-weight:700">&#128293; Send Hot Lead</button>`
             : `<button class="btn btn-sm" onclick="sendLeadToTask(${l.id})" title="Move this lead into the Tasks tab" style="background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd;font-weight:700">&#9989; Send to ${d4dOrigin(l)?'CRM ':''}Task</button>`}
-          ${d4dOrigin(l)&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent'?'<button class="btn btn-sm" onclick="d4dSendMailFromModal(\'lead\','+l.id+')" title="Queue this property for a direct-mail postcard/letter — moves it to the ✉️ Send Mail tab" style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>':''}
+          ${d4dOrigin(l)&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna'?'<button class="btn btn-sm" onclick="d4dSendMailFromModal(\'lead\','+l.id+')" title="Queue this property for a direct-mail postcard/letter — moves it to the ✉️ Send Mail tab" style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>':''}
+          ${d4dOrigin(l)&&l.d4dStatus!=='muna'?'<button class="btn btn-sm" onclick="d4dSendMunaFromModal(\'lead\','+l.id+')" title="Send this property to Muna — moves it to the Send to Muna tab" style="background:#fff7ed;color:#c2410c;border:1px solid #fdba74;font-weight:700">&#10145;&#65039; Send to Muna</button>':''}
           <button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal('lead',${l.id})">&#128197; Schedule SMS</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,'lead',${l.id})">&#128231; Send to Team</button>
           <button class="btn btn-secondary btn-sm" onclick="toggleSendSlackMenu(this,'lead',${l.id})">&#128172; Send to Slack</button>
@@ -11311,7 +11412,7 @@ async function saveLead(){
   // honor it; if not, keep whatever flag the lead already had (don't silently clear it).
   l.needsReview = nrEl ? nrEl.checked : (l.needsReview||false);
   l.updatedBy=currentUser.name;l.updatedAt=today();
-  if(l.followUpDate && isD4DRow(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent') l.d4dStatus='hot'; // D4D + follow-up => D4D Hot Leads/follow-up side
+  if(l.followUpDate && isD4DRow(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna') l.d4dStatus='hot'; // D4D + follow-up => D4D Hot Leads/follow-up side
   if(l.followUpDate && l.followUpDate!==oldFollowUp){
     if(!l.activityLog) l.activityLog=[];
     l.activityLog.push({type:'Follow-Up Set',by:currentUser.name,at:new Date().toISOString(),note:'Follow-up scheduled for '+l.followUpDate});
@@ -11724,7 +11825,7 @@ function renderJVLeadsTab(){
   // Apply filters
   var filtered = jvLeads.filter(function(l){
     if(l.deleted) return false;
-    if(l.d4dStatus==='mail_queued'||l.d4dStatus==='mail_sent') return false; // queued for ✉️ Send Mail — lives only in that tab now
+    if(l.d4dStatus==='mail_queued'||l.d4dStatus==='mail_sent'||l.d4dStatus==='muna') return false; // queued for ✉️ Send Mail — lives only in that tab now
     if(jvScoreFilter && l.score !== jvScoreFilter) return false;
     if(jvStatusFilter && l.jvStatus !== jvStatusFilter) return false;
     if(jvDateFrom && l.dateAdded < jvDateFrom) return false;
@@ -11738,7 +11839,7 @@ function renderJVLeadsTab(){
   var cold = jvLeads.filter(function(l){return !l.deleted&&l.score==='Cold';}).length;
 
   // Follow-up section
-  var withFU = jvLeads.filter(function(l){return !l.deleted&&l.followUpDate&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent';}).sort(function(a,b){return a.followUpDate>b.followUpDate?1:-1;});
+  var withFU = jvLeads.filter(function(l){return !l.deleted&&l.followUpDate&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna';}).sort(function(a,b){return a.followUpDate>b.followUpDate?1:-1;});
   var fuOverdue = withFU.filter(function(l){return getFUStatus(l.followUpDate)==='overdue';});
   var fuToday = withFU.filter(function(l){return getFUStatus(l.followUpDate)==='today';});
   var fuSoon = withFU.filter(function(l){return getFUStatus(l.followUpDate)==='soon';});
@@ -11920,7 +12021,7 @@ function openJVDetail(id){
     +emailOfferSectionHTML(l,'task')
     +renderAttachmentsSection('task', l.id)
     +renderActivityLog('task', l.id, l.activityLog)
-    +'</div>'+cmtPanelHTML('task', l.id)+'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button>'+(d4dOrigin(l)&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent'?'<button class="btn btn-sm" onclick="d4dSendMailFromModal(\'task\','+l.id+')" title="Queue this property for a direct-mail postcard/letter — moves it out of Tasks/Follow-Ups into the ✉️ Send Mail tab" style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>':'')+'<button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="toggleSendSlackMenu(this,\'task\','+l.id+')">&#128172; Send to Slack</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
+    +'</div>'+cmtPanelHTML('task', l.id)+'</div><div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteJVLead('+l.id+');closeModal()">&#128465; Delete</button>'+(d4dOrigin(l)&&l.d4dStatus!=='mail_queued'&&l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna'?'<button class="btn btn-sm" onclick="d4dSendMailFromModal(\'task\','+l.id+')" title="Queue this property for a direct-mail postcard/letter — moves it out of Tasks/Follow-Ups into the ✉️ Send Mail tab" style="background:#fdf4ff;color:#a21caf;border:1px solid #e9d5ff;font-weight:700">&#9993; Send Mail</button>':'')+(d4dOrigin(l)&&l.d4dStatus!=='muna'?'<button class="btn btn-sm" onclick="d4dSendMunaFromModal(\'task\','+l.id+')" title="Send this property to Muna — moves it out of Tasks/Follow-Ups into the Send to Muna tab" style="background:#fff7ed;color:#c2410c;border:1px solid #fdba74;font-weight:700">&#10145;&#65039; Send to Muna</button>':'')+'<button class="btn btn-secondary btn-sm" onclick="openScheduleSmsModal(\'task\','+l.id+')">&#128197; Schedule SMS</button><button class="btn btn-secondary btn-sm" onclick="toggleSendToTeamMenu(this,\'task\','+l.id+')">&#128231; Send to Team</button><button class="btn btn-secondary btn-sm" onclick="toggleSendSlackMenu(this,\'task\','+l.id+')">&#128172; Send to Slack</button><button class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditTask('+l.id+')">&#9999;&#65039; Edit</button></div></div></div>';
   nciMount('task', l.id);
   mountGhlSms('task', l.id);
   cmtMount('task', l.id);
@@ -12938,8 +13039,47 @@ async function renderKpiTab(){
   var respBox='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px"><div style="font-weight:700;margin-bottom:6px">Handoff response <span style="font-weight:400;font-size:11px;color:var(--text4)">(time until first seen)</span></div><table style="width:100%;font-size:13px;border-collapse:collapse"><tr style="text-align:left;color:var(--text4)"><th style="padding:4px 8px">Who</th><th>Handoffs</th><th>Median</th></tr>'+(resp||'<tr><td colspan="3" style="padding:6px 8px;color:var(--text4)">No handoffs</td></tr>')+'</table></div>';
   var tr=x.optout_trend||[];
   var trend='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px"><div style="font-weight:700;margin-bottom:6px">Opt-out trend <span style="font-weight:400;font-size:11px;color:var(--text4)">(people who opted out / people texted, by week; over 3% is a warning)</span></div><div style="font-size:12px;line-height:1.7">'+tr.map(function(w){ var r=w.texted>0?w.optouts/w.texted*100:0; return '<div>'+esc(w.week)+': <b style="color:'+(r>3?'#dc2626':'inherit')+'">'+(Math.round(r*10)/10)+'%</b> ('+w.optouts+' of '+w.texted+')</div>'; }).join('')+'</div></div>';
-  el.innerHTML=head+cards+table+cols+funnel+'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px">'+respBox+trend+'</div></div>';
+  el.innerHTML=head+cards+table+cols+funnel+'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:14px">'+respBox+trend+'</div><div id="kpi-adv"></div></div>';
+  kpiLoadAdvice();
 }
+// ===== KPI advisor (Phase 2): suggestions only, from the kpi-advisor edge function =====
+var kpiAdv = null, kpiAdvBusy = '', kpiAdvErr = '';
+async function kpiAdvFetch(bodyObj){
+  if(AUTH_ENABLED && authSession){ try{ await authRefreshIfNeeded(); }catch(e){} }
+  var u = SUPABASE_URL + '/functions/v1/kpi-advisor';
+  function doFetch(){ return fetch(u, { method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body: JSON.stringify(bodyObj) }); }
+  var r = await doFetch();
+  if(r.status===401 && AUTH_ENABLED && authSession){ if(await authForceRefresh()){ r = await doFetch(); } }
+  return r.json();
+}
+async function kpiLoadAdvice(){
+  try{ var r=await kpiAdvFetch({action:'latest'}); if(!r.ok) throw new Error(r.reason||r.error||'failed'); kpiAdv=r; kpiAdvErr=''; }
+  catch(e){ kpiAdvErr=String(e.message||e); }
+  kpiPaintAdvice();
+}
+function kpiPaintAdvice(){
+  var el=document.getElementById('kpi-adv'); if(!el) return;
+  var when=function(ts){ try{ return new Date(ts).toLocaleString(); }catch(e){ return ''; } };
+  var txt=function(s){ return '<div style="white-space:pre-wrap;font-size:13px;line-height:1.55;margin-top:6px">'+esc(s)+'</div>'; };
+  var a=kpiAdv||{}, h='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px">'
+    +'<div style="font-weight:700">&#129504; AI advisor <span style="font-weight:400;font-size:11px;color:var(--text4)">(suggestions only, changes nothing, about 1 cent per answer'+(a.calls_left_today!=null?', '+a.calls_left_today+' left today':'')+')</span></div>';
+  if(kpiAdvErr) h+='<div style="color:#dc2626;font-size:13px;margin-top:6px">Advisor problem ('+esc(kpiAdvErr)+').</div>';
+  h+='<div style="margin-top:8px"><button class="btn btn-sm btn-primary" '+(kpiAdvBusy?'disabled':'')+' onclick="kpiGetIdeas()">'+(kpiAdvBusy==='ideas'?'Thinking…':'Get ideas')+'</button></div>';
+  if(a.ideas) h+='<div style="margin-top:10px;font-weight:600;font-size:12px;color:var(--text4)">Latest ideas ('+esc(when(a.ideas.created_at))+')</div>'+txt(a.ideas.answer);
+  h+='<div style="margin-top:12px;display:flex;gap:6px"><input id="kpi-q" maxlength="400" placeholder="Ask about your numbers, e.g. why are so few sellers replying?" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:inherit" onkeydown="if(event.key===\'Enter\')kpiAsk()"><button class="btn btn-sm btn-white" '+(kpiAdvBusy?'disabled':'')+' onclick="kpiAsk()">'+(kpiAdvBusy==='ask'?'Thinking…':'Ask')+'</button></div>';
+  (a.asks||[]).forEach(function(q){ h+='<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px"><div style="font-size:12px;color:var(--text4)">Q: '+esc(q.question||'')+' <span>('+esc(when(q.created_at))+')</span></div>'+txt(q.answer)+'</div>'; });
+  if(a.weekly_report) h+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px"><div style="font-weight:600;font-size:12px;color:var(--text4)">Latest Friday report (week ending '+esc(String(a.weekly_report.week_end))+')</div>'+txt(a.weekly_report.analysis)+'</div>';
+  else h+='<div style="margin-top:12px;font-size:12px;color:var(--text4)">The first Friday report will appear here after it runs.</div>';
+  el.innerHTML=h+'</div>';
+}
+async function kpiAdvRun(body, kind){
+  if(kpiAdvBusy) return; kpiAdvBusy=kind; kpiAdvErr=''; kpiPaintAdvice();
+  try{ var r=await kpiAdvFetch(body); if(!r.ok) throw new Error(r.reason||r.error||'failed'); }
+  catch(e){ kpiAdvErr=String(e.message||e)==='daily_limit'?'daily limit reached, try tomorrow':String(e.message||e); }
+  kpiAdvBusy=''; var keep=kpiAdvErr; await kpiLoadAdvice(); if(keep){ kpiAdvErr=keep; kpiPaintAdvice(); }
+}
+function kpiGetIdeas(){ kpiAdvRun({action:'ideas'},'ideas'); }
+function kpiAsk(){ var i=document.getElementById('kpi-q'); var q=i?i.value.trim():''; if(!q) return; kpiAdvRun({action:'ask',question:q},'ask'); }
 async function kpiOpenHot(){
   document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:760px"><div class="modal-header"><div class="modal-title">&#128293; Hot leads</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body" id="kpi-hot-body">Loading…</div></div></div>';
   try{ var r=await kpiFetch({action:'hot',range:kpiRange}); if(!r.ok) throw new Error(r.reason||r.error||'failed'); window.__kpiHot=r.hot; kpiPaintHot(); }
