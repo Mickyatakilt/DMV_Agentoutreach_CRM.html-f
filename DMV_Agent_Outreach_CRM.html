@@ -8224,6 +8224,7 @@ function renderOutreach(){
       <div class="tab ${activeTab==='sentout'?'active':''}" onclick="setTab('sentout')">&#128231; Sent Out <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.shared).length + jvLeads.filter(l=>!l.deleted&&l.shared).length}</span>${(function(){var n=recipientFUAlertCount();return n>0?' <span title="Recipient follow-ups overdue or due today" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">&#10071;'+n+'</span>':'';})()}</div>
       <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span id="tt-review-badge" title="Daily tasks waiting for your review" style="display:none;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700"></span> <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&(l.d4dStatus==='review_sent'||(!isD4DLead(l)&&!isFbBatchLead(l)))).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
       <div class="tab ${activeTab==='scheduledsms'?'active':''}" onclick="setTab('scheduledsms')">&#128197; Scheduled</div>
+      ${isAdmin()?`<div class="tab ${activeTab==='kpi'?'active':''}" onclick="setTab('kpi')">&#128202; KPI</div>`:''}
     </div>
     <div id="tab-content"></div>`;
   if(activeTab==='leads') renderLeadsTab();
@@ -8232,6 +8233,7 @@ function renderOutreach(){
   else if(activeTab==='sentout') renderSentOutTab();
   else if(activeTab==='review') renderReviewTab();
   else if(activeTab==='scheduledsms') renderScheduledSmsTab();
+  else if(activeTab==='kpi' && isAdmin()) renderKpiTab();
   else renderNationwideTab();
   ttUpdateReviewBadge();
 }
@@ -12891,6 +12893,72 @@ function permanentlyDelete(kind, id){
 }
 
 function setTab(t){activeTab=t;selectedLeads.clear();render();}
+
+// ===== KPI tab (admin only): numbers from the kpi-data edge function =====
+var KPI_URL = SUPABASE_URL + '/functions/v1/kpi-data';
+var kpiRange = 'week', kpiData = null, kpiErr = '';
+async function kpiFetch(bodyObj){
+  if(AUTH_ENABLED && authSession){ try{ await authRefreshIfNeeded(); }catch(e){} }
+  function doFetch(){ return fetch(KPI_URL, { method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body: JSON.stringify(bodyObj) }); }
+  var r = await doFetch();
+  if(r.status===401 && AUTH_ENABLED && authSession){ if(await authForceRefresh()){ r = await doFetch(); } }
+  return r.json();
+}
+function kpiPct(a,b){ return b>0 ? (Math.round(a/b*1000)/10)+'%' : '0%'; }
+function kpiDelta(a,b,goodUp){ var d=a-b; if(!d) return '<span style="color:var(--text4)">same as before</span>'; var up=d>0; var good=(up===(goodUp!==false)); return '<span style="color:'+(good?'#15803d':'#dc2626')+'">'+(up?'+':'')+d+' vs before</span>'; }
+function kpiSetRange(r){ kpiRange=r; kpiData=null; renderKpiTab(); }
+async function renderKpiTab(){
+  var el=document.getElementById('tab-content'); if(!el) return;
+  var tabBtn=function(k,l){ return '<button class="btn btn-sm '+(kpiRange===k?'btn-primary':'btn-white')+'" onclick="kpiSetRange(\''+k+'\')">'+l+'</button>'; };
+  var head='<div style="padding:16px 24px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px"><div><div style="font-size:18px;font-weight:700">&#128202; Weekly KPI</div><div style="font-size:12px;color:var(--text4)">Computed from your bots, FB scrape and D4D. Hot = handoff on interest, realtor hot list, or a reply with buying/selling words.</div></div><div style="display:flex;gap:6px">'+tabBtn('today','Today')+tabBtn('week','Last 7 days')+tabBtn('prev','Previous 7 days')+'</div></div>';
+  if(!kpiData){
+    el.innerHTML=head+'<div style="color:var(--text4);padding:24px">Loading numbers…</div></div>';
+    try{ var r=await kpiFetch({action:'summary',range:kpiRange}); if(!r.ok) throw new Error(r.reason||r.error||'failed'); kpiData=r; kpiErr=''; }
+    catch(e){ kpiErr=String(e.message||e); el.innerHTML=head+'<div style="color:#dc2626;padding:24px">Could not load KPI numbers ('+esc(kpiErr)+').</div></div>'; return; }
+  }
+  var d=kpiData, c=d.cur, p=d.prev, t=c.totals, pt=p.totals, f=d.findings, x=d.extra;
+  var card=function(l,v,sub,click){ return '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;'+(click?'cursor:pointer;':'')+'" '+(click?'onclick="'+click+'"':'')+'><div style="font-size:12px;color:var(--text4)">'+l+'</div><div style="font-size:24px;font-weight:700">'+v+'</div><div style="font-size:11px">'+sub+'</div></div>'; };
+  var cards='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
+    +card('Texted',t.texted,kpiDelta(t.texted,pt.texted))
+    +card('Replied',t.replied,kpiPct(t.replied,t.texted)+' reply rate')
+    +card('Hot leads',t.hot,kpiDelta(t.hot,pt.hot)+' &middot; <b style="color:#2563eb">click to open</b>','kpiOpenHot()')
+    +card('Handoffs',t.handoffs,t.handoffs_handled+' handled')
+    +card('Opt-outs',t.optouts,kpiPct(t.optouts,t.texted)+' of texted',null)
+    +card('AI cost',  '$'+(d.ai_cost_usd||0).toFixed(2), t.hot>0 ? '$'+((d.ai_cost_usd||0)/t.hot).toFixed(3)+' per hot lead (text cost not tracked)' : 'no hot leads')
+    +'</div>';
+  var NAMES={listing:'Listing',seller:'Seller',realtor:'Realtor',jv_fb:'FB scrape / JV',d4d:'D4D',untagged:'No bot tag'};
+  var rows=Object.keys(c.bots).sort(function(a,b){return c.bots[b].texted-c.bots[a].texted;}).map(function(k){ var b=c.bots[k]; return '<tr style="border-top:1px solid var(--border)"><td style="padding:6px 8px">'+(NAMES[k]||esc(k))+'</td><td>'+b.texted+'</td><td>'+b.replied+' ('+kpiPct(b.replied,b.texted)+')</td><td><b>'+b.hot+'</b></td><td>'+b.optouts+'</td></tr>'; }).join('');
+  var table='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px"><div style="font-weight:700;margin-bottom:6px">By bot</div><table style="width:100%;font-size:13px;border-collapse:collapse"><tr style="text-align:left;color:var(--text4)"><th style="padding:4px 8px">Bot</th><th>Texted</th><th>Replied</th><th>Hot</th><th>Opt-outs</th></tr>'+rows+'</table></div>';
+  var list=function(arr){ return arr.length ? '<ul style="margin:6px 0 0 16px;padding:0;font-size:13px;line-height:1.5">'+arr.map(function(s){return '<li>'+esc(s)+'</li>';}).join('')+'</ul>' : '<div style="font-size:13px;color:var(--text4);margin-top:6px">Nothing to flag.</div>'; };
+  var box=function(title,color,arr){ return '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px"><div style="font-weight:700;color:'+color+'">'+title+'</div>'+list(arr)+'</div>'; };
+  var cols='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:14px">'+box('&#9989; What worked','#15803d',f.good)+box('&#9888;&#65039; What didn\'t','#dc2626',f.bad)+box('&#127384; Where we need help','#b45309',f.help)+box('&#128161; Improve the system','#2563eb',f.system)+'</div>';
+  var fu=x.funnel;
+  var funnel='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:14px"><div style="font-weight:700;margin-bottom:6px">Deal funnel <span style="font-weight:400;font-size:11px;color:var(--text4)">(CRM lead status changes in this period)</span></div><div style="display:flex;gap:18px;flex-wrap:wrap;font-size:13px"><div>Handoffs <b>'+fu.handoffs+'</b></div><div>&rarr; Offer sent <b>'+fu.offer_sent+'</b></div><div>&rarr; Offer rejected <b>'+fu.offer_rejected+'</b></div><div>&rarr; Pending <b>'+fu.pending+'</b></div><div>&rarr; Sold <b>'+fu.sold+'</b></div></div></div>';
+  var resp=Object.keys(x.response).map(function(k){ var r=x.response[k]; return '<tr style="border-top:1px solid var(--border)"><td style="padding:6px 8px">'+esc(k)+'</td><td>'+r.handoffs+'</td><td>'+(r.median_min==null?'n/a':(r.median_min>=120?(Math.round(r.median_min/6)/10)+' hrs':r.median_min+' min'))+'</td></tr>'; }).join('');
+  var respBox='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px"><div style="font-weight:700;margin-bottom:6px">Handoff response <span style="font-weight:400;font-size:11px;color:var(--text4)">(time until first seen)</span></div><table style="width:100%;font-size:13px;border-collapse:collapse"><tr style="text-align:left;color:var(--text4)"><th style="padding:4px 8px">Who</th><th>Handoffs</th><th>Median</th></tr>'+(resp||'<tr><td colspan="3" style="padding:6px 8px;color:var(--text4)">No handoffs</td></tr>')+'</table></div>';
+  var tr=x.optout_trend||[];
+  var trend='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px"><div style="font-weight:700;margin-bottom:6px">Opt-out trend <span style="font-weight:400;font-size:11px;color:var(--text4)">(people who opted out / people texted, by week; over 3% is a warning)</span></div><div style="font-size:12px;line-height:1.7">'+tr.map(function(w){ var r=w.texted>0?w.optouts/w.texted*100:0; return '<div>'+esc(w.week)+': <b style="color:'+(r>3?'#dc2626':'inherit')+'">'+(Math.round(r*10)/10)+'%</b> ('+w.optouts+' of '+w.texted+')</div>'; }).join('')+'</div></div>';
+  el.innerHTML=head+cards+table+cols+funnel+'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px">'+respBox+trend+'</div></div>';
+}
+async function kpiOpenHot(){
+  document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal" style="max-width:760px"><div class="modal-header"><div class="modal-title">&#128293; Hot leads</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body" id="kpi-hot-body">Loading…</div></div></div>';
+  try{ var r=await kpiFetch({action:'hot',range:kpiRange}); if(!r.ok) throw new Error(r.reason||r.error||'failed'); window.__kpiHot=r.hot; kpiPaintHot(); }
+  catch(e){ var b=document.getElementById('kpi-hot-body'); if(b) b.innerHTML='<div style="color:#dc2626">Could not load ('+esc(String(e.message||e))+').</div>'; }
+}
+function kpiPaintHot(){
+  var b=document.getElementById('kpi-hot-body'); if(!b) return;
+  var rows=(window.__kpiHot||[]).map(function(h){
+    var gone=h.__removed;
+    var safeId=/^[A-Za-z0-9]{10,40}$/.test(String(h.contact_id||''));
+    return '<div style="border-top:1px solid var(--border);padding:8px 0;'+(gone?'opacity:.5':'')+'"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b>'+esc(h.name)+'</b> <span style="font-size:11px;color:var(--text4)">'+esc(h.bot)+' &middot; '+esc(h.why)+'</span><div style="font-size:12px;color:var(--text3)">'+esc(h.detail||'')+'</div>'+(h.last_reply?'<div style="font-size:12px;font-style:italic">&ldquo;'+esc(h.last_reply)+'&rdquo;</div>':'')+(h.phone?'<div style="font-size:11px;color:var(--text4)">'+esc(h.phone)+'</div>':'')+'</div><div style="display:flex;gap:6px;flex-shrink:0"><a class="btn btn-white btn-sm" target="_blank" rel="noopener" href="'+esc(h.ghl_url)+'">Open in GHL</a>'+(!safeId?'':gone?'<button class="btn btn-white btn-sm" onclick="kpiMark(\''+h.contact_id+'\',false)">Undo</button>':'<button class="btn btn-white btn-sm" onclick="kpiMark(\''+h.contact_id+'\',true)">Not hot</button>')+'</div></div></div>';
+  }).join('');
+  b.innerHTML='<div style="font-size:12px;color:var(--text4);margin-bottom:6px">'+(window.__kpiHot||[]).filter(function(h){return !h.__removed;}).length+' hot leads. &ldquo;Not hot&rdquo; removes someone from the count; Undo brings them back.</div>'+(rows||'<div>No hot leads in this period.</div>');
+}
+async function kpiMark(cid, mark){
+  try{ var r=await kpiFetch({action: mark?'mark':'unmark', contact_id: cid}); if(!r.ok) throw new Error(r.reason||r.error||'failed');
+    (window.__kpiHot||[]).forEach(function(h){ if(h.contact_id===cid) h.__removed=mark; }); kpiPaintHot(); kpiData=null; }
+  catch(e){ alert('Could not update: '+(e.message||e)); }
+}
 
 function getTeamMembers(){
   return JSON.parse(localStorage.getItem('crm_team_members')||'null') || [];
