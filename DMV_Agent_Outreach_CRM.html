@@ -7120,6 +7120,39 @@ function renderDashboard(){
 }
 // ---- Owner: Communication tab (texts + calls per team member, from GHL via ghl-team-sync) ----
 var commPreset='7d', commBucket='day', commCustom={from:'',to:''}, commUser='', commUsers=[];
+var commBot='', commBotRows=null;
+var COMM_BOTS=[['seller','Seller bot'],['realtor','Realtor bot'],['listing','Listing-agent bot'],['jv_fb','Facebook JV bot'],['d4d','D4D bot']];
+function commBotCard(rows, card, fus){
+  if(!rows) return '';
+  var fb={}; (fus||[]).forEach(function(x){ fb[x.bot]=x; });
+  var th='text-align:left;padding:8px 10px;font-size:11px;color:var(--text4);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border,#e5e7eb)';
+  var td='padding:9px 10px;font-size:13px;border-bottom:1px solid var(--border,#f1f5f9)';
+  function pct(n,d){ return d>0? (Math.round(n/d*1000)/10)+'%' : '0%'; }
+  var by={}; rows.forEach(function(x){ by[x.bot]=x; });
+  var sel=commBot?[by[commBot]].filter(Boolean):rows;
+  var z={texted:0,responded:0,opted_out:0,no_response:0,handoffs:0,handoffs_waiting:0,fu_sent:0,fu_waiting:0}, fuUntracked=false;
+  sel.forEach(function(x){ Object.keys(z).forEach(function(k){ z[k]+=(+x[k]||0); }); var f=fb[x.bot]; if(f){ z.fu_sent+=(+f.fu_sent||0); z.fu_waiting+=(+f.fu_waiting||0); if(!f.tracked) fuUntracked=true; } });
+  var T=z.texted;
+  function tile(v,l,sub,col){ return '<div style="'+card+'padding:10px 16px;min-width:120px"><div style="font-size:22px;font-weight:800;color:'+col+'">'+(+v).toLocaleString()+'</div><div style="font-size:11px;color:var(--text4)">'+l+(sub?' &middot; '+sub:'')+'</div></div>'; }
+  var tiles='<div style="display:flex;gap:10px;margin:8px 0;flex-wrap:wrap">'
+    +tile(T,'Texted','','inherit')
+    +tile(z.responded,'Responded',pct(z.responded,T),'#16a34a')
+    +tile(z.no_response,'No response',pct(z.no_response,T),'#64748b')
+    +tile(z.opted_out,'Said stop',pct(z.opted_out,T),'#dc2626')
+    +tile(z.fu_sent,'Follow-ups sent',z.fu_waiting+' waiting','#2563eb')
+    +tile(z.handoffs,'Hand-offs',z.handoffs_waiting+' waiting','#b45309')+'</div>'
+    +(fuUntracked?'<div style="font-size:11px;color:var(--text4);margin-bottom:6px">Facebook JV follow-ups are not tracked yet, so they show 0.</div>':'');
+  var label=function(k){ var f=COMM_BOTS.filter(function(b){return b[0]===k;})[0]; return f?f[1]:k; };
+  var trs=rows.map(function(x){ var t=+x.texted;
+    return '<tr'+(commBot===x.bot?' style="background:var(--surface2,#eff6ff)"':'')+'><td style="'+td+';font-weight:700">'+esc(label(x.bot))+'</td><td style="'+td+'">'+t.toLocaleString()+'</td><td style="'+td+'">'+x.responded+' <span style="color:var(--text4)">'+pct(+x.responded,t)+'</span></td><td style="'+td+'">'+x.no_response+' <span style="color:var(--text4)">'+pct(+x.no_response,t)+'</span></td><td style="'+td+'">'+x.opted_out+' <span style="color:var(--text4)">'+pct(+x.opted_out,t)+'</span></td><td style="'+td+'">'+(fb[x.bot]&&fb[x.bot].tracked?fb[x.bot].fu_sent+(+fb[x.bot].fu_waiting?' <span style="color:var(--text4)">('+fb[x.bot].fu_waiting+' waiting)</span>':''):'<span style="color:var(--text4)">not tracked</span>')+'</td><td style="'+td+'">'+x.handoffs+(+x.handoffs_waiting?' <span style="color:#b45309">('+x.handoffs_waiting+' waiting)</span>':'')+'</td></tr>'; }).join('');
+  return '<div style="'+card+'margin-top:12px;padding:12px 16px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div style="font-size:14px;font-weight:800">&#129302; Bot results</div>'
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700">From <input type="date" value="'+dIso(commDates().from)+'" onchange="commSetCustom(\'from\',this.value)" style="padding:6px 8px;border:1px solid var(--border,#e5e7eb);border-radius:8px"> To <input type="date" value="'+dIso(new Date(commDates().to-864e5))+'" onchange="commSetCustom(\'to\',this.value)" style="padding:6px 8px;border:1px solid var(--border,#e5e7eb);border-radius:8px"></span>'
+    +'<select onchange="commBot=this.value;renderCommTab()" style="padding:7px 10px;border:1px solid var(--border,#e5e7eb);border-radius:10px;font-size:12px;font-weight:700;background:var(--card,#fff)"><option value="">All bots</option>'+COMM_BOTS.map(function(b){ return '<option value="'+b[0]+'"'+(commBot===b[0]?' selected':'')+'>'+b[1]+'</option>'; }).join('')+'</select></div></div>'
+    +'<div style="font-size:11px;color:var(--text4)">Unique people in the selected dates, matched to their bot by GHL tag (tags refresh each Friday, so brand-new contacts may not show yet). Texted = any outbound text to a bot contact.</div>'
+    +tiles
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+['Bot','Texted','Responded','No response','Said stop','Follow-ups sent','Hand-offs'].map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')+'</tr></thead><tbody>'+trs+'</tbody></table></div></div>';
+}
 function commDates(){
   var to=new Date(), from=new Date(); to.setDate(to.getDate()+1); to.setHours(0,0,0,0);
   if(commPreset==='today'){ from=new Date(); from.setHours(0,0,0,0); }
@@ -7200,7 +7233,7 @@ async function renderCommTab(){
   var td='padding:9px 10px;font-size:13px;border-bottom:1px solid var(--border,#f1f5f9)';
   host.innerHTML='<div style="'+card+'padding:24px;margin-top:10px;text-align:center;color:var(--text4);font-size:13px">Loading communication&hellip;</div>';
   var d=commDates();
-  var r=await Promise.all([ smsRpc('get_team_comm',{p_from:d.from.toISOString(),p_to:d.to.toISOString(),p_bucket:commBucket}), smsRpc('get_team_comm_status',{}), smsRpc('get_outreach_funnel',{p_from:d.from.toISOString(),p_to:d.to.toISOString(),p_user:commUser||null}), smsRpc('get_outreach_funnel_daily',{p_from:d.from.toISOString(),p_to:d.to.toISOString(),p_user:commUser||null}), commUsers.length? Promise.resolve(commUsers) : smsRpc('get_outreach_users',{}) ]);
+  var r=await Promise.all([ smsRpc('get_team_comm',{p_from:d.from.toISOString(),p_to:d.to.toISOString(),p_bucket:commBucket}), smsRpc('get_team_comm_status',{}), smsRpc('get_outreach_funnel',{p_from:d.from.toISOString(),p_to:d.to.toISOString(),p_user:commUser||null}), smsRpc('get_outreach_funnel_daily',{p_from:d.from.toISOString(),p_to:d.to.toISOString(),p_user:commUser||null}), commUsers.length? Promise.resolve(commUsers) : smsRpc('get_outreach_users',{}), smsRpc('get_bot_funnel',{p_from:d.from.toISOString(),p_to:d.to.toISOString()}), smsRpc('get_bot_followups',{p_from:d.from.toISOString(),p_to:d.to.toISOString()}) ]);
   if(r[4]&&r[4].length) commUsers=r[4];
   host=document.getElementById('comm-host'); if(!host) return;
   var rows=r[0], st=(r[1]&&r[1][0])||null;
@@ -7236,6 +7269,7 @@ async function renderCommTab(){
       +'<span style="font-size:11px;color:var(--text4)">'+note+'</span>'
     +'</div>'
     +commOutreachGraph(r[2]&&r[2][0], r[3], card)
+    +commBotCard(r[5], card, r[6])
     +'<div style="'+card+'margin-top:12px;padding:6px 6px 10px"><div style="padding:8px 10px;font-size:14px;font-weight:800">By person (selected period)</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'
       +['Person','Individual texts','Bulk texts','Total texts','Calls made','Calls received','Call time'].map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')
     +'</tr></thead><tbody>'+pbody+'</tbody></table></div></div>'
