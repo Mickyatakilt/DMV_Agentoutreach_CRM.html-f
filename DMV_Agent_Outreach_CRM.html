@@ -1814,6 +1814,8 @@ function getDropdowns() {
   };
   // Always offer Driving for Dollars as a selectable Lead Source (even if the user
   // has a customized/older stored dropdown set that predates it).
+  d.marketingTypes = d.marketingTypes || [];
+  if(d.marketingTypes.indexOf('Bot')===-1) d.marketingTypes.push('Bot');
   d.sources = d.sources || [];
   if(d.sources.indexOf('Driving for Dollars')===-1) d.sources.push('Driving for Dollars');
   return d;
@@ -9827,6 +9829,110 @@ async function ghlFromPickerFill(selId){
   if(j['default']){ sel.value=j['default']; }
 }
 function ghlFromValue(selId){ var e=document.getElementById(selId); return e?e.value:''; }
+// ---- Text (Listing Bot): row button / bulk button -> compose popup (From number + editable text, {address} filled) -> listing-text-enroll queues it;
+//      listing-text-send (cron) sends 9:30am-7pm NY, tags the agent `listed property agent` (Listing bot answers replies + follow-ups), sets Marketing = Bot. ----
+var LISTING_TEXT_URL = SUPABASE_URL + '/functions/v1/listing-text-enroll';
+var listingStatus = {}, listingStatusTimer = null;
+var LISTING_TEMPLATES = [
+  'Hi {name}, this is Mike from Mestate Investment Group. Is {address} still available?',
+  'Hey {name}, Mike with Mestate Investment Group. Checking if {address} is still on the market?',
+  'Hi {name}, it\'s Mike at Mestate Investment Group. Is the property at {address} still available?',
+  'Hello {name}, Mike here with Mestate Investment Group. Is {address} still available?'
+];
+async function listingTextCall(payload){
+  var r=await fetch(LISTING_TEXT_URL,{ method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:JSON.stringify(payload) });
+  return r.json().catch(function(){ return {ok:false,message:'Bad answer from the server'}; });
+}
+function listingTextBtn(l){
+  if(!l||!l.phone) return '';
+  return ' <button type="button" class="btn btn-secondary btn-sm" onclick="listingTextOpen(['+(+l.id)+']);event.stopPropagation()" style="padding:1px 7px;font-size:12px;margin-left:4px;vertical-align:middle" title="Text this agent with the Listing bot">&#128172; Text</button>';
+}
+function listingChipHTML(l){
+  var s=listingStatus[l.id]; if(!s) return '';
+  var chip=function(bg,fg,t){ return '<br><div style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;background:'+bg+';color:'+fg+';margin-top:2px;white-space:nowrap;display:inline-block">'+t+'</div>'; };
+  if(s.status==='pending'||s.status==='sending') return chip('#e0f2fe','#075985','&#9201; Bot text queued');
+  if(s.status==='failed') return chip('#fee2e2','#b91c1c','&#9888; Bot text failed: '+esc(s.note||''));
+  if(s.status==='cancelled') return chip('#fef3c7','#92400e','Bot text skipped: '+esc(s.note||''));
+  return '';
+}
+async function listingStatusLoad(ids){
+  ids=(ids||[]).filter(Boolean); if(!ids.length) return;
+  var r=await listingTextCall({action:'status',lead_ids:ids});
+  if(!r||!r.ok) return;
+  var wasOpen=ids.some(function(i){ var s=listingStatus[i]; return s&&(s.status==='pending'||s.status==='sending'); });
+  (r.rows||[]).forEach(function(x){ listingStatus[x.lead_id]=x; });
+  var open=(r.rows||[]).some(function(x){ return x.status==='pending'||x.status==='sending'; });
+  clearTimeout(listingStatusTimer);
+  if(open) listingStatusTimer=setTimeout(function(){ listingStatusLoad(ids); },30000);
+  else if(wasOpen) setTimeout(function(){ try{ if(typeof loadFromSupabase==='function') loadFromSupabase(); }catch(e){} },1500);
+  try{ render(); }catch(e){}
+}
+function listingTextClose(){ var o=document.getElementById('listingtext-overlay'); if(o) o.remove(); }
+function listingTextOpen(ids){
+  ids=(ids||[]).map(Number).filter(Boolean);
+  if(!ids.length){ showToast('Select at least one lead first','error'); return; }
+  if(ids.length>100){ showToast('Pick 100 leads or fewer at a time','error'); return; }
+  listingTextClose();
+  var o=document.createElement('div'); o.id='listingtext-overlay';
+  o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  o.innerHTML='<div style="background:var(--bg,#fff);color:var(--text1,#0f172a);border-radius:12px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.35)">'
+    +'<div style="font-size:16px;font-weight:800;margin-bottom:4px">&#129302; Text with the Listing Bot &mdash; '+ids.length+' lead'+(ids.length!==1?'s':'')+'</div>'
+    +'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Texts go to the lead&#39;s phone, only 9:30am-7pm New York. The agent is tagged <b>Listed Property Agent</b>, so the Listing bot answers their replies and sends follow-ups; Marketing changes to <b>Bot</b> when the text goes out. Skipped: numbers texted in the last 7 days, opted-out / DND, and contacts in another bot.</div>'
+    +ghlFromPickerHTML('listingtext-from')
+    +'<label style="font-size:12px;font-weight:700">Start from a template</label>'
+    +'<select id="listingtext-tpl" onchange="listingTextPickTpl()" style="width:100%;margin:4px 0 10px;padding:7px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font-size:13px"><option value="">&mdash; write my own &mdash;</option>'
+    +LISTING_TEMPLATES.map(function(t,i){ return '<option value="'+i+'">'+esc(t)+'</option>'; }).join('')+'</select>'
+    +'<label style="font-size:12px;font-weight:700">Text (<b>{address}</b> = street address, filled in for each lead; <b>{name}</b> = agent first name, optional)</label>'
+    +'<textarea id="listingtext-text" rows="3" oninput="document.getElementById(\'listingtext-go-btn\').disabled=true" style="width:100%;margin:4px 0 12px;padding:8px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font-size:13px">'+esc(LISTING_TEMPLATES[0])+'</textarea>'
+    +'<div style="font-size:12px;font-weight:700;margin-bottom:4px">When</div>'
+    +'<label style="display:block;font-size:13px;margin-bottom:4px"><input type="radio" name="listingtext-when" value="now" checked onchange="document.getElementById(\'listingtext-at\').disabled=true"> Send automatically (as soon as the 9:30am-7pm window is open)</label>'
+    +'<label style="display:block;font-size:13px;margin-bottom:12px"><input type="radio" name="listingtext-when" value="at" onchange="document.getElementById(\'listingtext-at\').disabled=false"> Schedule for <input type="datetime-local" id="listingtext-at" disabled style="font-size:12px;padding:2px 4px"></label>'
+    +'<div id="listingtext-preview" style="font-size:12px;margin-bottom:12px"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
+      +'<button class="btn btn-secondary btn-sm" onclick="listingTextClose()">Cancel</button>'
+      +'<button class="btn btn-white btn-sm" onclick="listingTextPreview()" style="font-weight:700">Preview texts</button>'
+      +'<button class="btn btn-sm" id="listingtext-go-btn" onclick="listingTextGo()" disabled style="font-weight:800;background:#0f766e;color:#fff;border:1px solid #0f766e">Confirm &amp; send</button>'
+    +'</div></div>';
+  document.body.appendChild(o);
+  window.__listingTextIds=ids;
+  ghlFromPickerFill('listingtext-from');
+}
+function listingTextPickTpl(){
+  var v=document.getElementById('listingtext-tpl').value;
+  if(v!=='') document.getElementById('listingtext-text').value=LISTING_TEMPLATES[+v];
+  document.getElementById('listingtext-go-btn').disabled=true;
+}
+function listingTextPayload(mode){
+  var when=(document.querySelector('input[name="listingtext-when"]:checked')||{}).value;
+  var at=document.getElementById('listingtext-at').value, sendAt=null;
+  if(when==='at'){ if(!at){ showToast('Pick a date and time','error'); return null; } sendAt=new Date(at).toISOString(); }
+  return { mode:mode, lead_ids:window.__listingTextIds, message:document.getElementById('listingtext-text').value, from_number:ghlFromValue('listingtext-from'), send_at:sendAt, by:(currentUser&&currentUser.name)||'CRM' };
+}
+async function listingTextPreview(){
+  var pl=listingTextPayload('preview'); if(!pl) return;
+  var box=document.getElementById('listingtext-preview'); box.innerHTML='Checking&hellip;';
+  document.getElementById('listingtext-go-btn').disabled=true;
+  var r=await listingTextCall(pl);
+  if(!r||!r.ok){ box.innerHTML='<span style="color:#b91c1c">'+esc((r&&r.message)||'Could not preview')+'</span>'; return; }
+  var h='<div style="font-weight:700;margin-bottom:4px">'+r.would_queue+' will be texted, '+r.skipped+' skipped</div><div style="max-height:220px;overflow:auto;border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:6px 8px">';
+  r.results.forEach(function(x){
+    h+=x.ok
+      ? '<div style="margin-bottom:6px"><b>'+esc(x.name||'(no name)')+'</b> &middot; '+esc(rvFmtPhone(x.phone))+'<br><span style="color:var(--text2)">'+esc(x.message)+'</span></div>'
+      : '<div style="margin-bottom:6px;color:#b45309">&#9888; '+esc(x.name||x.address||'(no name)')+' '+esc(x.phone||'')+': skipped &mdash; '+esc(x.reason)+'</div>';
+  });
+  box.innerHTML=h+'</div>';
+  document.getElementById('listingtext-go-btn').disabled=(r.would_queue===0);
+}
+async function listingTextGo(){
+  var pl=listingTextPayload('queue'); if(!pl) return;
+  var btn=document.getElementById('listingtext-go-btn'); btn.disabled=true; btn.textContent='Queueing...';
+  var r=await listingTextCall(pl);
+  if(!r||!r.ok){ showToast((r&&r.message)||'Could not queue','error'); btn.disabled=false; btn.textContent='Confirm & send'; return; }
+  var ids=window.__listingTextIds||[];
+  listingTextClose();
+  showToast('Queued '+r.queued+' text'+(r.queued!==1?'s':'')+(r.skipped?' ('+r.skipped+' skipped)':''),'success');
+  listingStatusLoad(ids);
+}
 function fbBotClose(){ var o=document.getElementById('fbbot-overlay'); if(o) o.remove(); }
 function fbBotOpen(){
   var ids=fbCheckedFileIds();
@@ -10465,7 +10571,7 @@ function renderLeadsTab(){
     <div style="background:#fff3cd;border:1.5px solid #fcd34d;border-radius:8px;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;margin:8px 24px 0;">
       <span style="font-size:13px;font-weight:600;color:#b45309">&#10003; ${selCount} lead${selCount!==1?'s':''} selected</span>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-primary btn-sm" onclick="downloadSelectedLeads()" title="Download the selected leads as CSV (address, phone, agent)">&#11015; Download CSV</button><button class="btn btn-secondary btn-sm" onclick="clearSelection()">Clear</button>
+        <button class="btn btn-sm" onclick="listingTextOpen([...selectedLeads])" title="Text the selected listing agents with the Listing bot" style="background:#0f766e;color:#fff;border:1px solid #0f766e;font-weight:700">&#128172; Text (Listing Bot)</button><button class="btn btn-primary btn-sm" onclick="downloadSelectedLeads()" title="Download the selected leads as CSV (address, phone, agent)">&#11015; Download CSV</button><button class="btn btn-secondary btn-sm" onclick="clearSelection()">Clear</button>
         <button class="btn btn-danger btn-sm" onclick="deleteSelected()">&#128465; Delete ${selCount} Selected</button>
       </div>
     </div>`:'';
@@ -10511,10 +10617,10 @@ function renderTable(data,start,end){
     <tr style="${selectedLeads.has(l.id)?'background:#eff6ff;':''}">
       <td onclick="event.stopPropagation()"><input type="checkbox" ${selectedLeads.has(l.id)?'checked':''} onchange="toggleSelect(${l.id},this.checked)" style="width:15px;height:15px;cursor:pointer"></td>
       <td onclick="openDetail(${l.id})"><div style="display:flex;align-items:center;gap:4px"><div class="address-cell">${esc(l.address)||''}${botIconHTML(l)}${cmtRowDot('lead',l.id)}</div>${pwIcon(l.address)}</div></td>
-      <td onclick="openDetail(${l.id})"><div class="phone-cell">${l.phone?`<a href="#" data-phone="${l.phone.split('/')[0].trim()}" data-cid="${l.ghlContactId||''}" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-weight:600" title="${l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel'}">${esc(l.phone.split('/')[0].trim())} &#8599;</a>${ghlCallBtn(l.ghlContactId)}`:''}</div></td>
+      <td onclick="openDetail(${l.id})"><div class="phone-cell">${l.phone?`<a href="#" data-phone="${l.phone.split('/')[0].trim()}" data-cid="${l.ghlContactId||''}" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-weight:600" title="${l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel'}">${esc(l.phone.split('/')[0].trim())} &#8599;</a>${ghlCallBtn(l.ghlContactId)}${listingTextBtn(l)}`:''}</div></td>
       <td onclick="openDetail(${l.id})"><span class="money-val">${formatMoney(l.offer)}</span></td>
       <td onclick="openDetail(${l.id})"><span class="arv-val">${formatMoney(l.arv)}</span></td>
-      <td onclick="openDetail(${l.id})" style="font-size:12px;color:var(--text2)">${esc(l.marketingType)||''}</td>
+      <td onclick="openDetail(${l.id})" style="font-size:12px;color:var(--text2)">${l.marketingType==='Bot'?'<span style="font-weight:800;color:#0f766e">&#129302; Bot</span>':esc(l.marketingType)||''}${listingChipHTML(l)}</td>
       <td onclick="openDetail(${l.id})">${statusBadge(l.status)}</td>
       <td onclick="openDetail(${l.id})">${leadScoreBadgeHTML(l.score)}</td>
       <td onclick="openDetail(${l.id})" style="white-space:nowrap;font-size:12px;color:var(--text2)">${l.date?esc(l.date):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
