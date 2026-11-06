@@ -7659,7 +7659,9 @@ var hoBaseTitle=null, hoPendingSig=null;
 function hoBeep(){ try{ var C=window.AudioContext||window.webkitAudioContext; if(!C) return; var c=new C(), o=c.createOscillator(), g=c.createGain(); o.type='sine'; o.frequency.value=880; g.gain.value=0.08; o.connect(g); g.connect(c.destination); o.start(); setTimeout(function(){ o.frequency.value=660; },180); setTimeout(function(){ try{ o.stop(); c.close(); }catch(e){} },420); }catch(e){} }
 function hoAskNotif(){ try{ if(window.Notification && Notification.permission==='default') Notification.requestPermission(); }catch(e){} }
 function hoNotify(fresh){ try{ if(window.Notification && Notification.permission==='granted'){ var h=fresh[0]; var n=new Notification('\uD83E\uDD16 New bot handoff'+(fresh.length>1?' (+'+(fresh.length-1)+' more)':''),{body:(h.name||h.phone||'')+' - '+(h.reason||''),tag:'ho-'+h.id,requireInteraction:true}); n.onclick=function(){ try{ window.focus(); }catch(e){} hoToggle(true); n.close(); }; } }catch(e){} }
-async function hoLoad(){
+var __hoBusy=false;
+async function hoLoad(){ if(__hoBusy) return; __hoBusy=true; try{ await hoLoadInner(); } finally{ __hoBusy=false; } }
+async function hoLoadInner(){
   var raw;
   try{ raw=(await sbFetch('bot_handoffs?select=*&seen_at=is.null&order=created_at.desc&limit=100'))||[]; }catch(e){ return; }
   hoPendingLeadIds=raw.map(function(h){ return +h.lead_id; }).filter(Boolean);   // every waiting handoff, whoever it is assigned to
@@ -13746,8 +13748,31 @@ async function initFullApp() {
   refreshD4dHealth(); // D4D nightly-scan health (surfaces the Review-tab failure banner)
   tryOpenPendingDeepLink();
 
+  // Poll guard (load protection): one download at a time per tab (setInterval alone fires every
+  // 30s even if the last 4-page download is still running, so a slow server snowballed), no
+  // downloads while the tab is hidden (a catch-up poll runs when it is shown again), and a
+  // back-off after any slow download.
+  var __pollBusy = {}, __pollSkip = {}, __pollLast = {}, __pollFns = {};
+  function __guard(key, fn){
+    __pollFns[key] = async function(){
+      if(document.hidden || __pollBusy[key]) return;
+      if(__pollSkip[key] > 0){ __pollSkip[key]--; return; }
+      __pollBusy[key] = true; var t0 = Date.now();
+      try { await fn(); } finally {
+        __pollBusy[key] = false; __pollLast[key] = Date.now();
+        var took = Date.now() - t0;
+        if(took > 5000) __pollSkip[key] = Math.min(8, Math.floor(took/5000));
+      }
+    };
+    return __pollFns[key];
+  }
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden) return;
+    Object.keys(__pollFns).forEach(function(k){ if(Date.now()-(__pollLast[k]||0) > 20000) __pollFns[k](); });
+  });
+
   // Step 3: Auto-refresh every 30 seconds to catch other users' changes
-  setInterval(async function() {
+  setInterval(__guard('leads', async function() {
     if(pendingSaves > 0) return; // an edit hasn't finished syncing yet -- don't let this poll stomp it
     try {
       var __t0 = Date.now();
@@ -13767,13 +13792,13 @@ async function initFullApp() {
         }
       }
     } catch(e) { showSyncStatus('offline'); }
-  }, 30000);
+  }), 30000);
 
   // Re-check D4D scan health every 10 min (it only changes when the nightly robot runs)
   setInterval(function(){ refreshD4dHealth(); }, 600000);
 
   // Step 4: Same 30-second auto-refresh for Tasks
-  setInterval(async function() {
+  setInterval(__guard('jv', async function() {
     if(pendingSaves > 0) return;
     try {
       var __t1 = Date.now();
@@ -13789,7 +13814,7 @@ async function initFullApp() {
         }
       }
     } catch(e) {}
-  }, 30000);
+  }), 30000);
 }
 
 // ===== Shared single-lead view =====
