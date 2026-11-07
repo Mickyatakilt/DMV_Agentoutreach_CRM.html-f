@@ -2,7 +2,7 @@
    DATA SAFETY: Supabase (and any API) calls are NEVER cached — always live network.
    Only the static app shell (HTML + icons + manifest) is cached, cache-first.
    Bump VERSION on every deploy to bust the old shell cache. */
-const VERSION = 'mestate-crm-v52';
+const VERSION = 'mestate-crm-v53';
 const SHELL = [
   './DMV_Agent_Outreach_CRM.html',
   './manifest.webmanifest',
@@ -61,4 +61,22 @@ self.addEventListener('fetch', (e) => {
       return res;
     }).catch(() => caches.match(req))
   );
+});
+
+// ---- Phone alerts (web push): show the notification, tap opens/focuses the CRM ----
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'MEstate CRM', {
+    body: d.body || '', icon: './icon-192.png', badge: './icon-192.png',
+    tag: d.tag || 'mestate-alert', data: { url: d.url || './DMV_Agent_Outreach_CRM.html' }
+  }));
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './DMV_Agent_Outreach_CRM.html';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    for (const c of list) { if ('focus' in c) return c.focus(); }
+    return self.clients.openWindow(url);
+  }));
 });

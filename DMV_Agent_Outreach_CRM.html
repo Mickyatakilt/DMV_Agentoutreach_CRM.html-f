@@ -993,6 +993,43 @@ async function slackCall(body){
   window.addEventListener('online', tick);
   setInterval(tick, 5*60*1000);
 })();
+
+// ===== PHONE ALERTS (web push) — admins only ======================================
+// Turns early-warning push notifications on/off for THIS device. iPhone: the CRM must be added
+// to the Home Screen and opened from there (iOS 16.4+). The server side is edge fns push-subscribe / push-send.
+var PUSH_VAPID_PUBLIC = 'BBIovtcuCbThmzgiqahzF8x9lC85NVZbpd5vDWtDL74BJV2XBOHRZkPVhWHCw4g53hPzyzBXNC530xH8E2GSdSw';
+var PUSH_SUB_URL = SUPABASE_URL + '/functions/v1/push-subscribe';
+function pushKey(b64){ var pad='='.repeat((4-b64.length%4)%4); var raw=atob((b64+pad).replace(/-/g,'+').replace(/_/g,'/')); var a=new Uint8Array(raw.length); for(var i=0;i<raw.length;i++) a[i]=raw.charCodeAt(i); return a; }
+function pushSupported(){ return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window); }
+async function pushRefreshBtn(){
+  var b=document.getElementById('push-btn'); if(!b) return;
+  var on=false;
+  try{ if(pushSupported()){ var reg=await navigator.serviceWorker.getRegistration(); var sub=reg && await reg.pushManager.getSubscription(); on=!!sub; } }catch(e){}
+  b.innerHTML = on ? '&#128276; Phone alerts: ON' : '&#128276; Phone alerts';
+}
+async function pushCall(body){
+  return fetch(PUSH_SUB_URL, { method:'POST', headers:{ 'Content-Type':'application/json', 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken() }, body:JSON.stringify(body) });
+}
+async function pushToggle(){
+  try{
+    if(!pushSupported()){ alert('Phone alerts need the CRM added to your Home Screen.\n\niPhone: tap Share, then "Add to Home Screen", then open the CRM from that icon and tap this button again.'); return; }
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if(sub){
+      try{ await pushCall({ action:'unsubscribe', endpoint:sub.endpoint }); }catch(e){}
+      await sub.unsubscribe(); await pushRefreshBtn();
+      alert('Phone alerts are OFF on this device.'); return;
+    }
+    var perm = await Notification.requestPermission();
+    if(perm !== 'granted'){ alert('Notifications were not allowed. Allow notifications for this app in your phone Settings, then tap the button again.'); return; }
+    sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:pushKey(PUSH_VAPID_PUBLIC) });
+    var r = await pushCall({ action:'subscribe', subscription:sub.toJSON(), ua:navigator.userAgent });
+    if(!r.ok){ try{ await sub.unsubscribe(); }catch(e){} alert('Could not turn on phone alerts (the server said no). Make sure you are signed in as an admin and try again.'); return; }
+    await pushRefreshBtn();
+    alert('Phone alerts are ON on this device. You will get an early warning here when the database struggles.');
+  }catch(e){ alert('Phone alerts error: '+(e && e.message || e)); }
+}
+// ===== END PHONE ALERTS ===========================================================
 // ===== END AUTH ===================================================================
 
 // -- GoHighLevel Deep Links ---------------------------------------------------
@@ -8278,6 +8315,7 @@ function renderOutreach(){
         <div id="global-search-results" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid var(--border);border-radius:8px;margin-top:4px;max-height:360px;overflow-y:auto;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,.12)"></div>
       </div>
       <div class="header-right">
+        ${isAdmin()?'<button id="push-btn" class="btn btn-white btn-sm" onclick="pushToggle()">&#128276; Phone alerts</button>':''}${isAdmin()?(setTimeout(pushRefreshBtn,400),''):''}
         <button class="btn btn-white btn-sm" onclick="showDropdownManager()">&#9881;&#65039; Dropdowns</button>
         <button class="btn btn-white btn-sm" onclick="${isAdmin()?'showManageTeam()':'showTeamManager()'}">&#128101; Team</button>
         <button class="btn btn-white btn-sm" onclick="showTrash()">&#128465; Trash</button>
