@@ -755,7 +755,7 @@ let authProfile = null; // { id, email, name, role, scope_dmv, scope_nationwide,
 try { authSession = JSON.parse(localStorage.getItem('crm_auth')||'null'); } catch(e){ authSession = null; }
 try { authProfile = JSON.parse(localStorage.getItem('crm_auth_profile')||'null'); } catch(e){ authProfile = null; }
 
-function saveAuthSession(s){ authSession = s; localStorage.setItem('crm_auth', JSON.stringify(s)); }
+function saveAuthSession(s){ authSession = s; window.__sessionDead = false; localStorage.setItem('crm_auth', JSON.stringify(s)); }
 function saveAuthProfile(p){ authProfile = p; localStorage.setItem('crm_auth_profile', JSON.stringify(p)); }
 function clearAuth(){ authSession=null; authProfile=null; localStorage.removeItem('crm_auth'); localStorage.removeItem('crm_auth_profile'); }
 function isAdmin(){ return AUTH_ENABLED && authProfile && authProfile.role==='admin'; }
@@ -809,6 +809,7 @@ async function authRefreshIfNeeded(){
       body: JSON.stringify({ refresh_token: authSession.refresh_token })
     });
     var data = await r.json();
+    window.__refreshRejected = ([400,401,403,422].indexOf(r.status)>=0);
     if(!r.ok || !data.access_token) return false;
     var expiresAt = Math.floor(Date.now()/1000) + (data.expires_in || 3600);
     saveAuthSession({ access_token:data.access_token, refresh_token:data.refresh_token, expires_at:expiresAt, user:{ id:data.user&&data.user.id, email:data.user&&data.user.email } });
@@ -854,6 +855,7 @@ async function _authForceRefreshImpl(){
       body: JSON.stringify({ refresh_token: authSession.refresh_token })
     });
     var data = await r.json();
+    window.__refreshRejected = ([400,401,403,422].indexOf(r.status)>=0);
     if(!r.ok || !data.access_token) return false;
     var expiresAt = Math.floor(Date.now()/1000) + (data.expires_in || 3600);
     saveAuthSession({ access_token:data.access_token, refresh_token:data.refresh_token, expires_at:expiresAt, user:{ id:data.user&&data.user.id, email:data.user&&data.user.email } });
@@ -935,6 +937,11 @@ async function slackCall(body){
   }
   window.fetch = async function(input, init){
     var url = (typeof input==='string') ? input : (input && input.url);
+    // Session is dead (refresh token rejected): answer locally instead of hammering the server
+    // with calls that can only return 401. Login (key-login / auth) is never blocked.
+    if(window.__sessionDead && typeof input==='string' && isSb(url) && url.indexOf('/functions/v1/key-login')<0){
+      return new Response(JSON.stringify({message:'Session expired - sign in again'}), {status:401, headers:{'Content-Type':'application/json'}});
+    }
     if(!AUTH_ENABLED || !authSession || !isSb(url) || (typeof input!=='string')) return origFetch(input, init);
     init = init || {};
     var hdrs = new Headers(init.headers||{});
@@ -948,6 +955,22 @@ async function slackCall(body){
       var used = authSession.access_token;
       if(await authForceRefresh() || authSession.access_token!==used){
         r = await origFetch(input, setAuth(init, authSession.access_token));
+      } else {
+        // Refresh failed. First: another tab may already have refreshed and saved a newer session.
+        var adopted = false;
+        try {
+          var st = JSON.parse(localStorage.getItem('crm_auth')||'null');
+          if(st && st.refresh_token && st.access_token && st.refresh_token!==authSession.refresh_token){
+            authSession = st; adopted = true;
+            r = await origFetch(input, setAuth(init, authSession.access_token));
+          }
+        } catch(e){}
+        // Only a REJECTED refresh token (4xx from the auth server) means the login is really dead.
+        // Network trouble / server 5xx must NOT log anyone out.
+        if(!adopted && window.__refreshRejected && !window.__sessionDead){
+          window.__sessionDead = true;
+          try{ bounceToLogin('Your session expired — please sign in again.'); }catch(e){}
+        }
       }
     }
     return r;
