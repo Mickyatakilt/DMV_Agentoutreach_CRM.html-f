@@ -804,6 +804,7 @@ async function authRefreshIfNeeded(){
   var now = Math.floor(Date.now()/1000);
   if(authSession.expires_at && authSession.expires_at - now > 120) return true; // still valid
   try {
+    window.__refreshRejected = false; // reset every attempt: a network error must never reuse an old "rejected"
     var r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
       method:'POST', headers:{'apikey':SUPABASE_KEY,'Content-Type':'application/json'},
       body: JSON.stringify({ refresh_token: authSession.refresh_token })
@@ -850,6 +851,7 @@ async function authForceRefresh(){
 async function _authForceRefreshImpl(){
   if(!authSession || !authSession.refresh_token) return false;
   try {
+    window.__refreshRejected = false; // reset every attempt: a network error must never reuse an old "rejected"
     var r = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
       method:'POST', headers:{'apikey':SUPABASE_KEY,'Content-Type':'application/json'},
       body: JSON.stringify({ refresh_token: authSession.refresh_token })
@@ -968,6 +970,16 @@ async function slackCall(body){
         // Only a REJECTED refresh token (4xx from the auth server) means the login is really dead.
         // Network trouble / server 5xx must NOT log anyone out.
         if(!adopted && window.__refreshRejected && !window.__sessionDead){
+          // two-tab race: give another tab 2.5 s to save a fresh session, then look once more
+          await new Promise(function(res){ setTimeout(res, 2500); });
+          try {
+            var st2 = JSON.parse(localStorage.getItem('crm_auth')||'null');
+            if(st2 && st2.refresh_token && st2.access_token && st2.refresh_token!==authSession.refresh_token){
+              authSession = st2;
+              return await origFetch(input, setAuth(init, authSession.access_token));
+            }
+          } catch(e){}
+          if(window.__sessionDead || !authSession) return r;
           window.__sessionDead = true;
           try{ bounceToLogin('Your session expired — please sign in again.'); }catch(e){}
         }
