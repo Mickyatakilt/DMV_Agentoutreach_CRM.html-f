@@ -11955,7 +11955,7 @@ function renderNationwideTab(){
           <td><div class="phone-cell">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):''}</div></td>
           <td><span class="money-val">${formatMoney(l.offer)}</span></td>
           <td><span class="arv-val">${formatMoney(l.arv)}</span></td>
-          <td style="font-size:12px;color:var(--text2)">${esc(l.marketingType)||''}</td>
+          <td style="font-size:12px;color:var(--text2)">${l.marketingType==='Bot'?'<span style="font-weight:800;color:#0f766e">&#129302; Bot</span>':esc(l.marketingType)||''}${listingChipHTML(l)}</td>
           <td onclick="event.stopPropagation()">${statusBadge(l.status)}${l.status==='Review Complete'?'<button onclick="clearReviewComplete('+l.id+')" title="Clear Review Complete" style="margin-left:4px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;font-weight:700;vertical-align:middle">&#10005;</button>':''}</td>
           <td>${leadScoreBadgeHTML(l.score)}</td>
           <td>${l.followUpDate?followUpChip(l.followUpDate,isBotFu(l)):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
