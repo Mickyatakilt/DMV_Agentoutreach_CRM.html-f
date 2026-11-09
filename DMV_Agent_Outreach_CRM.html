@@ -2047,7 +2047,7 @@ function followUpChip(ds,bot){
   const st=getFUStatus(ds); const d=daysDiff(ds);
   const label=d<0?`${Math.abs(d)}d late`:d===0?'Today':`${d}d`;
   const cls={overdue:'followup-overdue',today:'followup-today',soon:'followup-soon',future:'followup-future'}[st];
-  return `<span class="followup-chip ${cls}"${bot?' title="The Listing bot is following up on this date"':''}>${bot?'&#129302; ':'&#128197; '}${ds} (${label})</span>`;
+  return `<span class="followup-chip ${cls}"${bot?' title="The Listing bot is following up on this date"':''}>${bot?'&#129302;<b style="color:#dc2626;font-size:9px;font-weight:900;letter-spacing:.3px;margin:0 3px 0 1px">BOT</b>':'&#128197; '}${ds} (${label})</span>`;
 }
 // Default status colors
 const DEFAULT_STATUS_COLORS = {
