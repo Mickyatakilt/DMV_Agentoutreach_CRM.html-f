@@ -1930,6 +1930,7 @@ let activeStatFilter = '';
 let modalLead = null; let editMode = false; let isNew = false;
 let dupTarget = null;
 let selectedLeads = new Set();
+var nwSelected = new Set();   // Nationwide tab bulk selection (Listing bot text)
 
 function save(){localStorage.setItem('crm_leads',JSON.stringify(leads));}
 function saveJV(){localStorage.setItem('crm_jv_leads',JSON.stringify(jvLeads));}
@@ -9956,6 +9957,7 @@ function listingTextOpen(ids){
   o.innerHTML='<div style="background:var(--bg,#fff);color:var(--text1,#0f172a);border-radius:12px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.35)">'
     +'<div style="font-size:16px;font-weight:800;margin-bottom:4px">&#129302; Text with the Listing Bot &mdash; '+ids.length+' lead'+(ids.length!==1?'s':'')+'</div>'
     +'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Texts go to the lead&#39;s phone, only 9:30am-7pm New York. The agent is tagged <b>Listed Property Agent</b>, so the Listing bot answers their replies and sends follow-ups; Marketing changes to <b>Bot</b> when the text goes out. Skipped: numbers texted in the last 7 days, opted-out / DND, and contacts in another bot.</div>'
+    +(ids.some(function(i){ var l=leads.find(function(x){return x.id===i;}); return l&&l.nationwide==='Yes'; })?'<div style="font-size:12px;background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;border-radius:8px;padding:6px 10px;margin-bottom:10px">&#127758; <b>Nationwide leads</b> use the Listing bot assigned to <b>Biruk</b>: replies, follow-ups and handoffs go to Biruk.</div>':'')
     +ghlFromPickerHTML('listingtext-from')
     +'<label style="font-size:12px;font-weight:700">Start from a template</label>'
     +'<select id="listingtext-tpl" onchange="listingTextPickTpl()" style="width:100%;margin:4px 0 10px;padding:7px;border:1px solid var(--border,#e2e8f0);border-radius:8px;font-size:13px"><option value="">&mdash; write my own &mdash;</option>'
@@ -10008,6 +10010,7 @@ async function listingTextGo(){
   var r=await listingTextCall(pl);
   if(!r||!r.ok){ showToast((r&&r.message)||'Could not queue','error'); btn.disabled=false; btn.textContent='Confirm & send'; return; }
   var ids=window.__listingTextIds||[];
+  nwSelected.clear();
   listingTextClose();
   showToast('Queued '+r.queued+' text'+(r.queued!==1?'s':'')+(r.skipped?' ('+r.skipped+' skipped)':''),'success');
   listingStatusLoad(ids);
@@ -11934,6 +11937,7 @@ function renderNationwideTab(){
     soon:    nwLeads.filter(l=>l.followUpDate&&!isBotFu(l)&&getFUStatus(l.followUpDate)==='soon').length,
   };
 
+  window.__nwVisibleIds = nwLeads.map(function(l){ return l.id; });
   const hotN=nwLeads.filter(l=>l.score==='Hot').length;
   const warmN=nwLeads.filter(l=>l.score==='Warm').length;
   const coldN=nwLeads.filter(l=>l.score==='Cold').length;
@@ -11942,10 +11946,11 @@ function renderNationwideTab(){
     ? '<div class="empty"><div class="empty-icon">&#127758;</div><h3>No Nationwide leads yet</h3><p>Edit a lead and toggle Nationwide to Yes</p></div>'
     : '<div class="table-container"><div class="table-wrap"><table>'
       +'<thead><tr>'
-      +'<th>Property</th><th>Phone</th><th>Offer</th><th>ARV</th><th>Marketing</th><th>Status</th><th>Score</th><th>Follow-Up</th><th>Assign</th><th>Month</th>'
+      +'<th style="width:34px"><input type="checkbox" title="Select all (up to 100 with a phone)" onchange="nwSelectAll(this.checked)" style="width:15px;height:15px;cursor:pointer"></th><th>Property</th><th>Phone</th><th>Offer</th><th>ARV</th><th>Marketing</th><th>Status</th><th>Score</th><th>Follow-Up</th><th>Assign</th><th>Month</th>'
       +'</tr></thead><tbody>'
       + nwLeads.map(l=>`
-        <tr onclick="openDetail(${l.id})">
+        <tr onclick="openDetail(${l.id})" style="${nwSelected.has(l.id)?'background:#eff6ff;':''}">
+          <td onclick="event.stopPropagation()"><input type="checkbox" ${nwSelected.has(l.id)?'checked':''} onchange="nwToggleSelect(${l.id},this.checked)" style="width:15px;height:15px;cursor:pointer"></td>
           <td><div style="display:flex;align-items:center;gap:4px"><div class="address-cell">${esc(l.address)||''}</div>${pwIcon(l.address)}</div></td>
           <td><div class="phone-cell">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):''}</div></td>
           <td><span class="money-val">${formatMoney(l.offer)}</span></td>
@@ -11987,9 +11992,21 @@ function renderNationwideTab(){
         </div>
       </div>`:''}
 
+      ${nwSelected.size>0?`<div style="background:#fff3cd;border:1.5px solid #fcd34d;border-radius:8px;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;margin:0 0 10px;flex-wrap:wrap;gap:8px"><span style="font-size:13px;font-weight:600;color:#92400e">&#10003; ${nwSelected.size} lead${nwSelected.size!==1?'s':''} selected</span><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm" onclick="listingTextOpen([...nwSelected])" title="Text the selected agents with the Listing bot (assigned to Biruk)" style="background:#0f766e;color:#fff;border:1px solid #0f766e;font-weight:700">&#128172; Text (Listing Bot)</button><button class="btn btn-secondary btn-sm" onclick="nwClearSelection()">Clear</button></div></div>`:''}
       ${rows}
     </div>`;
 }
+function nwToggleSelect(id,checked){ if(checked) nwSelected.add(id); else nwSelected.delete(id); renderNationwideTab(); }
+function nwSelectAll(checked){
+  nwSelected.clear();
+  if(checked){
+    var ids=(window.__nwVisibleIds||[]).filter(function(id){ var l=leads.find(function(x){return x.id===id;}); return l && l.phone; });
+    if(ids.length>100) showToast('Selected the first 100 (the limit per batch)','success');
+    ids.slice(0,100).forEach(function(id){ nwSelected.add(id); });
+  }
+  renderNationwideTab();
+}
+function nwClearSelection(){ nwSelected.clear(); renderNationwideTab(); }
 
 function getJVStatuses(){
   var s = JSON.parse(localStorage.getItem('crm_jv_statuses')||'null') || ['New','Contacted','Follow Up','Under Contract','Closed','Pass'];
@@ -13213,7 +13230,7 @@ function permanentlyDelete(kind, id){
   showToast('Permanently deleted','warning');
 }
 
-function setTab(t){activeTab=t;selectedLeads.clear();render();}
+function setTab(t){activeTab=t;selectedLeads.clear();nwSelected.clear();render();}
 
 // ===== KPI tab (admin only): numbers from the kpi-data edge function =====
 var KPI_URL = SUPABASE_URL + '/functions/v1/kpi-data';
