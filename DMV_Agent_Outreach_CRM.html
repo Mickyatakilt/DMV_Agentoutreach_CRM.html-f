@@ -2040,12 +2040,14 @@ function gcalBtn(title,ds,details,location,small){
   var u=gcalUrl(title,ds,details,location); if(!u) return '';
   return '<a href="'+esc(u)+'" target="_blank" rel="noopener" class="btn btn-secondary'+(small?' btn-sm':'')+'" title="Add this follow-up to Google Calendar as an all-day reminder" onclick="event.stopPropagation()">&#128197; Add to Calendar</a>';
 }
-function followUpChip(ds){
+// A follow-up date the Listing bot set itself (shown with a robot icon; kept out of the Follow-Ups tab and its counts)
+function isBotFu(l){ return !!(l && l.botFuBot && l.botFuDue && l.followUpDate && l.followUpDate===l.botFuDue); }
+function followUpChip(ds,bot){
   if(!ds) return '';
   const st=getFUStatus(ds); const d=daysDiff(ds);
   const label=d<0?`${Math.abs(d)}d late`:d===0?'Today':`${d}d`;
   const cls={overdue:'followup-overdue',today:'followup-today',soon:'followup-soon',future:'followup-future'}[st];
-  return `<span class="followup-chip ${cls}">&#128197; ${ds} (${label})</span>`;
+  return `<span class="followup-chip ${cls}"${bot?' title="The Listing bot is following up on this date"':''}>${bot?'&#129302; ':'&#128197; '}${ds} (${label})</span>`;
 }
 // Default status colors
 const DEFAULT_STATUS_COLORS = {
@@ -2096,11 +2098,11 @@ function normalizeAddr(a){return(a||'').toLowerCase().trim().replace(/  /g,' ').
 function findDup(addr,excludeId){const n=normalizeAddr(addr); if(!n) return null; return leads.find(l=>!l.deleted&&l.id!==excludeId&&normalizeAddr(l.address)===n)||null;}
 function getNextId(){return leads.length?Math.max(...leads.map(l=>l.id))+1:1;}
 function getFUCounts(){
-  const w=leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&l.nationwide!=='Yes').concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
+  const w=leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&!isBotFu(l)&&l.nationwide!=='Yes').concat(jvLeads.filter(l=>!l.deleted&&l.followUpDate));
   return {overdue:w.filter(l=>getFUStatus(l.followUpDate)==='overdue').length,today:w.filter(l=>getFUStatus(l.followUpDate)==='today').length,soon:w.filter(l=>getFUStatus(l.followUpDate)==='soon').length,total:w.length};
 }
 function getNWFUCounts(){
-  const w=leads.filter(l=>!l.deleted&&l.followUpDate&&l.nationwide==='Yes'&&!isD4DRow(l)&&!isFbLead(l));
+  const w=leads.filter(l=>!l.deleted&&l.followUpDate&&!isBotFu(l)&&l.nationwide==='Yes'&&!isD4DRow(l)&&!isFbLead(l));
   return {overdue:w.filter(l=>getFUStatus(l.followUpDate)==='overdue').length,today:w.filter(l=>getFUStatus(l.followUpDate)==='today').length,soon:w.filter(l=>getFUStatus(l.followUpDate)==='soon').length,total:w.length};
 }
 function getFiltered(){
@@ -2288,7 +2290,7 @@ function fbRowHTML(l){
     +'<td>'+(l.jvSplit?esc(l.jvSplit)+(String(l.jvSplit).indexOf('%')<0?'%':''):'<span style="color:var(--text4)">&#8212;</span>')+'</td>'
     +'<td style="white-space:nowrap;font-size:12px">'+(l.contractEnd?esc(l.contractEnd):'<span style="color:var(--text4)">&#8212;</span>')+'</td>'
     +'<td style="white-space:nowrap;font-size:12px">'+esc(l.date||'')+'</td>'
-    +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
+    +'<td>'+(l.followUpDate?followUpChip(l.followUpDate,isBotFu(l)):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
     +'<td onclick="event.stopPropagation()">'+assignBtnHTML(l)+'</td></tr>';
 }
 var hoPendingLeadIds=[];   // lead ids with a bot handoff that is still waiting (not clicked Handled), for EVERY assignee
@@ -8697,7 +8699,7 @@ function rvRowHTML(it){
     +'<td>'+note+'</td>'
     +'<td><span class="money-val">'+formatMoney(offer)+'</span></td>'
     +'<td><span class="arv-val">'+formatMoney(l.arv)+'</span></td>'
-    +'<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')
+    +'<td>'+(l.followUpDate?followUpChip(l.followUpDate,isBotFu(l)):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')
       +(kind==='lead'?'<div id="d4dbot-chip-'+l.id+'" style="margin-top:4px">'+d4dBotChipHTML(l.id)+'</div>':'')
       +(inHotTab?'<div onclick="event.stopPropagation()" style="margin-top:4px"><input type="date" value="'+esc(l.followUpDate||'')+'" onchange="d4dSetFollowUp('+l.id+',this.value)" title="Set follow-up date" style="font-size:11px;padding:2px 4px;border:1px solid var(--border,#e2e8f0);border-radius:6px"></div>':'')+'</td>'
     +'<td>'+statusBadge(status)+'</td>'
@@ -10625,9 +10627,9 @@ function renderLeadsTab(){
   const customizeBtn=`<div class="stat-card" onclick="showStatCustomizer()" style="cursor:pointer;justify-content:center;align-items:center;color:var(--text3)" title="Choose which counters show"><div style="font-size:12px;font-weight:700">&#9881;&#65039; Customize</div></div>`;
 
   // DMV Leads page stats mirror the DMV Follow-Up queue: DMV Leads + Tasks only, Nationwide excluded
-  const allFUCount = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&l.nationwide!=='Yes').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate).length;
-  const allOverdue = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='overdue').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='overdue').length;
-  const allToday = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='today').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='today').length;
+  const allFUCount = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&!isBotFu(l)&&l.nationwide!=='Yes').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate).length;
+  const allOverdue = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&!isBotFu(l)&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='overdue').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='overdue').length;
+  const allToday = leads.filter(l=>!l.deleted&&!isD4DRow(l)&&!isFbLead(l)&&l.followUpDate&&!isBotFu(l)&&l.nationwide!=='Yes'&&getFUStatus(l.followUpDate)==='today').length + jvLeads.filter(l=>!l.deleted&&l.followUpDate&&getFUStatus(l.followUpDate)==='today').length;
   const overdueChip=`<div class="stat-card" onclick="setTab('followups')" style="${allOverdue>0?'border-color:#fca5a5;background:#fee2e2;':''}"><div class="stat-dot" style="background:#dc2626"></div><div><div class="stat-num" style="${allOverdue>0?'color:#dc2626':''}">${allOverdue}</div><div class="stat-label" style="${allOverdue>0?'color:#dc2626':''}">Overdue</div></div></div>`;
   const fuChip=`<div class="stat-card" onclick="setTab('followups')" style="${allToday>0?'border-color:#fcd34d;background:#fef3c7;':'border-color:#5eead4;background:#f0fdfa;'}"><div class="stat-dot" style="background:${allToday>0?'#b45309':'#0d9488'}"></div><div><div class="stat-num" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?allToday:allFUCount}</div><div class="stat-label" style="color:${allToday>0?'#b45309':'#0d9488'}">${allToday>0?'Due Today':'Follow-Ups'}</div></div></div>`;
 
@@ -10701,7 +10703,7 @@ function renderTable(data,start,end){
       <td onclick="openDetail(${l.id})">${statusBadge(l.status)}</td>
       <td onclick="openDetail(${l.id})">${leadScoreBadgeHTML(l.score)}</td>
       <td onclick="openDetail(${l.id})" style="white-space:nowrap;font-size:12px;color:var(--text2)">${l.date?esc(l.date):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
-      <td onclick="openDetail(${l.id})">${l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
+      <td onclick="openDetail(${l.id})">${l.followUpDate?followUpChip(l.followUpDate,isBotFu(l)):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
       <td>${l.webLink&&l.webLink.startsWith('http')?`<a href="${esc(l.webLink)}" target="_blank" class="detail-link" onclick="event.stopPropagation()">&#8599;</a>`:''}</td>
       <td>${assignBtnHTML(l)}</td>
       <td onclick="openDetail(${l.id})"><span class="month-tag">${l.month}</span></td>
@@ -10944,7 +10946,7 @@ function renderCards(data,start,end){
             <div><div class="card-field-label">Offer</div><div class="card-field-val money-val">${formatMoney(l.offer)}</div></div>
             <div><div class="card-field-label">ARV</div><div class="card-field-val arv-val">${formatMoney(l.arv)}</div></div>
           </div>
-          ${l.followUpDate?'<div style="margin-top:8px">'+followUpChip(l.followUpDate)+'</div>':''}
+          ${l.followUpDate?'<div style="margin-top:8px">'+followUpChip(l.followUpDate,isBotFu(l))+'</div>':''}
           <div class="card-tags"><span class="month-tag">${l.month}</span>${l.marketingType?'<span style="background:var(--surface3);color:var(--gray);padding:2px 7px;border-radius:5px;font-size:10px;font-weight:600">'+esc(l.marketingType)+'</span>':''}</div>
           ${l.notes?'<div class="card-note">'+esc(l.notes).substring(0,100)+(l.notes.length>100?'&#8230;':'')+'</div>':''}
         </div>
@@ -10975,13 +10977,13 @@ function buildFollowUpQueueHTML(nationwideOnly){
   var allFU = [];
   if(nationwideOnly){
     leads.forEach(function(l){
-      if(!l.deleted && l.followUpDate && l.nationwide==='Yes' && !isD4DRow(l) && !isFbLead(l)){
+      if(!l.deleted && l.followUpDate && !isBotFu(l) && l.nationwide==='Yes' && !isD4DRow(l) && !isFbLead(l)){
         allFU.push({lead:l, type:'nationwide', isTask:false});
       }
     });
   } else {
     leads.forEach(function(l){
-      if(!l.deleted && l.followUpDate && l.nationwide!=='Yes' && !isD4DRow(l) && !isFbLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna'){
+      if(!l.deleted && l.followUpDate && !isBotFu(l) && l.nationwide!=='Yes' && !isD4DRow(l) && !isFbLead(l) && l.d4dStatus!=='mail_queued' && l.d4dStatus!=='mail_sent' && l.d4dStatus!=='muna'){
         allFU.push({lead:l, type:'dmv', isTask:false});
       }
     });
@@ -11031,6 +11033,7 @@ function buildFollowUpQueueHTML(nationwideOnly){
       + '</div>';
   }
   function botFuSections(){
+    return ''; // bot dates show as a robot icon in the Follow-Up column instead (Mike, Nov 9)
     if(!botLeads.length) return '';
     var names = []; botLeads.forEach(function(l){ if(names.indexOf(l.botFuBot)<0) names.push(l.botFuBot); });
     return names.map(function(n){
@@ -11331,7 +11334,7 @@ function renderDetailModal(){
               <div class="detail-item"><span class="detail-label">Sqft</span><span class="detail-val">${esc(l.sqft||'')||'&#8212;'}</span></div>
               <div class="detail-item"><span class="detail-label">Marketing</span><span class="detail-val">${esc(l.marketingType)||''}</span></div>
               <div class="detail-item"><span class="detail-label">Entry Date</span><span class="detail-val">${l.date||''}</span></div>
-              <div class="detail-item"><span class="detail-label">Follow-Up</span><span class="detail-val">${l.followUpDate?followUpChip(l.followUpDate)+' <a href="'+buildGCalUrl(l.followUpDate,'Follow up: '+(l.address||'Lead'),'Lead follow-up reminder for '+(l.address||''))+'" target="_blank" class="detail-link" style="font-size:11px">&#128197; Add to Calendar</a>':''}</span></div>
+              <div class="detail-item"><span class="detail-label">Follow-Up</span><span class="detail-val">${l.followUpDate?followUpChip(l.followUpDate,isBotFu(l))+' <a href="'+buildGCalUrl(l.followUpDate,'Follow up: '+(l.address||'Lead'),'Lead follow-up reminder for '+(l.address||''))+'" target="_blank" class="detail-link" style="font-size:11px">&#128197; Add to Calendar</a>':''}</span></div>
             </div>
           </div>
           ${phoneLadderHTML(l)}
@@ -11813,7 +11816,7 @@ function renderSentOutTab(){
           <td>${daSentOutBadge(l)}</td>
           <td id="signer-${l.kind}-${l.id}" style="font-size:12px">${String(l.agreementStatus||'').toLowerCase()==='accepted'?'<span style="color:#1a7f43;font-weight:600">Signed</span>':'<span style="color:var(--text4)">Awaiting signature</span>'}</td>
           <td style="font-size:12px;color:var(--text3)">${l.sharedAt?new Date(l.sharedAt).toLocaleDateString():''}</td>
-          <td>${l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
+          <td>${l.followUpDate?followUpChip(l.followUpDate,isBotFu(l)):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
           <td>${l.recipientFollowUpDate?followUpChip(l.recipientFollowUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
           <td style="text-align:center" onclick="event.stopPropagation()"><button onclick="sentOutDeleteOne('${l.kind}',${l.id})" title="Remove from Sent Out (keeps the lead)" style="background:var(--red-bg);border:1px solid #fca5a5;color:var(--red);border-radius:5px;padding:2px 8px;cursor:pointer;font-size:12px">&#128465;</button></td>
         </tr>`).join('')
@@ -11950,7 +11953,7 @@ function renderNationwideTab(){
           <td style="font-size:12px;color:var(--text2)">${esc(l.marketingType)||''}</td>
           <td onclick="event.stopPropagation()">${statusBadge(l.status)}${l.status==='Review Complete'?'<button onclick="clearReviewComplete('+l.id+')" title="Clear Review Complete" style="margin-left:4px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;font-weight:700;vertical-align:middle">&#10005;</button>':''}</td>
           <td>${leadScoreBadgeHTML(l.score)}</td>
-          <td>${l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
+          <td>${l.followUpDate?followUpChip(l.followUpDate,isBotFu(l)):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
           <td onclick="event.stopPropagation()">${assignBtnHTML(l)}</td>
           <td><span class="month-tag">${l.month}</span></td>
         </tr>`).join('')
@@ -12101,7 +12104,7 @@ function renderJVLeadsTab(){
             + '<td style="color:var(--accent);font-weight:600">'+esc(l.askingPrice||'')+'</td>'
             + '<td style="color:var(--green);font-weight:600">'+esc(l.arv||'')+'</td>'
             + '<td style="font-size:12px;color:var(--text2)">'+esc(l.profitEst||'')+'</td>'
-            + '<td>'+(l.followUpDate?followUpChip(l.followUpDate):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
+            + '<td>'+(l.followUpDate?followUpChip(l.followUpDate,isBotFu(l)):'<span style="color:var(--text4);font-size:11px">&#8212;</span>')+'</td>'
             + '<td style="font-size:11px;color:var(--text3)">'+esc(l.sourceGroup||'')+'</td>'
             + '<td style="font-size:11px;color:var(--text3)">'+esc(l.dateAdded||'')+'</td>'
             + '<td onclick="event.stopPropagation()"><button onclick="deleteJVLead('+l.id+')" style="background:var(--red-bg);border:1px solid #fca5a5;color:var(--red);border-radius:5px;padding:2px 8px;cursor:pointer;font-size:11px">&#128465;</button></td>'
