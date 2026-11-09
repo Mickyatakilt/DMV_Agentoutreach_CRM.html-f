@@ -11929,9 +11929,9 @@ function renderNationwideTab(){
     nwLeads=nwLeads.filter(function(l){return l.date&&l.date.slice(0,7)===nwMk;});
   }
   const fuc = {
-    overdue: nwLeads.filter(l=>l.followUpDate&&getFUStatus(l.followUpDate)==='overdue').length,
-    today:   nwLeads.filter(l=>l.followUpDate&&getFUStatus(l.followUpDate)==='today').length,
-    soon:    nwLeads.filter(l=>l.followUpDate&&getFUStatus(l.followUpDate)==='soon').length,
+    overdue: nwLeads.filter(l=>l.followUpDate&&!isBotFu(l)&&getFUStatus(l.followUpDate)==='overdue').length,
+    today:   nwLeads.filter(l=>l.followUpDate&&!isBotFu(l)&&getFUStatus(l.followUpDate)==='today').length,
+    soon:    nwLeads.filter(l=>l.followUpDate&&!isBotFu(l)&&getFUStatus(l.followUpDate)==='soon').length,
   };
 
   const hotN=nwLeads.filter(l=>l.score==='Hot').length;
