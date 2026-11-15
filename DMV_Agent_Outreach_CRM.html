@@ -705,6 +705,74 @@
     /* ---- Toolbars / stat rows / dashboard grids: never force the page wider than the screen ---- */
     .stats-bar,.toolbar{overflow-x:auto;-webkit-overflow-scrolling:touch;}
   }
+
+/* ===== Deal Check v2 (workspace) ===== */
+.dcw-layout{display:grid;grid-template-columns:290px minmax(0,1fr);gap:16px;align-items:start}
+.dcw-card{background:var(--surface);border:1px solid var(--border);border-radius:12px}
+.dcw-pad{padding:14px 16px}
+.dcw-card-h{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.dcw-add{display:flex;gap:8px;padding:12px;border-bottom:1px solid var(--border)}
+.dcw-add input{flex:1;min-width:0}
+.dcw-plist{display:flex;flex-direction:column}
+.dcw-item{border:0;border-bottom:1px solid var(--border);background:transparent;text-align:left;padding:11px 14px;width:100%;cursor:pointer;color:var(--text)}
+.dcw-item:hover{background:var(--surface2)}
+.dcw-item.on{background:var(--accent-light)}
+.dcw-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
+.dcw-chip{display:inline-flex;padding:2px 8px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.dcw-chip.grey{background:var(--surface3);color:var(--text2)}.dcw-chip.blue{background:var(--accent-light);color:var(--accent)}
+.dcw-chip.good{background:var(--green-bg);color:var(--green)}.dcw-chip.warn{background:#fef3c7;color:#b45309}
+.dcw-steps{display:flex;flex-wrap:wrap;row-gap:6px;margin-top:12px}
+.dcw-step{display:flex;align-items:center;gap:8px;padding:4px 14px 4px 0;font-weight:600;font-size:12.5px;color:var(--text3)}
+.dcw-step i{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--surface3);font-style:normal;font-size:12px}
+.dcw-step.done{color:var(--green)}.dcw-step.done i{background:var(--green-bg)}
+.dcw-step.now{color:var(--accent)}.dcw-step.now i{background:var(--accent);color:#fff}
+.dcw-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}
+.dcw-sticky{position:sticky;top:12px}
+.dcw-z{font-size:12px;font-weight:600;color:var(--accent);text-decoration:none;white-space:nowrap;margin-right:8px}
+.dcw-z:hover{text-decoration:underline}
+.dcw-warn{background:#fef3c7;color:#92400e;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;margin-bottom:12px}
+.dcw-lbl{font-size:11.5px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;display:block}
+.dcw-big{font-size:36px;font-weight:800;line-height:1;letter-spacing:-.5px}
+.dcw-arvrow{display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
+.dcw-yours{min-width:180px;max-width:230px}
+.dcw-why{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:12.5px;color:var(--text2)}
+.dcw-tw{overflow-x:auto;margin-top:12px}
+.dcw-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.dcw-tbl th{text-align:left;color:var(--text3);font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+.dcw-tbl td{padding:8px;border-bottom:1px solid var(--border);white-space:nowrap}
+.dcw-tbl td.a{white-space:normal;min-width:160px;font-weight:600}
+.dcw-tbl tr.off td{opacity:.5}
+.dcw-tbl input[type=checkbox],.dcw-cc input[type=checkbox]{width:17px;height:17px}
+.dcw-cards{display:none;margin-top:12px}
+.dcw-cc{border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--surface);display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 12px;align-items:center}
+.dcw-cc.off{opacity:.55}.dcw-cc input[type=checkbox]{width:26px;height:26px}
+.dcw-cc .m{grid-column:2/4;font-size:12.5px;color:var(--text3)}
+.dcw-cc .x{grid-column:1/4;display:flex;gap:14px;flex-wrap:wrap}
+.dcw-cc .dcw-z{font-size:14px;padding:6px 0}
+.dcw-mao{font-size:34px;font-weight:800;letter-spacing:-.5px;color:var(--green)}
+.dcw-stack{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--surface3);margin:10px 0 6px}
+.dcw-stack i{display:block;height:100%}
+.dcw-legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--text3)}
+.dcw-legend s{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:4px;text-decoration:none}
+.dcw-kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px}
+.dcw-kv:last-child{border-bottom:0}
+.dcw-closebar{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+.dcw-closed{margin-top:14px;padding:10px 12px;border-radius:9px;background:var(--surface3)}
+.dcw-spin{display:inline-block;width:14px;height:14px;border:2px solid var(--accent-light);border-top-color:var(--accent);border-radius:50%;animation:dcwsp .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes dcwsp{to{transform:rotate(360deg)}}
+.dcw-mbar{display:none}
+@media (prefers-reduced-motion:reduce){.dcw-spin{animation:none}}
+@media (max-width:980px){.dcw-grid{grid-template-columns:minmax(0,1fr)}.dcw-sticky{position:static}}
+@media (max-width:860px){.dcw-layout{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:768px){
+  .dcw-tw{display:none}.dcw-cards{display:block}
+  #dcw-root .btn{min-height:44px}
+  #dcw-root input,#dcw-root select,#dcw-root textarea{font-size:16px!important;min-height:44px}
+  .dcw-item{padding:15px 14px}
+  .dcw-big{font-size:32px}
+  .dcw-mbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);border-top:1px solid var(--border);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));gap:18px;align-items:center}
+  #dcw-root{padding-bottom:84px}
+}
 </style>
 </head>
 <body>
@@ -3220,8 +3288,9 @@ var dispoDraft = {id:null,address:'',headerPhoto:'',price:'',arv:'',beds:'',bath
 // record via additive columns — nothing here is wired to those yet.
 const DC_PATH = 'crm_dealcheck';
 var crmDealCheck = null; // null = not loaded yet
-function dcFromDb(r){ return {id:r.id,address:r.address||'',sqft:r.sqft||'',beds:r.beds||'',baths:r.baths||'',notes:r.notes||'',ownerName:r.owner_name||'',ownerMailingAddress:r.owner_mailing_address||'',comps:r.comps||'',photoUrls:r.photo_urls||'',arv:+r.arv||0,arvLow:+r.arv_low||0,arvHigh:+r.arv_high||0,rehabLow:+r.rehab_low||0,rehabHigh:+r.rehab_high||0,rehabTier:r.rehab_tier||'',rehabDetail:r.rehab_detail||'',analyzedAt:r.analyzed_at||null}; }
-function dcToDb(d){ return {address:d.address||'',sqft:d.sqft||'',beds:d.beds||'',baths:d.baths||'',notes:d.notes||'',owner_name:d.ownerName||'',owner_mailing_address:d.ownerMailingAddress||'',comps:d.comps||'',photo_urls:d.photoUrls||'',arv:d.arv||null,arv_low:d.arvLow||null,arv_high:d.arvHigh||null,rehab_low:d.rehabLow||null,rehab_high:d.rehabHigh||null,rehab_tier:d.rehabTier||null,rehab_detail:d.rehabDetail||null,analyzed_at:d.analyzedAt||null,updated_at:new Date().toISOString()}; }
+function dcFromDb(r){ return {id:r.id,address:r.address||'',sqft:r.sqft||'',beds:r.beds||'',baths:r.baths||'',notes:r.notes||'',ownerName:r.owner_name||'',ownerMailingAddress:r.owner_mailing_address||'',comps:r.comps||'',photoUrls:r.photo_urls||'',arv:+r.arv||0,arvLow:+r.arv_low||0,arvHigh:+r.arv_high||0,rehabLow:+r.rehab_low||0,rehabHigh:+r.rehab_high||0,rehabTier:r.rehab_tier||'',rehabDetail:r.rehab_detail||'',analyzedAt:r.analyzed_at||null,dealState:r.deal_state||null,_hasState:('deal_state' in r)}; }
+function dcToDbBase(d){ return {address:d.address||'',sqft:d.sqft||'',beds:d.beds||'',baths:d.baths||'',notes:d.notes||'',owner_name:d.ownerName||'',owner_mailing_address:d.ownerMailingAddress||'',comps:d.comps||'',photo_urls:d.photoUrls||'',arv:d.arv||null,arv_low:d.arvLow||null,arv_high:d.arvHigh||null,rehab_low:d.rehabLow||null,rehab_high:d.rehabHigh||null,rehab_tier:d.rehabTier||null,rehab_detail:d.rehabDetail||null,analyzed_at:d.analyzedAt||null,updated_at:new Date().toISOString()}; }
+function dcToDb(d){ var o=dcToDbBase(d); if(dcStateCol&&d.dealState&&typeof d.dealState==='object') o.deal_state=d.dealState; return o; }
 async function crmDealCheckFetch(){
   try { var rows=await sbFetch(DC_PATH+'?select=*&order=id.desc&limit=2000'); crmDealCheck=(rows||[]).map(dcFromDb); }
   catch(e){ crmDealCheck=[]; showToast('Could not load Deal Check — check connection','error'); }
@@ -3232,7 +3301,7 @@ async function crmDealCheckUpdate(d){ await sbFetch(DC_PATH+'?id=eq.'+d.id,'PATC
 async function crmDealCheckDeleteDb(id){ await sbFetch(DC_PATH+'?id=eq.'+id,'DELETE'); }
 function crmDealCheckById(id){ id=+id; return (crmDealCheck||[]).find(function(d){ return +d.id===id; }); }
 
-function renderDealCheck(){
+function renderDealCheckLegacy(){
   var host=document.getElementById('section-main'); if(!host) return;
   if(crmDealCheck===null){
     host.innerHTML='<div class="lt-wrap"><div class="lt-head"><div><h2>&#128269; Deal Check</h2></div></div>'
@@ -3492,6 +3561,393 @@ async function dcAnSave(){
   closeModal(); renderDealCheck();
 }
 // ===================== end Deal Check analysis =====================
+// ===================== Deal Check v2: workspace (Comps via crm_comp_jobs, Rehab, Deal math, Close-out) =====================
+// Layout = "Option A" (property list + workspace + sticky deal math; list/detail on phones).
+// Comps run on Mike's ChatGPT plan through a worker (crm_comp_jobs queue). Every comp is UNVERIFIED web data.
+// Per-deal settings live in crm_dealcheck.deal_state (jsonb): {leadId,on:{i:bool},your,pct,fee,pick,own,ask,saved,closed:{outcome,note,date},taskSent}
+var dcStateCol = true;   // false only if the deal_state column is missing (then settings stay in this browser)
+var dcw = { jobs:null, sel:null, view:'list', files:[], urlsText:null, poll:null, saveT:{}, rehabBusy:false, rehabRes:null, closing:null };
+
+function dcwKey(a){ return String(a||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function dcwValidAddr(a){
+  a=String(a||'').trim();
+  return a.length>=8 && /\d/.test(a) && /[a-z]{3}/i.test(a) && (a.split(',').length>=2 || /\b\d{5}\b/.test(a));
+}
+async function dcwLoadJobs(){
+  try{
+    var rows=await sbFetch('crm_comp_jobs?select=id,address,status,result_json,error,created_at,finished_at,requested_by&order=created_at.desc&limit=500');
+    var m={}; (rows||[]).forEach(function(j){ var k=dcwKey(j.address); if(!m[k]) m[k]=j; });
+    dcw.jobs=m; return true;
+  }catch(e){ if(!dcw.jobs) dcw.jobs={}; return false; }
+}
+function dcwJob(d){ return (dcw.jobs||{})[dcwKey(d.address)]||null; }
+function dcwRes(d){ var j=dcwJob(d); return (j&&j.status==='done')?(j.result_json||null):null; }
+function dcwActive(d){ var j=dcwJob(d); return !!(j&&(j.status==='queued'||j.status==='running')); }
+function dcwSt(d){
+  var s=d.dealState;
+  if(!s||typeof s!=='object'){
+    s={};
+    if(!dcStateCol){ try{ s=JSON.parse(localStorage.getItem('dcw_'+d.id)||'{}')||{}; }catch(e){ s={}; } }
+    d.dealState=s;
+  }
+  if(!s.on) s.on={}; if(s.pct==null) s.pct=70; if(s.fee==null) s.fee=15000; if(!s.pick) s.pick='mid';
+  return s;
+}
+function dcwSysArv(res){ var a=res&&res.arv; if(!a) return null; return a.value!=null?a.value:(a.expected!=null?a.expected:null); }
+function dcwYour(d){ var s=dcwSt(d); if(s.your!=null&&s.your!=='') return +s.your; var v=dcwSysArv(dcwRes(d)); return v!=null?v:(+d.arv||0); }
+function dcwCompOn(d,i){ var s=dcwSt(d); return s.on[i]==null?true:!!s.on[i]; }
+function dcwRehab(d){
+  var s=dcwSt(d), lo=+d.rehabLow||0, hi=+d.rehabHigh||0;
+  if(s.pick==='own'&&s.own!=null&&s.own!=='') return +s.own;
+  if(!lo&&!hi) return null;
+  return s.pick==='low'?lo:(s.pick==='high'?hi:(lo+hi)/2);
+}
+function dcwMao(d){ var r=dcwRehab(d); if(r==null) return null; var s=dcwSt(d); return dcwYour(d)*s.pct/100-r-(+s.fee||0); }
+function dcwStage(d){
+  var s=dcwSt(d);
+  if(s.closed) return 'closed'; if(s.saved) return 'offer'; if(dcwRehab(d)!=null) return 'rehab'; if(dcwRes(d)) return 'comps'; return 'new';
+}
+function dcwStageLabel(k){ return {new:'New',comps:'Comps ready',rehab:'Rehab ready',offer:'Offer ready',closed:'Closed'}[k]; }
+function dcwMedian(d){
+  var res=dcwRes(d), sq=dcNum(d.sqft)||(res&&res.subject&&+res.subject.sqft)||0; if(!res||!sq) return null;
+  var v=(res.comps||[]).filter(function(c,i){ return dcwCompOn(d,i)&&c.sold_price&&c.sqft; }).map(function(c){ return c.sold_price/c.sqft*sq; }).sort(function(a,b){return a-b;});
+  if(!v.length) return null; var m=Math.floor(v.length/2); return v.length%2?v[m]:(v[m-1]+v[m])/2;
+}
+function dcwPersist(d){
+  if(dcwRes(d)) d.arv=Math.round(dcwYour(d))||d.arv;
+  if(!dcStateCol){ try{ localStorage.setItem('dcw_'+d.id,JSON.stringify(dcwSt(d))); }catch(e){} return; }
+  clearTimeout(dcw.saveT[d.id]);
+  dcw.saveT[d.id]=setTimeout(function(){ crmDealCheckUpdate(d).catch(function(){ showToast('Could not save Deal Check changes — check your connection','error'); }); },500);
+}
+function dcwAfterJobs(){
+  (crmDealCheck||[]).forEach(function(d){
+    var r=dcwRes(d); if(!r||!r.subject) return;
+    if(!dcNum(d.sqft)&&r.subject.sqft){
+      d.sqft=String(r.subject.sqft);
+      if(!d.beds&&r.subject.beds!=null) d.beds=String(r.subject.beds);
+      if(!d.baths&&r.subject.baths!=null) d.baths=String(r.subject.baths);
+      crmDealCheckUpdate(d).catch(function(){});
+    }
+  });
+}
+function dcwPoll(){
+  clearTimeout(dcw.poll);
+  if(activeSection!=='dealcheck') return;
+  if(!(crmDealCheck||[]).some(dcwActive)) return;
+  dcw.poll=setTimeout(async function(){
+    await dcwLoadJobs(); dcwAfterJobs();
+    if(activeSection==='dealcheck') dcwPaint(true);
+    dcwPoll();
+  },5000);
+}
+
+// ---------- page ----------
+function renderDealCheck(){
+  var host=document.getElementById('section-main'); if(!host) return;
+  var head='<div class="lt-head"><div><h2>&#128269; Deal Check</h2>'
+    +'<p>Add an address, press Comp, then check the comps, add rehab and see your max offer.</p></div>'
+    +'<div class="lt-actions">'
+    +'<button class="btn btn-secondary btn-sm" onclick="crmDealCheck=null;dcw.jobs=null;renderDealCheck()">&#8635; Refresh</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="openDealCheckImport()">&#128203; Import from listing</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="openDealCheckEditModal(null)">&#43; Add manually</button>'
+    +'</div></div>';
+  if(crmDealCheck===null||dcw.jobs===null){
+    host.innerHTML='<div class="lt-wrap">'+head+'<div style="padding:40px;text-align:center;color:var(--text4);font-size:13px">Loading&hellip;</div></div>';
+    Promise.all([crmDealCheck===null?crmDealCheckFetch():null, dcw.jobs===null?dcwLoadJobs():null]).then(function(){
+      if(crmDealCheck&&crmDealCheck.length&&crmDealCheck[0]._hasState===false) dcStateCol=false;
+      dcwAfterJobs(); if(activeSection==='dealcheck') renderDealCheck();
+    });
+    return;
+  }
+  host.innerHTML='<div class="lt-wrap">'+head+'<div id="dcw-root"></div></div>';
+  dcwPaint(); dcwPoll();
+}
+function dcwRows(){
+  return (crmDealCheck||[]).slice().sort(function(a,b){
+    var ca=dcwSt(a).closed?1:0, cb=dcwSt(b).closed?1:0; if(ca!==cb) return ca-cb; return b.id-a.id;
+  });
+}
+function dcwPaint(soft){
+  var root=document.getElementById('dcw-root'); if(!root) return;
+  if(soft&&root.contains(document.activeElement)&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  var rows=dcwRows();
+  if(dcw.sel==null||!crmDealCheckById(dcw.sel)) dcw.sel=rows.length?rows[0].id:null;
+  var phone=isPhoneUI(), detail=phone&&dcw.view==='detail'&&dcw.sel!=null, d=dcw.sel!=null?crmDealCheckById(dcw.sel):null;
+  root.innerHTML='<div class="dcw-layout">'
+    +'<div class="dcw-side dcw-card"'+(detail?' style="display:none"':'')+'>'+dcwListHTML(rows)+'</div>'
+    +'<div class="dcw-main"'+(phone&&!detail?' style="display:none"':'')+'>'
+      +(d?(phone?'<button class="btn btn-secondary" onclick="dcw.view=\'list\';dcwPaint()" style="margin-bottom:10px">&larr; All properties</button>':'')+dcwDetailHTML(d)
+        :'<div class="dcw-card" style="padding:30px;text-align:center;color:var(--text3)">No properties yet. Type an address above and press Comp.</div>')
+    +'</div></div>'+(detail&&d?dcwMbar(d):'');
+}
+function dcwListHTML(rows){
+  var h='<div class="dcw-add"><input type="text" id="dcw-addr" class="form-input" placeholder="Add address: street, city, state ZIP" aria-label="Add address" onkeydown="if(event.key===\'Enter\')dcwAdd()"><button class="btn btn-primary" onclick="dcwAdd()">Comp</button></div>';
+  if(!rows.length) return h+'<div style="padding:16px;color:var(--text3);font-size:12.5px">Nothing here yet.</div>';
+  return h+'<div class="dcw-plist">'+rows.map(function(d){
+    var k=dcwStage(d), m=dcwMao(d), res=dcwRes(d);
+    var parts=String(d.address||'').split(',');
+    return '<button type="button" class="dcw-item'+(d.id===dcw.sel?' on':'')+'" onclick="dcwSelect('+d.id+')">'
+      +'<div style="font-weight:700;font-size:13px">'+esc(parts[0]||'(no address)')+'</div>'
+      +'<div style="font-size:12px;color:var(--text3)">'+esc(parts.slice(1).join(',').trim())+'</div>'
+      +'<div class="dcw-chips"><span class="dcw-chip grey">'+(dcwActive(d)?'Searching&hellip;':dcwStageLabel(k))+'</span>'
+      +(res?'<span class="dcw-chip blue">'+dcMoney(dcwYour(d))+'</span>':'')
+      +(m!=null?'<span class="dcw-chip good">Offer '+dcMoney(Math.max(m,0))+'</span>':'')+'</div></button>';
+  }).join('')+'</div>';
+}
+function dcwSelect(id){ dcw.sel=id; dcw.view='detail'; dcw.files=[]; dcw.urlsText=null; dcw.rehabRes=null; dcw.closing=null; dcwPaint(); window.scrollTo(0,0); }
+
+function dcwHeadHTML(d){
+  var s=dcwSt(d), spec=[]; if(d.beds) spec.push(d.beds+' bd'); if(d.baths) spec.push(d.baths+' ba'); if(d.sqft) spec.push(Number(d.sqft).toLocaleString()+' sqft');
+  var steps=[['Comps and ARV',!!dcwRes(d)],['Rehab',dcwRehab(d)!=null],['Offer',!!s.saved]], now=false;
+  var sh=steps.map(function(x,i){ var c=x[1]?'done':(!now?(now=true,'now'):''); return '<div class="dcw-step '+c+'"><i>'+(x[1]?'&#10003;':(i+1))+'</i>'+x[0]+'</div>'; }).join('');
+  return '<div class="dcw-card dcw-pad" style="margin-bottom:14px"><div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">'
+    +'<div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:800">'+esc(d.address||'(no address)')
+    +' <a class="dcw-z" href="'+esc(buildZillowUrl(d.address))+'" target="_blank" rel="noopener">&#127968; Zillow &#8599;</a></div>'
+    +'<div style="font-size:12px;color:var(--text3);margin-top:2px">'+(spec.join(' &middot; ')||'Specs fill in after the first comp search')
+    +(s.leadId!=null?' &middot; From Lead #'+s.leadId:'')+(s.taskSent?' &middot; Task created '+esc(s.taskSent):'')+'</div></div>'
+    +'<div style="display:flex;gap:6px"><button class="btn btn-secondary btn-sm" onclick="openDealCheckEditModal('+d.id+')" title="Edit specs and notes">&#9998; Edit</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="deleteDealCheck('+d.id+')" title="Delete this property">&#128465;</button></div></div>'
+    +'<div class="dcw-steps">'+sh+'</div></div>';
+}
+function dcwDetailHTML(d){
+  return dcwHeadHTML(d)+'<div class="dcw-grid"><div style="display:flex;flex-direction:column;gap:14px;min-width:0">'+dcwCompsCard(d)+dcwRehabCard(d)+'</div>'
+    +'<div class="dcw-sticky">'+dcwDealCard(d)+'</div></div>';
+}
+
+// ---------- comps ----------
+function dcwCompsCard(d){
+  var job=dcwJob(d), res=dcwRes(d), s=dcwSt(d);
+  var top='<div class="dcw-card"><div class="dcw-card-h"><b>Comps and ARV</b><span style="flex:1"></span>';
+  if(!job) return top+'</div><div class="dcw-pad"><p style="margin:0 0 10px;color:var(--text3)">Finds the best 4 to 6 sold comps and one estimated ARV.</p><button class="btn btn-primary" onclick="dcwRerun('+d.id+')">Comp</button></div></div>';
+  if(job.status==='queued'||job.status==='running'){
+    var age=(Date.now()-new Date(job.created_at).getTime())/1000;
+    return top+'</div><div class="dcw-pad"><b style="color:var(--accent)"><span class="dcw-spin"></span>'+(job.status==='queued'?'Queued':'Searching for comps')+'&hellip;</b> <span style="color:var(--text3)">about a minute. You can leave this page; it keeps running.</span>'
+      +(job.status==='queued'&&age>180?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Waiting '+Math.round(age/60)+' min for the comp runner. For now it runs on the Mac, so the Mac must be on.</div>':'')+'</div></div>';
+  }
+  if(job.status==='failed') return top+'</div><div class="dcw-pad"><div style="color:#b91c1c;font-size:13px;margin-bottom:10px">Comp search failed: '+esc(job.error||'unknown error')+'</div><button class="btn btn-primary" onclick="dcwRerun('+d.id+')">Try again</button></div></div>';
+  var comps=res.comps||[], sys=dcwSysArv(res), med=dcwMedian(d), sq=dcNum(d.sqft);
+  var rows=comps.map(function(c,i){
+    var on=dcwCompOn(d,i), addr=c.address||'';
+    var zl=addr?'<a class="dcw-z" href="'+esc(buildZillowUrl(addr))+'" target="_blank" rel="noopener">Zillow &#8599;</a>':'';
+    var src=(c.url&&/^https?:\/\//i.test(c.url))?' <a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener">Source &#8599;</a>':'';
+    return '<tr class="'+(on?'':'off')+'"><td><input type="checkbox" aria-label="Use '+esc(addr)+'" onchange="dcwTog('+d.id+','+i+',this.checked)"'+(on?' checked':'')+'></td>'
+      +'<td class="a">'+esc(addr)+'</td><td><b>'+dcMoney(c.sold_price)+'</b></td><td>'+esc(c.sold_date||'')+'</td><td>'+(c.sqft!=null?Number(c.sqft).toLocaleString():'&mdash;')+'</td>'
+      +'<td>'+(c.distance_mi!=null?esc(c.distance_mi)+' mi':'&mdash;')+'</td><td>'+esc(c.condition||'')+'</td><td>'+zl+src+'</td></tr>';
+  }).join('');
+  var cards=comps.map(function(c,i){
+    var on=dcwCompOn(d,i), addr=c.address||'';
+    return '<div class="dcw-cc'+(on?'':' off')+'"><input type="checkbox" aria-label="Use '+esc(addr)+'" onchange="dcwTog('+d.id+','+i+',this.checked)"'+(on?' checked':'')+'>'
+      +'<div style="font-weight:700;min-width:0">'+esc(addr)+'</div><div style="font-weight:800;font-size:16px">'+dcMoney(c.sold_price)+'</div>'
+      +'<div class="m">'+esc(c.sold_date||'')+' &middot; '+(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'sqft n/a')+' &middot; '+(c.distance_mi!=null?esc(c.distance_mi)+' mi':'distance n/a')+' &middot; '+esc(c.condition||'')+'</div>'
+      +'<div class="x">'+(addr?'<a class="dcw-z" href="'+esc(buildZillowUrl(addr))+'" target="_blank" rel="noopener">Open in Zillow &#8599;</a>':'')
+      +((c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener">Source &#8599;</a>':'')+'</div></div>';
+  }).join('');
+  return top+'<span class="dcw-chip warn">UNVERIFIED</span><button class="btn btn-secondary btn-sm" onclick="dcwRerun('+d.id+')">Re-run</button></div><div class="dcw-pad">'
+    +'<div class="dcw-warn">Found by web search, not confirmed MLS sales. Check the sold price and date (use the Zillow links) before you rely on this number.</div>'
+    +'<div class="dcw-arvrow"><div><div class="dcw-lbl">Estimated ARV</div><div class="dcw-big">'+dcMoney(sys)+'</div></div>'
+    +'<div class="dcw-yours"><label class="dcw-lbl" for="dcw-your">Your ARV (feeds the offer)</label><input type="number" id="dcw-your" class="form-input" step="1000" value="'+Math.round(dcwYour(d))+'" onchange="dcwSet('+d.id+',\'your\',this.value)"></div></div>'
+    +(res.arv&&res.arv.reason?'<div class="dcw-why"><b>Why this number.</b> '+esc(res.arv.reason)+'</div>':'')
+    +(comps.length?'<div class="dcw-tw"><table class="dcw-tbl"><thead><tr><th></th><th>Address</th><th>Sold</th><th>Date</th><th>Sqft</th><th>Dist</th><th>Condition</th><th>Links</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="dcw-cards">'+cards+'</div>'
+      :'<div style="margin-top:10px;color:#b45309;font-size:13px">No comps came back. Try again or add the property details.</div>')
+    +(comps.length&&sq?'<div style="margin-top:10px;font-size:12.5px;color:var(--text3)">Median of ticked comps, scaled to '+sq.toLocaleString()+' sqft: <b style="color:var(--text)">'+dcMoney(med)+'</b> <button class="btn btn-secondary btn-sm" onclick="dcwUseMed('+d.id+')">Use as my ARV</button></div>':'')
+    +(res.notes?'<div style="margin-top:8px;font-size:12px;color:var(--text3)">'+esc(res.notes)+'</div>':'')
+    +'<div style="margin-top:6px;font-size:11.5px;color:var(--text4)">Ran '+esc(job.finished_at?new Date(job.finished_at).toLocaleString():'')+(job.requested_by?' by '+esc(job.requested_by):'')+'</div></div></div>';
+}
+function dcwTog(id,i,on){ var d=crmDealCheckById(id); if(!d) return; dcwSt(d).on[i]=!!on; dcwPersist(d); dcwPaint(); }
+function dcwSet(id,k,v){
+  var d=crmDealCheckById(id); if(!d) return; var s=dcwSt(d);
+  if(k==='pct') s.pct=+v||70;
+  else if(k==='fee') s.fee=+v||0;
+  else if(k==='ask') s.ask=v===''?null:+v;
+  else if(k==='pick') s.pick=v;
+  else if(k==='own'){ if(v===''){ s.own=null; if(s.pick==='own') s.pick='mid'; } else { s.own=+v; s.pick='own'; } }
+  else if(k==='your') s.your=v===''?null:+v;
+  dcwPersist(d); dcwPaint();
+}
+function dcwUseMed(id){ var d=crmDealCheckById(id); if(!d) return; var m=dcwMedian(d); if(!m) return; dcwSt(d).your=Math.round(m/1000)*1000; dcwPersist(d); dcwPaint(); showToast('ARV set from the ticked comps','success'); }
+
+// ---------- add / run ----------
+async function dcwAdd(addrArg,leadId){
+  var el=document.getElementById('dcw-addr');
+  var addr=String(addrArg||(el&&el.value)||'').trim();
+  if(!dcwValidAddr(addr)){ showToast('Could not read that address. Enter street, city, state ZIP.','error'); return; }
+  var d=(crmDealCheck||[]).find(function(x){ return dcwKey(x.address)===dcwKey(addr); });
+  var isNew=!d;
+  if(!d){
+    try{ d=await crmDealCheckInsert({address:addr,sqft:'',beds:'',baths:'',notes:'',ownerName:'',ownerMailingAddress:'',comps:'',photoUrls:'',dealState:(leadId!=null?{leadId:leadId}:null)}); }
+    catch(e){ showToast('Could not add the property: '+String(e.message||e).slice(0,100),'error'); return; }
+    if(!d){ showToast('Could not add the property','error'); return; }
+    crmDealCheck.unshift(d);
+  } else if(leadId!=null){ dcwSt(d).leadId=leadId; dcwPersist(d); }
+  dcw.sel=d.id; dcw.view='detail'; dcw.files=[]; dcw.urlsText=null; dcw.rehabRes=null; dcw.closing=null;
+  if(el) el.value='';
+  if(isNew||(!dcwRes(d)&&!dcwActive(d))) await dcwRun(d);
+  else { dcwPaint(); showToast('Already in Deal Check, opened it','success'); }
+}
+async function dcwRun(d){
+  var s=dcwSt(d); s.your=null; s.on={};
+  try{ await sbFetch('crm_comp_jobs','POST',{address:d.address,mode:'fast',requested_by:(currentUser&&currentUser.name)||''}); }
+  catch(e){ showToast('Could not start comps: '+String(e.message||e).slice(0,100),'error'); return; }
+  await dcwLoadJobs(); dcwPersist(d); dcwPaint(); dcwPoll(); showToast('Comps started, about a minute','success');
+}
+function dcwRerun(id){ var d=crmDealCheckById(id); if(!d||dcwActive(d)) return; dcwRun(d); }
+async function dcwWaitReady(){
+  for(var i=0;i<80;i++){ if(crmDealCheck!==null&&dcw.jobs!==null&&document.getElementById('dcw-addr')) return true; await new Promise(function(r){ setTimeout(r,150); }); }
+  return false;
+}
+// "Comp" button on a lead / task: open Deal Check with the address in the Add Address bar and start comps.
+async function dcCompFromRecord(kind,id){
+  var rec=kind==='lead'?leads.find(function(x){return x.id===id;}):jvLeads.find(function(x){return x.id===id;});
+  var addr=rec?String((kind==='lead'?rec.address:(rec.location||rec.address))||'').trim():'';
+  if(!dcwValidAddr(addr)){ showToast('Could not capture an address for this '+(kind==='lead'?'lead':'task')+'. Add the full address (street, city, state ZIP) first.','error'); return; }
+  closeModal(); activeSection='dealcheck'; render();
+  if(!(await dcwWaitReady())){ showToast('Deal Check did not load. Open Deal Check and try again.','error'); return; }
+  var bar=document.getElementById('dcw-addr'); if(bar) bar.value=addr;
+  await dcwAdd(addr, kind==='lead'?id:null);
+}
+function dcCompLink(kind,id){
+  return '<span style="color:var(--text3);font-size:11px">&middot;</span> <a href="#" class="detail-link" style="font-weight:700" onclick="event.preventDefault();dcCompFromRecord(\''+kind+'\','+id+')" title="Open in Deal Check and find comps + ARV">&#128202; Comp</a>';
+}
+
+// ---------- rehab ----------
+function dcwRehabCard(d){
+  var s=dcwSt(d), lo=+d.rehabLow||0, hi=+d.rehabHigh||0, r=dcw.rehabRes;
+  var urls=dcw.urlsText!=null?dcw.urlsText:(d.photoUrls||'');
+  var thumbs=dcw.files.length?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">'+dcw.files.map(function(f,i){
+    return '<div style="position:relative"><img alt="Photo '+(i+1)+'" src="'+f+'" style="height:56px;border-radius:6px"><span role="button" aria-label="Remove photo" onclick="dcwRmFile('+i+')" style="position:absolute;top:-6px;right:-6px;background:#000;color:#fff;border-radius:50%;width:20px;height:20px;text-align:center;line-height:20px;font-size:12px;cursor:pointer">&times;</span></div>';
+  }).join('')+'</div>':'';
+  var out='';
+  if(lo||hi){
+    out='<div style="margin-top:12px"><div style="font-size:15px;font-weight:700">Estimator: '+dcMoney(lo)+' &ndash; '+dcMoney(hi)+(d.rehabTier?' <span style="font-size:12px;font-weight:500;color:var(--text3)">tier: '+esc(d.rehabTier)+'</span>':'')+'</div>';
+    if(r){
+      if(!r.enough_photos) out+='<div style="color:#b45309;font-size:12.5px;margin-top:4px">&#9888; Not enough interior photos. Treat this as a rough guess. '+esc(r.notes||'')+'</div>';
+      out+='<ul style="margin:6px 0 0 18px;font-size:12px">'+(r.line_items||[]).map(function(i){ return '<li>'+esc(i.item)+': '+dcMoney(i.low)+'&ndash;'+dcMoney(i.high)+'</li>'; }).join('')+'</ul>';
+      if((r.red_flags||[]).length) out+='<div style="margin-top:4px;font-size:12px;color:#b91c1c">&#128681; '+r.red_flags.map(esc).join('; ')+'</div>';
+    } else if(d.rehabDetail){ out+='<div style="margin-top:4px;font-size:12px;color:var(--text2)">'+esc(d.rehabDetail)+'</div>'; }
+    out+='</div>';
+  }
+  return '<div class="dcw-card"><div class="dcw-card-h"><b>Rehab estimate</b></div><div class="dcw-pad">'
+    +'<p style="margin:0 0 8px;font-size:12.5px;color:var(--text3)">Add photos of the property (kitchen, baths, roof, exterior). The estimator reads them. If you disagree with it, type your own number under Deal math.</p>'
+    +'<textarea id="dcw-urls" class="form-input" rows="2" placeholder="Paste photo links, one per line (or use the Grab Listing bookmark)" oninput="dcw.urlsText=this.value">'+esc(urls)+'</textarea>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><label class="btn btn-secondary btn-sm" style="cursor:pointer">&#128247; Take photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="dcwAddFiles(this)"></label>'
+    +'<label class="btn btn-secondary btn-sm" style="cursor:pointer">Choose photos<input type="file" accept="image/*" multiple style="display:none" onchange="dcwAddFiles(this)"></label>'
+    +'<span style="font-size:12px;color:var(--text3);align-self:center">'+dcw.files.length+' uploaded</span></div>'+thumbs
+    +'<button class="btn btn-primary" id="dcw-rehab-btn" onclick="dcwRunRehab('+d.id+')"'+(dcw.rehabBusy?' disabled':'')+'>'+(dcw.rehabBusy?'Reading photos&hellip;':((lo||hi)?'Re-estimate rehab':'Estimate rehab'))+'</button>'+out+'</div></div>';
+}
+async function dcwAddFiles(inp){
+  var fs=Array.prototype.slice.call(inp.files||[]);
+  for(var i=0;i<fs.length&&dcw.files.length<10;i++){ try{ dcw.files.push(await dcShrink(fs[i])); }catch(e){} }
+  inp.value=''; dcwPaint();
+}
+function dcwRmFile(i){ dcw.files.splice(i,1); dcwPaint(); }
+async function dcwRunRehab(id){
+  var d=crmDealCheckById(id); if(!d) return;
+  var ta=document.getElementById('dcw-urls'); if(ta) dcw.urlsText=ta.value;
+  var all=String(dcw.urlsText!=null?dcw.urlsText:(d.photoUrls||'')).split(/\s+/).filter(function(u){return /^https?:\/\//.test(u);});
+  var pages=all.filter(function(u){ return /homedetails|\/homes\/|redfin\.com\/.+\/home\/|realtor\.com\/realestateandhomes-detail/i.test(u); });
+  var urls=all.filter(function(u){ return pages.indexOf(u)<0; });
+  if(pages.length&&!urls.length&&!dcw.files.length){ showToast('That is a listing page link, not a photo. Upload photos here, or use the Grab Listing bookmark on the Zillow page.','error'); return; }
+  var imgs=urls.concat(dcw.files);
+  if(!imgs.length){ showToast('Paste photo links or add photos first','error'); return; }
+  dcw.rehabBusy=true; dcwPaint();
+  try{
+    var r=await fetch(DC_FN_URL,{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({images:imgs,address:d.address,sqft:d.sqft,beds:d.beds,baths:d.baths,notes:d.notes})});
+    var j=await r.json();
+    if(j.error){ showToast(j.message||'Estimate failed','error'); }
+    else{
+      d.rehabLow=j.item_low||j.tier_low; d.rehabHigh=j.item_high||j.tier_high; d.rehabTier=j.tier;
+      d.rehabDetail=(j.enough_photos?'':'[NOT ENOUGH PHOTOS] ')+(j.line_items||[]).map(function(i){return i.item+': '+dcMoney(i.low)+'–'+dcMoney(i.high);}).join('; ')+((j.red_flags||[]).length?' | Red flags: '+j.red_flags.join('; '):'')+(j.notes?' | '+j.notes:'');
+      d.photoUrls=urls.join('\n'); d.analyzedAt=new Date().toISOString(); dcw.rehabRes=j;
+      if(dcwSt(d).pick==='own'&&dcwSt(d).own==null) dcwSt(d).pick='mid';
+      try{ await crmDealCheckUpdate(d); }catch(e){ showToast('Estimate done but could not save it','error'); }
+    }
+  }catch(e){ showToast('Could not reach the estimator, try again','error'); }
+  dcw.rehabBusy=false; dcwPaint();
+}
+
+// ---------- deal math ----------
+function dcwDealCard(d){
+  var s=dcwSt(d), your=dcwYour(d), r=dcwRehab(d), m=dcwMao(d), has=!!dcwRes(d);
+  var offer=m==null?0:Math.max(m,0), rr=r||0, fee=+s.fee||0;
+  var w=function(x){ return your>0?Math.max(0,Math.min(100,x/your*100)).toFixed(1)+'%':'0%'; };
+  var buffer=Math.max(0,your-offer-rr-fee);
+  var room=(s.ask!=null&&s.ask!==''&&m!=null)?m-(+s.ask):null;
+  var est=(+d.rehabLow||+d.rehabHigh)?'Estimator says '+dcMoney(d.rehabLow)+' to '+dcMoney(d.rehabHigh):'No estimate yet';
+  return '<div class="dcw-card"><div class="dcw-card-h"><b>Deal math</b><span style="flex:1"></span><span class="dcw-chip '+(m==null?'grey':'good')+'">'+(m==null?'Add rehab':'Ready')+'</span></div><div class="dcw-pad">'
+    +'<div class="dcw-lbl">Max offer to seller</div><div class="dcw-mao">'+(m==null?'&mdash;':dcMoney(offer))+'</div>'
+    +(m==null?'<div style="font-size:12px;color:var(--text3)">Add the rehab estimate, or type your own number below, to finish the math.</div>'
+      :'<div class="dcw-stack"><i style="width:'+w(offer)+';background:var(--green)"></i><i style="width:'+w(rr)+';background:#f59e0b"></i><i style="width:'+w(fee)+';background:var(--accent)"></i><i style="width:'+w(buffer)+';background:var(--border2,#cbd5e1)"></i></div>'
+        +'<div class="dcw-legend"><span><s style="background:var(--green)"></s>Offer</span><span><s style="background:#f59e0b"></s>Rehab</span><span><s style="background:var(--accent)"></s>Your fee</span><span><s style="background:var(--border2,#cbd5e1)"></s>Buyer margin</span></div>')
+    +'<div style="margin-top:12px"><div class="dcw-kv"><span>ARV (yours)</span><b>'+dcMoney(your)+'</b></div>'
+    +'<div class="dcw-kv"><span>&times; '+s.pct+'% rule</span><b>'+dcMoney(your*s.pct/100)+'</b></div>'
+    +'<div class="dcw-kv"><span>&minus; Rehab ('+(s.pick==='own'?'your number':s.pick)+')</span><b>'+(r==null?'&mdash;':dcMoney(r))+'</b></div>'
+    +'<div class="dcw-kv"><span>&minus; Your fee</span><b>'+dcMoney(fee)+'</b></div>'
+    +(room!=null?'<div class="dcw-kv"><span>Seller asks '+dcMoney(s.ask)+'</span><b style="color:'+(room>=0?'var(--green)':'#b91c1c')+'">'+(room>=0?'+':'&minus;')+dcMoney(Math.abs(room))+' room</b></div>':'')+'</div>'
+    +'<div style="margin-top:12px"><label class="dcw-lbl" for="dcw-pct">Rule: '+s.pct+'% of ARV</label><input type="range" id="dcw-pct" min="60" max="80" value="'+s.pct+'" style="width:100%" onchange="dcwSet('+d.id+',\'pct\',this.value)"></div>'
+    +'<div style="display:flex;gap:8px;margin-top:8px"><div style="flex:1;min-width:0"><label class="dcw-lbl" for="dcw-fee">Your fee</label><input type="number" id="dcw-fee" class="form-input" step="1000" value="'+fee+'" onchange="dcwSet('+d.id+',\'fee\',this.value)"></div>'
+    +'<div style="flex:1;min-width:0"><label class="dcw-lbl" for="dcw-pick">Rehab used</label><select id="dcw-pick" class="form-input" onchange="dcwSet('+d.id+',\'pick\',this.value)"><option value="low"'+(s.pick==='low'?' selected':'')+'>Low</option><option value="mid"'+(s.pick==='mid'?' selected':'')+'>Middle</option><option value="high"'+(s.pick==='high'?' selected':'')+'>High</option><option value="own"'+(s.pick==='own'?' selected':'')+'>My number</option></select></div></div>'
+    +'<div style="margin-top:8px"><label class="dcw-lbl" for="dcw-own">Your rehab number (use it if the estimator looks wrong)</label><input type="number" id="dcw-own" class="form-input" step="1000" value="'+(s.own==null?'':Math.round(s.own))+'" placeholder="'+esc(est)+'" onchange="dcwSet('+d.id+',\'own\',this.value)"></div>'
+    +'<div style="margin-top:8px"><label class="dcw-lbl" for="dcw-ask">Seller asking price (optional)</label><input type="number" id="dcw-ask" class="form-input" step="1000" value="'+(s.ask==null?'':Math.round(s.ask))+'" onchange="dcwSet('+d.id+',\'ask\',this.value)"></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><button class="btn btn-primary" onclick="dcwSave('+d.id+')"'+(m==null?' disabled':'')+'>'+(s.saved?'Saved to property':'Save to property')+'</button>'
+    +'<button class="btn btn-secondary" onclick="dcwSendTask('+d.id+')"'+(has?'':' disabled')+' title="Puts the ARV on the lead and sends it to Tasks">&#9989; Send to Task</button></div>'
+    +dcwCloseHTML(d)+'</div></div>';
+}
+function dcwMbar(d){
+  var m=dcwMao(d), r=dcwRehab(d);
+  return '<div class="dcw-mbar"><div><div class="dcw-lbl">ARV</div><b>'+dcMoney(dcwYour(d))+'</b></div><div><div class="dcw-lbl">Rehab</div><b>'+(r==null?'&mdash;':dcMoney(r))+'</b></div>'
+    +'<div style="margin-left:auto;text-align:right"><div class="dcw-lbl">Max offer</div><b style="font-size:20px;color:var(--green)">'+(m==null?'&mdash;':dcMoney(Math.max(m,0)))+'</b></div></div>';
+}
+function dcwSave(id){ var d=crmDealCheckById(id); if(!d) return; dcwSt(d).saved=true; dcwPersist(d); dcwPaint(); showToast('Saved to property','success'); }
+
+// ---------- close out ----------
+function dcwCloseHTML(d){
+  var s=dcwSt(d), c=s.closed;
+  if(c) return '<div class="dcw-closed"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>Closed: '+esc(c.outcome)+'</b><span style="font-size:12px;color:var(--text3)">'+esc(c.date||'')+'</span><span style="flex:1"></span><button class="btn btn-secondary btn-sm" onclick="dcwReopen('+d.id+')">Reopen</button></div>'+(c.note?'<div style="font-size:12px;color:var(--text3);margin-top:4px">'+esc(c.note)+'</div>':'')+'</div>';
+  if(dcw.closing!==d.id) return '<div class="dcw-closebar"><button class="btn btn-secondary" onclick="dcw.closing='+d.id+';dcwPaint()">Close out deal</button><span style="font-size:12px;color:var(--text3);margin-left:8px">Done with this property? Move it to Closed.</span></div>';
+  return '<div class="dcw-closebar"><label class="dcw-lbl" for="dcw-co">How did it end?</label><select id="dcw-co" class="form-input">'+['Under contract','Assigned / sold to buyer','Passed (numbers do not work)','Seller said no','Lost to another buyer','Other'].map(function(o){return '<option>'+o+'</option>';}).join('')+'</select>'
+    +'<label class="dcw-lbl" for="dcw-cn" style="margin-top:8px;display:block">Note (optional)</label><input type="text" id="dcw-cn" class="form-input" placeholder="Assigned for $... or why we passed">'
+    +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-primary" onclick="dcwCloseConfirm('+d.id+')">Close out</button><button class="btn btn-secondary" onclick="dcw.closing=null;dcwPaint()">Cancel</button></div>'
+    +'<div style="font-size:12px;color:var(--text3);margin-top:6px">Nothing is deleted. Closed deals stay in the list and you can reopen them.</div></div>';
+}
+function dcwCloseConfirm(id){
+  var d=crmDealCheckById(id); if(!d) return;
+  dcwSt(d).closed={outcome:document.getElementById('dcw-co').value,note:(document.getElementById('dcw-cn').value||'').trim(),date:new Date().toISOString().slice(0,10)};
+  dcw.closing=null; dcwPersist(d); dcwPaint(); showToast('Closed out','success');
+}
+function dcwReopen(id){ var d=crmDealCheckById(id); if(!d) return; dcwSt(d).closed=null; dcwPersist(d); dcwPaint(); }
+
+// ---------- Send to Task (puts the ARV on the lead, then the lead's normal Send to Task) ----------
+async function dcwSendTask(id){
+  var d=crmDealCheckById(id); if(!d) return; var s=dcwSt(d), your=dcwYour(d);
+  if(!your){ showToast('No ARV yet. Run Comp first.','error'); return; }
+  var m=dcwMao(d), r=dcwRehab(d), today=new Date().toISOString().slice(0,10);
+  var line='Deal Check '+today+': ARV '+dcMoney(your)+(r!=null?', rehab '+dcMoney(r):'')+(m!=null?', max offer '+dcMoney(Math.max(m,0)):'')+' ('+s.pct+'% rule, fee '+dcMoney(s.fee)+'). Comps are unverified web results.';
+  var lead=s.leadId!=null?leads.find(function(x){return x.id===s.leadId;}):null;
+  if(lead&&!lead.deleted){
+    lead.arv=String(Math.round(your)); if((lead.notes||'').indexOf(line)<0) lead.notes=(lead.notes?lead.notes+'\n':'')+line;
+    save();
+    var okL=await saveLeadToSupabase(lead);
+    if(!okL){ showToast('Could not save the ARV on the lead. Check your connection and try again.','error'); return; }
+    await sendLeadToTask(lead.id);
+    if(lead.deleted){ s.taskSent=today; dcwPersist(d); dcwPaint(); }
+    return;
+  }
+  // No lead behind this property: create the Task directly
+  if(!confirm('Create a Task from this deal?\n\n'+d.address+'\nARV '+dcMoney(your))) return;
+  var newId=(jvLeads.length?Math.max.apply(null,jvLeads.map(function(x){return x.id;})):0)+1;
+  var task={ id:newId,name:'',phone:'',score:'',notes:line,fbLink:buildZillowUrl(d.address),sourceGroup:'Deal Check',location:d.address,askingPrice:'',arv:String(Math.round(your)),profitEst:'',
+    followUpDate:'',ghlContactId:'',jvStatus:'',dateAdded:today,
+    activityLog:[{at:new Date().toISOString(),by:(currentUser&&currentUser.name)||'Me',note:'Created from Deal Check',type:'Moved to Task'}],
+    recipientNotes:[],beds:d.beds||'',baths:d.baths||'',sqft:d.sqft||'',reviewSentBy:'',reviewSentAt:'',reviewNote:'',
+    shared:false,sharedAt:'',sharedWith:'',deleted:false,deletedAt:'',needsReview:false };
+  var ok=await saveJVToSupabase(task);
+  if(!ok){ showToast('Could not save the Task to the cloud. Try again.','error'); return; }
+  jvLeads.push(task); saveJV(); s.taskSent=today; dcwPersist(d); dcwPaint(); showToast('Task created with the ARV','success');
+}
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&dcw.closing!=null){ dcw.closing=null; if(activeSection==='dealcheck') dcwPaint(); } });
+// ===================== end Deal Check v2 =====================
+
 // ===================== Deal Check: listing bookmarklet import (Phases 3+4) =====================
 // A bookmarklet Mike clicks on a Zillow / Redfin / Realtor.com listing page in HIS OWN browser. It only
 // READS the already-rendered page (never issues a request to the site — so no bot check), copies a small
@@ -11319,7 +11775,7 @@ function renderDetailModal(){
     <div class="modal-overlay" onclick="overlayClick(event)">
       <div class="modal modal-lead-wide">
         <div class="modal-header">
-          <div><div class="modal-title">${esc(l.address)||'No Address'}</div><div class="modal-subtitle"><span>Lead #${l.id}</span>${l.date?'<span>&middot; '+l.date+'</span>':''}<span>&middot; ${l.month}</span>${l.updatedBy?'<span style="color:var(--teal)">&middot; Edited by '+l.updatedBy+'</span>':''}${sentIndicatorHTML(l)}</div>${l.address?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.address)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.address)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a> <span style="color:var(--text3);font-size:11px">&middot;</span> '+pwLink(l.address)+'</div>':''}</div>
+          <div><div class="modal-title">${esc(l.address)||'No Address'}</div><div class="modal-subtitle"><span>Lead #${l.id}</span>${l.date?'<span>&middot; '+l.date+'</span>':''}<span>&middot; ${l.month}</span>${l.updatedBy?'<span style="color:var(--teal)">&middot; Edited by '+l.updatedBy+'</span>':''}${sentIndicatorHTML(l)}</div>${l.address?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.address)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.address)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a> <span style="color:var(--text3);font-size:11px">&middot;</span> '+pwLink(l.address)+' '+dcCompLink('lead',l.id)+'</div>':''}</div>
           <button class="modal-close-btn" onclick="closeModal()">&#10005;</button>
         </div>
         <div class="modal-body modal-body-split"><div class="modal-main-col">
@@ -12231,7 +12687,7 @@ function openJVDetail(id){
   if(!l) return;
   var statuses=getJVStatuses();
   var statusOpts=statuses.map(function(s){return '<option value="'+s+'" '+(l.jvStatus===s?'selected':'')+'>'+s+'</option>';}).join('');
-  document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal modal-lead-wide"><div class="modal-header"><div><div class="modal-title">'+esc(l.name||'JV Lead')+'</div><div class="modal-subtitle">'+scoreBadgeHTML(l.score)+' &middot; '+esc(l.location||l.address||'')+sentIndicatorHTML(l)+'</div>'+(l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a> <span style="color:var(--text3);font-size:11px">&middot;</span> '+pwLink(l.location)+'</div>':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body modal-body-split"><div class="modal-main-col">'+(isPhoneUI()?ghlSmsSlotHTML('task',l.id):'')
+  document.getElementById('modal-container').innerHTML='<div class="modal-overlay" onclick="overlayClick(event)"><div class="modal modal-lead-wide"><div class="modal-header"><div><div class="modal-title">'+esc(l.name||'JV Lead')+'</div><div class="modal-subtitle">'+scoreBadgeHTML(l.score)+' &middot; '+esc(l.location||l.address||'')+sentIndicatorHTML(l)+'</div>'+(l.location?'<div style="margin-top:4px;font-size:12px"><a href="'+buildZillowUrl(l.location)+'" target="_blank" class="detail-link">&#127968; View on Zillow &#8599;</a> <span style="color:var(--text3);font-size:11px">&middot;</span> <a href="'+buildRedfinUrl(l.location)+'" target="_blank" style="color:var(--text3);font-size:12px">Try Redfin</a> <span style="color:var(--text3);font-size:11px">&middot;</span> '+pwLink(l.location)+' '+dcCompLink('task',l.id)+'</div>':'')+'</div><button class="modal-close-btn" onclick="closeModal()">&#10005;</button></div><div class="modal-body modal-body-split"><div class="modal-main-col">'+(isPhoneUI()?ghlSmsSlotHTML('task',l.id):'')
     +'<div class="form-section"><div class="detail-grid">'
     +'<div class="detail-item"><span class="detail-label">Phone</span><span class="detail-val">'+(l.phone?'<a href="#" data-phone="'+l.phone+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" class="detail-link" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone)+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):esc(l.phone||''))+(l.location?' <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="crmFindNumber('+l.id+')" title="Find the first wireless number for this address (needs US VPN)">&#128269; Find #</button>':'')+'</span></div>'
     +'<div class="detail-item"><span class="detail-label">Email</span><span class="detail-val">'+(l.contactEmail?'<a href="mailto:'+esc(l.contactEmail)+'" class="detail-link">'+esc(l.contactEmail)+'</a>':'<span style="color:var(--text4)">&#8212;</span>')+'</span></div>'
