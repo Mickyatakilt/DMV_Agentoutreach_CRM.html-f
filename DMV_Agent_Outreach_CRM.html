@@ -3722,7 +3722,7 @@ function dcwCompsCard(d){
   if(job.status==='queued'||job.status==='running'){
     var age=(Date.now()-new Date(job.created_at).getTime())/1000;
     return top+'</div><div class="dcw-pad"><b style="color:var(--accent)"><span class="dcw-spin"></span>'+(job.status==='queued'?'Queued':'Searching for comps')+'&hellip;</b> <span style="color:var(--text3)">about a minute. You can leave this page; it keeps running.</span>'
-      +(job.status==='queued'&&age>30?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Not picked up after '+Math.round(age)+' seconds. The comp runner is probably not running. For now it runs on the Mac, so the Mac must be on with the worker started.</div>':'')
+      +(job.status==='queued'&&age>150?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Still waiting for the cloud runner ('+Math.round(age/60)+' min). It checks the queue every 5 minutes. If this stays queued past 10 minutes, the runner may be down.</div>':'')
       +(job.status==='running'&&age>240?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Taking longer than normal. It stops by itself after a few minutes, then press Try again.</div>':'')+'</div></div>';
   }
   if(job.status==='failed') return top+'</div><div class="dcw-pad"><div style="color:#b91c1c;font-size:13px;margin-bottom:10px">Comp search failed: '+esc(job.error||'unknown error')+'</div><button class="btn btn-primary" onclick="dcwRerun('+d.id+')">Try again</button></div></div>';
@@ -3793,7 +3793,12 @@ async function dcwRun(d){
   var s=dcwSt(d); s.your=null; s.on={};
   try{ await sbFetch('crm_comp_jobs','POST',{address:d.address,mode:'fast',requested_by:(currentUser&&currentUser.name)||''}); }
   catch(e){ showToast('Could not start comps: '+String(e.message||e).slice(0,100),'error'); return; }
+  dcwTrigger();
   await dcwLoadJobs(); dcwPersist(d); dcwPaint(); dcwPoll(); showToast('Comps started, about a minute','success');
+}
+// Ask the cloud runner to start right now (harmless if the trigger is not set up: the runner also checks every 5 minutes)
+function dcwTrigger(){
+  try{ fetch(SUPABASE_URL+'/functions/v1/comp-trigger',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':'application/json'},body:'{}'}).catch(function(){}); }catch(e){}
 }
 function dcwRerun(id){ var d=crmDealCheckById(id); if(!d||dcwActive(d)) return; dcwRun(d); }
 async function dcwWaitReady(){
