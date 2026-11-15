@@ -3722,7 +3722,8 @@ function dcwCompsCard(d){
   if(job.status==='queued'||job.status==='running'){
     var age=(Date.now()-new Date(job.created_at).getTime())/1000;
     return top+'</div><div class="dcw-pad"><b style="color:var(--accent)"><span class="dcw-spin"></span>'+(job.status==='queued'?'Queued':'Searching for comps')+'&hellip;</b> <span style="color:var(--text3)">about a minute. You can leave this page; it keeps running.</span>'
-      +(job.status==='queued'&&age>180?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Waiting '+Math.round(age/60)+' min for the comp runner. For now it runs on the Mac, so the Mac must be on.</div>':'')+'</div></div>';
+      +(job.status==='queued'&&age>30?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Not picked up after '+Math.round(age)+' seconds. The comp runner is probably not running. For now it runs on the Mac, so the Mac must be on with the worker started.</div>':'')
+      +(job.status==='running'&&age>240?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Taking longer than normal. It stops by itself after a few minutes, then press Try again.</div>':'')+'</div></div>';
   }
   if(job.status==='failed') return top+'</div><div class="dcw-pad"><div style="color:#b91c1c;font-size:13px;margin-bottom:10px">Comp search failed: '+esc(job.error||'unknown error')+'</div><button class="btn btn-primary" onclick="dcwRerun('+d.id+')">Try again</button></div></div>';
   var comps=res.comps||[], sys=dcwSysArv(res), med=dcwMedian(d), sq=dcNum(d.sqft);
@@ -3767,7 +3768,11 @@ function dcwSet(id,k,v){
 function dcwUseMed(id){ var d=crmDealCheckById(id); if(!d) return; var m=dcwMedian(d); if(!m) return; dcwSt(d).your=Math.round(m/1000)*1000; dcwPersist(d); dcwPaint(); showToast('ARV set from the ticked comps','success'); }
 
 // ---------- add / run ----------
-async function dcwAdd(addrArg,leadId){
+function dcwAdd(addrArg,leadId){ // one add at a time, so a double click cannot create duplicates
+  if(dcw.adding) return; dcw.adding=true;
+  return dcwAddInner(addrArg,leadId).then(function(){ dcw.adding=false; },function(e){ dcw.adding=false; throw e; });
+}
+async function dcwAddInner(addrArg,leadId){
   var el=document.getElementById('dcw-addr');
   var addr=String(addrArg||(el&&el.value)||'').trim();
   if(!dcwValidAddr(addr)){ showToast('Could not read that address. Enter street, city, state ZIP.','error'); return; }
