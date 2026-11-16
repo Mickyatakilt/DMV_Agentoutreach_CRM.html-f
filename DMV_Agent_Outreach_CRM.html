@@ -713,7 +713,7 @@
   }
 
  .dcw-al{color:inherit;text-decoration:none}.dcw-al:hover{text-decoration:underline;color:var(--accent)}
-.dcw-ty{font-size:12.5px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg2,#fff);color:var(--text);max-width:190px}.dcw-mm{color:#b45309;font-weight:700}
+.dcw-ty{font-size:12.5px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg2,#fff);color:var(--text);max-width:190px}.dcw-mm{color:#b45309;font-weight:700}.dcw-act{color:#dc2626;font-weight:800;letter-spacing:.3px;font-size:11.5px}
 .dcw-sub{font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px}
 .dcw-tbl td{padding:6px 8px!important}.dcw-tbl{font-size:12.5px}
 .dcw-big{font-size:30px!important}
@@ -3748,7 +3748,7 @@ function dcwCompsCard(d){
     var on=dcwCompOn(d,i), addr=c.address||'';
     var zl=addr?'<a class="dcw-z" href="'+esc(buildZillowUrl(addr))+'" target="_blank" rel="noopener">Zillow &#8599;</a>':'';
     var src=(c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">source</a>':'';
-    var sub=[(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'')].filter(Boolean).join(' &middot; ');
+    var sub=[(dcwCompActive(c)?dcwActTag('Active','No sold price, so this home is probably still listed'):''),(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'')].filter(Boolean).join(' &middot; ');
     return '<tr class="'+(on?'':'off')+'"><td><input type="checkbox" aria-label="Use '+esc(addr)+'" onchange="dcwTog('+d.id+','+i+',this.checked)"'+(on?' checked':'')+'></td>'
       +'<td class="a">'+dcwAddrLink(addr)+(sub?'<div class="dcw-sub">'+sub+'</div>':'')+'</td><td><b>'+dcwDist(c)+'</b></td><td>'+dcwTypeCell(d,c)+'</td><td><b>'+dcMoney(c.sold_price)+'</b></td><td>'+esc(c.sold_date||'')+'</td>'
       +'<td>'+esc(c.condition||'')+'</td><td>'+zl+src+'</td></tr>';
@@ -3757,7 +3757,7 @@ function dcwCompsCard(d){
     var on=dcwCompOn(d,i), addr=c.address||'';
     return '<div class="dcw-cc'+(on?'':' off')+'"><input type="checkbox" aria-label="Use '+esc(addr)+'" onchange="dcwTog('+d.id+','+i+',this.checked)"'+(on?' checked':'')+'>'
       +'<div style="font-weight:700;min-width:0">'+dcwAddrLink(addr)+'</div><div style="font-weight:800;font-size:16px">'+dcMoney(c.sold_price)+'</div>'
-      +'<div class="m"><b>'+dcwDist(c)+'</b> &middot; '+dcwTypeCell(d,c)+' &middot; '+esc(c.sold_date||'')+' &middot; '+esc(c.condition||'')+' &middot; '+(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'sqft n/a')+'</div>'
+      +'<div class="m">'+(dcwCompActive(c)?dcwActTag('Active','No sold price, so this home is probably still listed')+' &middot; ':'')+'<b>'+dcwDist(c)+'</b> &middot; '+dcwTypeCell(d,c)+' &middot; '+esc(c.sold_date||'')+' &middot; '+esc(c.condition||'')+' &middot; '+(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'sqft n/a')+'</div>'
       +'<div class="x">'+(addr?'<a class="dcw-z" href="'+esc(buildZillowUrl(addr))+'" target="_blank" rel="noopener">Open in Zillow &#8599;</a>':'')
       +((c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">source</a>':'')+'</div></div>';
   }).join('');
@@ -3794,6 +3794,8 @@ async function dcwSetType(id,v){
     showToast('Saved. The AI learns from this. More comps and Re-run now search only '+dcwTypeLabel(v)+'.','success');
   }catch(e){ showToast('Type saved on this deal, but the learning note failed: '+String(e.message||e).slice(0,80),'error'); }
 }
+function dcwActTag(t,tip){ return '<span class="dcw-act" title="'+esc(tip||'')+'">'+esc(String(t||'ACTIVE').toUpperCase())+'</span>'; }
+function dcwCompActive(c){ return !!c&&(c.sold_price==null||c.sold_price===''||+c.sold_price===0); }
 function dcwDist(x){ var n=x&&x.distance_mi; if(n==null||n===''||isNaN(+n)) return 'n/a'; return (x.dist_src==='map'?'':'~')+(+n).toFixed(2)+' mi'; }
 function dcwTypeCell(d,x){
   var t=x&&x.house_type, st=dcwType(d); if(!t) return '<span style="color:var(--text4)">?</span>';
@@ -3804,7 +3806,7 @@ function dcwActiveHTML(res,d){
   if(!res||!Array.isArray(res.active)) return ''; var subj=dcwKey(String((res.subject&&res.subject.address)||'').split(',')[0]); var act=res.active.filter(function(x){ return !subj||dcwKey(String(x.address||'').split(',')[0])!==subj; }); if(!act.length) return '<div style="margin-top:14px;font-size:12.5px;color:var(--text3)"><b>For sale nearby:</b> none found.</div>';
   var rows=act.map(function(a){
     var src=(a.url&&/^https?:\/\//i.test(a.url))?' <a class="dcw-z" href="'+esc(a.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">listing</a>':'';
-    var sub=[(a.beds!=null?esc(a.beds)+' bd':''),(a.baths!=null?esc(a.baths)+' ba':''),(a.sqft!=null?Number(a.sqft).toLocaleString()+' sqft':'')].filter(Boolean).join(' &middot; ');
+    var sub=[dcwActTag(a.status&&!/^active$/i.test(a.status)?a.status:'Active'),(a.beds!=null?esc(a.beds)+' bd':''),(a.baths!=null?esc(a.baths)+' ba':''),(a.sqft!=null?Number(a.sqft).toLocaleString()+' sqft':'')].filter(Boolean).join(' &middot; ');
     return '<tr><td class="a">'+dcwAddrLink(a.address)+(sub?'<div class="dcw-sub">'+sub+'</div>':'')+'</td><td><b>'+dcwDist(a)+'</b></td><td>'+dcwTypeCell(d,a)+'</td><td><b>'+dcMoney(a.list_price)+'</b></td><td>'+(a.days_on_market!=null?esc(a.days_on_market)+' d':'')+'</td><td>'+esc(a.status||'')+'</td><td>'+src+'</td></tr>';
   }).join('');
   return '<div style="margin-top:16px"><div class="dcw-lbl" style="margin-bottom:4px">For sale nearby (competition, not used in the ARV) <span class="dcw-chip warn">UNVERIFIED</span></div>'
