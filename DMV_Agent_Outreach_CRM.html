@@ -3807,7 +3807,7 @@ function dcwActiveHTML(res,d){
   var rows=act.map(function(a){
     var src=(a.url&&/^https?:\/\//i.test(a.url))?' <a class="dcw-z" href="'+esc(a.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">listing</a>':'';
     var sub=[dcwActTag(a.status&&!/^active$/i.test(a.status)?a.status:'Active'),(a.beds!=null?esc(a.beds)+' bd':''),(a.baths!=null?esc(a.baths)+' ba':''),(a.sqft!=null?Number(a.sqft).toLocaleString()+' sqft':'')].filter(Boolean).join(' &middot; ');
-    return '<tr><td class="a">'+dcwAddrLink(a.address)+(sub?'<div class="dcw-sub">'+sub+'</div>':'')+'</td><td><b>'+dcwDist(a)+'</b></td><td>'+dcwTypeCell(d,a)+'</td><td><b>'+dcMoney(a.list_price)+'</b></td><td>'+(a.days_on_market!=null?esc(a.days_on_market)+' d':'')+'</td><td>'+esc(a.status||'')+'</td><td>'+src+'</td></tr>';
+    return '<tr><td class="a">'+dcwAddrLink(a.address)+(sub?'<div class="dcw-sub">'+sub+'</div>':'')+'</td><td><b>'+dcwDist(a)+'</b></td><td>'+dcwTypeCell(d,a)+'</td><td><b>'+dcMoney(a.list_price)+'</b></td><td>'+(a.days_on_market!=null?esc(a.days_on_market)+' d':'')+'</td><td>'+(a.status?dcwActTag(a.status):'')+'</td><td>'+src+'</td></tr>';
   }).join('');
   return '<div style="margin-top:16px"><div class="dcw-lbl" style="margin-bottom:4px">For sale nearby (competition, not used in the ARV) <span class="dcw-chip warn">UNVERIFIED</span></div>'
     +'<div class="dcw-tw"><table class="dcw-tbl"><thead><tr><th>Address</th><th>Dist.</th><th>Type</th><th>List price</th><th>On market</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
