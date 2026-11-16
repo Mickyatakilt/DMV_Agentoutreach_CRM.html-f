@@ -3748,7 +3748,7 @@ function dcwCompsCard(d){
     var on=dcwCompOn(d,i), addr=c.address||'';
     var zl=addr?'<a class="dcw-z" href="'+esc(buildZillowUrl(addr))+'" target="_blank" rel="noopener">Zillow &#8599;</a>':'';
     var src=(c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">source</a>':'';
-    var sub=[(dcwCompActive(c)?dcwActTag('Active','No sold price, so this home is probably still listed'):''),(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'')].filter(Boolean).join(' &middot; ');
+    var sub=[(dcwCompActive(c)?dcwActTag(dcwCompStatus(c),'This home is still on the market, not sold'):''),(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'')].filter(Boolean).join(' &middot; ');
     return '<tr class="'+(on?'':'off')+'"><td><input type="checkbox" aria-label="Use '+esc(addr)+'" onchange="dcwTog('+d.id+','+i+',this.checked)"'+(on?' checked':'')+'></td>'
       +'<td class="a">'+dcwAddrLink(addr)+(sub?'<div class="dcw-sub">'+sub+'</div>':'')+'</td><td><b>'+dcwDist(c)+'</b></td><td>'+dcwTypeCell(d,c)+'</td><td><b>'+dcMoney(c.sold_price)+'</b></td><td>'+esc(c.sold_date||'')+'</td>'
       +'<td>'+esc(c.condition||'')+'</td><td>'+zl+src+'</td></tr>';
@@ -3757,7 +3757,7 @@ function dcwCompsCard(d){
     var on=dcwCompOn(d,i), addr=c.address||'';
     return '<div class="dcw-cc'+(on?'':' off')+'"><input type="checkbox" aria-label="Use '+esc(addr)+'" onchange="dcwTog('+d.id+','+i+',this.checked)"'+(on?' checked':'')+'>'
       +'<div style="font-weight:700;min-width:0">'+dcwAddrLink(addr)+'</div><div style="font-weight:800;font-size:16px">'+dcMoney(c.sold_price)+'</div>'
-      +'<div class="m">'+(dcwCompActive(c)?dcwActTag('Active','No sold price, so this home is probably still listed')+' &middot; ':'')+'<b>'+dcwDist(c)+'</b> &middot; '+dcwTypeCell(d,c)+' &middot; '+esc(c.sold_date||'')+' &middot; '+esc(c.condition||'')+' &middot; '+(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'sqft n/a')+'</div>'
+      +'<div class="m">'+(dcwCompActive(c)?dcwActTag(dcwCompStatus(c),'This home is still on the market, not sold')+' &middot; ':'')+'<b>'+dcwDist(c)+'</b> &middot; '+dcwTypeCell(d,c)+' &middot; '+esc(c.sold_date||'')+' &middot; '+esc(c.condition||'')+' &middot; '+(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'sqft n/a')+'</div>'
       +'<div class="x">'+(addr?'<a class="dcw-z" href="'+esc(buildZillowUrl(addr))+'" target="_blank" rel="noopener">Open in Zillow &#8599;</a>':'')
       +((c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">source</a>':'')+'</div></div>';
   }).join('');
@@ -3795,7 +3795,8 @@ async function dcwSetType(id,v){
   }catch(e){ showToast('Type saved on this deal, but the learning note failed: '+String(e.message||e).slice(0,80),'error'); }
 }
 function dcwActTag(t,tip){ return '<span class="dcw-act" title="'+esc(tip||'')+'">'+esc(String(t||'ACTIVE').toUpperCase())+'</span>'; }
-function dcwCompActive(c){ return !!c&&(c.sold_price==null||c.sold_price===''||+c.sold_price===0); }
+function dcwCompStatus(c){ var t=c&&c.listing_status; return (t==='active'||t==='pending'||t==='coming_soon')?String(t).replace('_',' '):''; }
+function dcwCompActive(c){ return !!dcwCompStatus(c); }
 function dcwDist(x){ var n=x&&x.distance_mi; if(n==null||n===''||isNaN(+n)) return 'n/a'; return (x.dist_src==='map'?'':'~')+(+n).toFixed(2)+' mi'; }
 function dcwTypeCell(d,x){
   var t=x&&x.house_type, st=dcwType(d); if(!t) return '<span style="color:var(--text4)">?</span>';
