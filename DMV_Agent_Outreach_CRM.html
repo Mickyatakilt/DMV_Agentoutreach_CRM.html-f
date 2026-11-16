@@ -706,6 +706,9 @@
     .stats-bar,.toolbar{overflow-x:auto;-webkit-overflow-scrolling:touch;}
   }
 
+ .dcw-sub{font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px}
+.dcw-tbl td{padding:6px 8px!important}.dcw-tbl{font-size:12.5px}
+.dcw-big{font-size:30px!important}
 /* ===== Deal Check v2 (workspace) ===== */
 .dcw-layout{display:grid;grid-template-columns:290px minmax(0,1fr);gap:16px;align-items:start}
 .dcw-card{background:var(--surface);border:1px solid var(--border);border-radius:12px}
@@ -3575,13 +3578,14 @@ function dcwValidAddr(a){
 }
 async function dcwLoadJobs(){
   try{
-    var rows=await sbFetch('crm_comp_jobs?select=id,address,status,result_json,error,created_at,finished_at,requested_by&order=created_at.desc&limit=500');
-    var m={}; (rows||[]).forEach(function(j){ var k=dcwKey(j.address); if(!m[k]) m[k]=j; });
+    var rows=await sbFetch('crm_comp_jobs?select=id,address,status,result_json,error,created_at,finished_at,requested_by,extra&order=created_at.desc&limit=500');
+    var m={}; (rows||[]).forEach(function(j){ var k=dcwKey(j.address); var o=m[k]||(m[k]={latest:null,done:null}); if(!o.latest) o.latest=j; if(!o.done&&j.status==='done') o.done=j; });
     dcw.jobs=m; return true;
   }catch(e){ if(!dcw.jobs) dcw.jobs={}; return false; }
 }
-function dcwJob(d){ return (dcw.jobs||{})[dcwKey(d.address)]||null; }
-function dcwRes(d){ var j=dcwJob(d); return (j&&j.status==='done')?(j.result_json||null):null; }
+function dcwJob(d){ var o=(dcw.jobs||{})[dcwKey(d.address)]; return o?o.latest:null; }
+function dcwDone(d){ var o=(dcw.jobs||{})[dcwKey(d.address)]; return o?o.done:null; }
+function dcwRes(d){ var j=dcwDone(d); return j?(j.result_json||null):null; }
 function dcwActive(d){ var j=dcwJob(d); return !!(j&&(j.status==='queued'||j.status==='running')); }
 function dcwSt(d){
   var s=d.dealState;
@@ -3716,43 +3720,49 @@ function dcwDetailHTML(d){
 
 // ---------- comps ----------
 function dcwCompsCard(d){
-  var job=dcwJob(d), res=dcwRes(d), s=dcwSt(d);
+  var job=dcwJob(d), res=dcwRes(d), active=dcwActive(d);
   var top='<div class="dcw-card"><div class="dcw-card-h"><b>Comps and ARV</b><span style="flex:1"></span>';
   if(!job) return top+'</div><div class="dcw-pad"><p style="margin:0 0 10px;color:var(--text3)">Finds the best 4 to 6 sold comps and one estimated ARV.</p><button class="btn btn-primary" onclick="dcwRerun('+d.id+')">Comp</button></div></div>';
-  if(job.status==='queued'||job.status==='running'){
-    var age=(Date.now()-new Date(job.created_at).getTime())/1000;
-    return top+'</div><div class="dcw-pad"><b style="color:var(--accent)"><span class="dcw-spin"></span>'+(job.status==='queued'?'Queued':'Searching for comps')+'&hellip;</b> <span style="color:var(--text3)">about a minute. You can leave this page; it keeps running.</span>'
-      +(job.status==='queued'&&age>150?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Still waiting for the cloud runner ('+Math.round(age/60)+' min). It checks the queue every 5 minutes. If this stays queued past 10 minutes, the runner may be down.</div>':'')
-      +(job.status==='running'&&age>240?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Taking longer than normal. It stops by itself after a few minutes, then press Try again.</div>':'')+'</div></div>';
+  if(!res){
+    if(active){
+      var age=(Date.now()-new Date(job.created_at).getTime())/1000;
+      return top+'</div><div class="dcw-pad"><b style="color:var(--accent)"><span class="dcw-spin"></span>'+(job.status==='queued'?'Queued':'Searching for comps')+'&hellip;</b> <span style="color:var(--text3)">about a minute. You can leave this page; it keeps running.</span>'
+        +(job.status==='queued'&&age>150?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Still waiting for the cloud runner ('+Math.round(age/60)+' min). If this stays queued past 10 minutes, the runner may be down.</div>':'')
+        +(job.status==='running'&&age>240?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Taking longer than normal. It stops by itself after a few minutes, then press Try again.</div>':'')+'</div></div>';
+    }
+    return top+'</div><div class="dcw-pad"><div style="color:#b91c1c;font-size:13px;margin-bottom:10px">Comp search failed: '+esc(job.error||'unknown error')+'</div><button class="btn btn-primary" onclick="dcwRerun('+d.id+')">Try again</button></div></div>';
   }
-  if(job.status==='failed') return top+'</div><div class="dcw-pad"><div style="color:#b91c1c;font-size:13px;margin-bottom:10px">Comp search failed: '+esc(job.error||'unknown error')+'</div><button class="btn btn-primary" onclick="dcwRerun('+d.id+')">Try again</button></div></div>';
-  var comps=res.comps||[], sys=dcwSysArv(res), med=dcwMedian(d), sq=dcNum(d.sqft);
+  var comps=res.comps||[], sys=dcwSysArv(res), med=dcwMedian(d), sq=dcNum(d.sqft), s=dcwSt(d);
+  var more=(job&&job.status==='failed'&&job.extra&&job.extra.more)?'<div class="dcw-warn" style="background:#fee2e2;color:#991b1b">The last "More comps" search failed: '+esc(job.error||'unknown error')+'</div>':'';
+  var morebusy=active?'<div class="dcw-why" style="margin-bottom:10px"><span class="dcw-spin"></span><b>Finding more comps&hellip;</b> your current comps stay here until it finishes.</div>':'';
   var rows=comps.map(function(c,i){
     var on=dcwCompOn(d,i), addr=c.address||'';
     var zl=addr?'<a class="dcw-z" href="'+esc(buildZillowUrl(addr))+'" target="_blank" rel="noopener">Zillow &#8599;</a>':'';
-    var src=(c.url&&/^https?:\/\//i.test(c.url))?' <a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener">Source &#8599;</a>':'';
+    var src=(c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">source</a>':'';
+    var sub=[(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':''),(c.distance_mi!=null?esc(c.distance_mi)+' mi':'')].filter(Boolean).join(' &middot; ');
     return '<tr class="'+(on?'':'off')+'"><td><input type="checkbox" aria-label="Use '+esc(addr)+'" onchange="dcwTog('+d.id+','+i+',this.checked)"'+(on?' checked':'')+'></td>'
-      +'<td class="a">'+esc(addr)+'</td><td><b>'+dcMoney(c.sold_price)+'</b></td><td>'+esc(c.sold_date||'')+'</td><td>'+(c.sqft!=null?Number(c.sqft).toLocaleString():'&mdash;')+'</td>'
-      +'<td>'+(c.distance_mi!=null?esc(c.distance_mi)+' mi':'&mdash;')+'</td><td>'+esc(c.condition||'')+'</td><td>'+zl+src+'</td></tr>';
+      +'<td class="a">'+esc(addr)+(sub?'<div class="dcw-sub">'+sub+'</div>':'')+'</td><td><b>'+dcMoney(c.sold_price)+'</b></td><td>'+esc(c.sold_date||'')+'</td>'
+      +'<td>'+esc(c.condition||'')+'</td><td>'+zl+src+'</td></tr>';
   }).join('');
   var cards=comps.map(function(c,i){
     var on=dcwCompOn(d,i), addr=c.address||'';
     return '<div class="dcw-cc'+(on?'':' off')+'"><input type="checkbox" aria-label="Use '+esc(addr)+'" onchange="dcwTog('+d.id+','+i+',this.checked)"'+(on?' checked':'')+'>'
       +'<div style="font-weight:700;min-width:0">'+esc(addr)+'</div><div style="font-weight:800;font-size:16px">'+dcMoney(c.sold_price)+'</div>'
-      +'<div class="m">'+esc(c.sold_date||'')+' &middot; '+(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'sqft n/a')+' &middot; '+(c.distance_mi!=null?esc(c.distance_mi)+' mi':'distance n/a')+' &middot; '+esc(c.condition||'')+'</div>'
+      +'<div class="m">'+esc(c.sold_date||'')+' &middot; '+esc(c.condition||'')+' &middot; '+(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'sqft n/a')+(c.distance_mi!=null?' &middot; '+esc(c.distance_mi)+' mi':'')+'</div>'
       +'<div class="x">'+(addr?'<a class="dcw-z" href="'+esc(buildZillowUrl(addr))+'" target="_blank" rel="noopener">Open in Zillow &#8599;</a>':'')
-      +((c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener">Source &#8599;</a>':'')+'</div></div>';
+      +((c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">source</a>':'')+'</div></div>';
   }).join('');
-  return top+'<span class="dcw-chip warn">UNVERIFIED</span><button class="btn btn-secondary btn-sm" onclick="dcwRerun('+d.id+')">Re-run</button></div><div class="dcw-pad">'
-    +'<div class="dcw-warn">Found by web search, not confirmed MLS sales. Check the sold price and date (use the Zillow links) before you rely on this number.</div>'
+  return top+'<span class="dcw-chip warn">UNVERIFIED</span><button class="btn btn-secondary btn-sm" onclick="dcwMore('+d.id+')"'+(active?' disabled':'')+' title="Find more sold comps and keep the ones you have">&#43; More comps</button><button class="btn btn-secondary btn-sm" onclick="dcwRerun('+d.id+')"'+(active?' disabled':'')+' title="Start over with a fresh search">Re-run</button></div><div class="dcw-pad">'
+    +more+morebusy
     +'<div class="dcw-arvrow"><div><div class="dcw-lbl">Estimated ARV</div><div class="dcw-big">'+dcMoney(sys)+'</div></div>'
-    +'<div class="dcw-yours"><label class="dcw-lbl" for="dcw-your">Your ARV (feeds the offer)</label><input type="number" id="dcw-your" class="form-input" step="1000" value="'+Math.round(dcwYour(d))+'" onchange="dcwSet('+d.id+',\'your\',this.value)"></div></div>'
-    +(res.arv&&res.arv.reason?'<div class="dcw-why"><b>Why this number.</b> '+esc(res.arv.reason)+'</div>':'')
-    +(comps.length?'<div class="dcw-tw"><table class="dcw-tbl"><thead><tr><th></th><th>Address</th><th>Sold</th><th>Date</th><th>Sqft</th><th>Dist</th><th>Condition</th><th>Links</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="dcw-cards">'+cards+'</div>'
-      :'<div style="margin-top:10px;color:#b45309;font-size:13px">No comps came back. Try again or add the property details.</div>')
-    +(comps.length&&sq?'<div style="margin-top:10px;font-size:12.5px;color:var(--text3)">Median of ticked comps, scaled to '+sq.toLocaleString()+' sqft: <b style="color:var(--text)">'+dcMoney(med)+'</b> <button class="btn btn-secondary btn-sm" onclick="dcwUseMed('+d.id+')">Use as my ARV</button></div>':'')
+    +'<div class="dcw-yours"><label class="dcw-lbl" for="dcw-your">Your ARV (feeds the offer)</label><input type="number" id="dcw-your" class="form-input" step="1000" value="'+Math.round(dcwYour(d))+'" onchange="dcwSet('+d.id+',\'your\',this.value)"></div>'
+    +(comps.length&&sq?'<div style="font-size:12px;color:var(--text3);padding-bottom:6px">Ticked median: <b style="color:var(--text)">'+dcMoney(med)+'</b> <button class="btn btn-secondary btn-sm" onclick="dcwUseMed('+d.id+')">Use</button></div>':'')+'</div>'
+    +'<div class="dcw-warn">Found by web search, not confirmed MLS sales. Use the Zillow links to check price and date before you rely on this.</div>'
+    +(comps.length?'<div class="dcw-tw"><table class="dcw-tbl"><thead><tr><th></th><th>Address</th><th>Sold</th><th>Date</th><th>Condition</th><th>Links</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="dcw-cards">'+cards+'</div>'
+      :'<div style="margin-top:10px;color:#b45309;font-size:13px">No comps came back. Try More comps or Re-run.</div>')
+    +(res.arv&&res.arv.reason?'<div class="dcw-why" style="margin-top:10px"><b>Why this number.</b> '+esc(res.arv.reason)+'</div>':'')
     +(res.notes?'<div style="margin-top:8px;font-size:12px;color:var(--text3)">'+esc(res.notes)+'</div>':'')
-    +'<div style="margin-top:6px;font-size:11.5px;color:var(--text4)">Ran '+esc(job.finished_at?new Date(job.finished_at).toLocaleString():'')+(job.requested_by?' by '+esc(job.requested_by):'')+'</div></div></div>';
+    +'<div style="margin-top:6px;font-size:11.5px;color:var(--text4)">'+comps.length+' comps &middot; ran '+esc(dcwDone(d).finished_at?new Date(dcwDone(d).finished_at).toLocaleString():'')+(dcwDone(d).requested_by?' by '+esc(dcwDone(d).requested_by):'')+'</div></div></div>';
 }
 function dcwTog(id,i,on){ var d=crmDealCheckById(id); if(!d) return; dcwSt(d).on[i]=!!on; dcwPersist(d); dcwPaint(); }
 function dcwSet(id,k,v){
@@ -3795,6 +3805,14 @@ async function dcwRun(d){
   catch(e){ showToast('Could not start comps: '+String(e.message||e).slice(0,100),'error'); return; }
   dcwTrigger();
   await dcwLoadJobs(); dcwPersist(d); dcwPaint(); dcwPoll(); showToast('Comps started, about a minute','success');
+}
+async function dcwMore(id){
+  var d=crmDealCheckById(id); if(!d||dcwActive(d)) return;
+  var res=dcwRes(d), done=dcwDone(d); if(!res||!done){ showToast('Run Comp first','error'); return; }
+  var excl=(res.comps||[]).map(function(c){ return {address:c.address,price:c.sold_price,date:c.sold_date,sqft:c.sqft}; });
+  try{ await sbFetch('crm_comp_jobs','POST',{address:d.address,mode:'fast',requested_by:(currentUser&&currentUser.name)||'',extra:{more:true,parent:done.id,exclude:excl}}); }
+  catch(e){ showToast('Could not start: '+String(e.message||e).slice(0,100),'error'); return; }
+  dcwTrigger(); await dcwLoadJobs(); dcwPaint(); dcwPoll(); showToast('Looking for more comps, about a minute','success');
 }
 // Ask the cloud runner to start right now (harmless if the trigger is not set up: the runner also checks every 5 minutes)
 function dcwTrigger(){
