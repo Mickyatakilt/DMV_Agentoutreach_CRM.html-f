@@ -3774,7 +3774,7 @@ function dcwCompsCard(d){
 }
 function dcwAddrLink(a){ a=String(a||''); return a?'<a href="'+esc(buildZillowUrl(a))+'" target="_blank" rel="noopener" class="dcw-al" title="Open on Zillow">'+esc(a)+'</a>':''; }
 function dcwActiveHTML(res){
-  if(!res||!Array.isArray(res.active)) return ''; var act=res.active; if(!act.length) return '<div style="margin-top:14px;font-size:12.5px;color:var(--text3)"><b>For sale nearby:</b> none found.</div>';
+  if(!res||!Array.isArray(res.active)) return ''; var subj=dcwKey(String((res.subject&&res.subject.address)||'').split(',')[0]); var act=res.active.filter(function(x){ return !subj||dcwKey(String(x.address||'').split(',')[0])!==subj; }); if(!act.length) return '<div style="margin-top:14px;font-size:12.5px;color:var(--text3)"><b>For sale nearby:</b> none found.</div>';
   var rows=act.map(function(a){
     var src=(a.url&&/^https?:\/\//i.test(a.url))?' <a class="dcw-z" href="'+esc(a.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">listing</a>':'';
     var sub=[(a.beds!=null?esc(a.beds)+' bd':''),(a.baths!=null?esc(a.baths)+' ba':''),(a.sqft!=null?Number(a.sqft).toLocaleString()+' sqft':''),(a.distance_mi!=null?esc(a.distance_mi)+' mi':'')].filter(Boolean).join(' &middot; ');
