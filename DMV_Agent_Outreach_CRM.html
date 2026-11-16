@@ -475,6 +475,12 @@
   .asst-badge.on{display:flex;}
   .asst-badge2{position:absolute;top:-8px;right:24px;min-width:24px;height:24px;border-radius:12px;background:#facc15;color:#422006;font-size:13px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 6px;border:2px solid #fff;animation:asstpulseY 1.8s infinite;}
   .asst-badge2.on{display:flex;}
+  .asst-badge3{position:absolute;top:-8px;right:52px;min-width:24px;height:24px;border-radius:12px;background:#22c55e;color:#052e16;font-size:13px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 6px;border:2px solid #fff;}
+  .asst-badge3.on{display:flex;}
+  .asst-cp{border:1.5px solid #22c55e;border-left:5px solid #22c55e;background:#f0fdf4;border-radius:11px;padding:10px;margin-bottom:8px;color:#052e16;}
+  .asst-cp.fail{border-color:#ef4444;background:#fef2f2;color:#7f1d1d;}
+  .asst-cp-h{font-size:13px;font-weight:800;word-break:break-word;} .asst-cp-l{font-size:12px;margin-top:3px;}
+  .asst-cp .asst-nt-act button{border:0;border-radius:8px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer;}
   @keyframes asstpulseY{0%{box-shadow:0 0 0 0 rgba(250,204,21,.6)}70%{box-shadow:0 0 0 10px rgba(250,204,21,0)}100%{box-shadow:0 0 0 0 rgba(250,204,21,0)}}
   .asst-nt{border:1.5px solid #eab308;border-left:5px solid #eab308;background:#fef9c3;border-radius:11px;padding:10px;margin-bottom:8px;color:#422006;}
   .asst-nt-h{font-size:13px;font-weight:800;}
@@ -8359,7 +8365,7 @@ function asstMount(){
   if(authProfile && authProfile.role==='recipient') return;
   if(document.getElementById('asst-root')) return;
   var root=document.createElement('div'); root.id='asst-root';
-  root.innerHTML='<button id="asst-fab" class="asst-fab" onclick="asstToggle()" title="Assistance"><span>🗒️</span><span>Assistance</span><span id="asst-badge" class="asst-badge"></span><span id="asst-badge2" class="asst-badge2" title="Comments that @mentioned you"></span></button>'
+  root.innerHTML='<button id="asst-fab" class="asst-fab" onclick="asstToggle()" title="Assistance"><span>🗒️</span><span>Assistance</span><span id="asst-badge" class="asst-badge"></span><span id="asst-badge2" class="asst-badge2" title="Comments that @mentioned you"></span><span id="asst-badge3" class="asst-badge3" title="Your finished comps"></span></button>'
     +'<div id="asst-panel" class="asst-panel">'
       +'<div class="asst-head"><span><b>🗒️ Assistance</b><small>your day-to-day guide</small></span><button class="asst-x" onclick="asstToggle(false)">✕</button></div>'
       +'<div class="asst-add"><input type="text" id="asst-note" placeholder="Quick note… e.g. Meeting with Mike" onkeydown="if(event.key===\'Enter\')asstAdd()">'
@@ -8372,6 +8378,7 @@ function asstMount(){
   asstLoad();
   setInterval(function(){ if(asstEditing===null) asstRender(); }, 5*60*1000);
   setInterval(asstNotifLoad, 30*1000);
+  setInterval(asstCompLoad, 20*1000); asstCompLoad();
 }
 async function asstLoad(){
   try{ asstTasks=await sbFetch('assistant_tasks?select=*&order=sort_order.asc,created_at.asc')||[]; }catch(e){ asstTasks=asstTasks||[]; }
@@ -8403,7 +8410,40 @@ async function asstNotifLoad(){
   asstNotifErr=(lastErr&&lastErr.message)||'unknown error'; asstRender();
 }
 var asstNotifErr='';
-document.addEventListener('visibilitychange',function(){ if(!document.hidden && document.getElementById('asst-root')) asstNotifLoad(); });
+// ---- green "Comp finished" items: my own finished Deal Check comps, stay until Handled (stored in crm_comp_jobs.extra.ack) ----
+var asstComps=[], asstCompSeen=null;
+function asstCompMe(){ return String((currentUser&&currentUser.name)||'').trim(); }
+async function asstCompLoad(){
+  var me=asstCompMe(); if(!me) return;
+  try{
+    var since=new Date(Date.now()-14*86400000).toISOString();
+    var rows=await sbFetch('crm_comp_jobs?select=id,address,status,error,finished_at,requested_by,extra,result_json&requested_by=eq.'+encodeURIComponent(me)+'&status=in.(done,failed)&finished_at=gte.'+encodeURIComponent(since)+'&order=finished_at.desc&limit=30');
+    asstComps=(rows||[]).filter(function(j){ return !(j.extra&&j.extra.ack); });
+    var ids=asstComps.map(function(j){return j.id;});
+    if(asstCompSeen){ var fresh=asstComps.filter(function(j){ return asstCompSeen.indexOf(j.id)<0; }); if(fresh.length) showToast('\u2705 Comp finished: '+fresh[0].address+(fresh.length>1?' (+'+(fresh.length-1)+' more)':''),'success'); }
+    asstCompSeen=ids; asstRender();
+  }catch(e){}
+}
+function asstCompHTML(j){
+  var ok=j.status==='done', arv=ok&&j.result_json&&j.result_json.arv?j.result_json.arv.value:null, n=ok&&j.result_json&&j.result_json.comps?j.result_json.comps.length:0;
+  var when=''; try{ when=new Date(j.finished_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
+  return '<div class="asst-cp'+(ok?'':' fail')+'"><div class="asst-cp-h">'+(ok?'\u2705 Comp finished':'\u26A0 Comp failed')+' \u00b7 '+esc(j.address)+'</div>'
+    +'<div class="asst-cp-l">'+(ok?(arv!=null?'ARV $'+Math.round(arv).toLocaleString()+' \u00b7 ':'')+n+' comps':esc(String(j.error||'No result, press Comp again').slice(0,120)))+' \u00b7 '+esc(when)+(ok?' \u00b7 unverified':'')+'</div>'
+    +'<div class="asst-nt-act"><button class="asst-nt-view" style="background:#16a34a" onclick="asstCompOpen('+j.id+')">Open Deal Check</button><button class="asst-nt-done" style="background:#052e16;color:#bbf7d0" onclick="asstCompHandle('+j.id+')">\u2713 Handled</button></div></div>';
+}
+async function asstCompHandle(id){
+  var j=asstComps.find(function(x){return x.id===id;}); if(!j) return;
+  asstComps=asstComps.filter(function(x){return x.id!==id;}); asstRender();
+  try{ await sbFetch('crm_comp_jobs?id=eq.'+id,'PATCH',{extra:Object.assign({},j.extra||{},{ack:true})}); }
+  catch(e){ asstComps.push(j); asstRender(); showToast('Could not mark handled','error'); }
+}
+async function asstCompOpen(id){
+  var j=asstComps.find(function(x){return x.id===id;}); if(!j) return;
+  asstToggle(false); activeSection='dealcheck'; render();
+  if(await dcwWaitReady()){ var d=(crmDealCheck||[]).find(function(x){ return dcwKey(x.address)===dcwKey(j.address); }); if(d){ dcw.sel=d.id; dcw.view='detail'; dcwPaint(); } }
+  asstCompHandle(id);
+}
+document.addEventListener('visibilitychange',function(){ if(!document.hidden && document.getElementById('asst-root')){ asstNotifLoad(); asstCompLoad(); } });
 function asstNotifHTML(n){
   var when=''; try{ when=new Date(n.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
   return '<div class="asst-nt" data-nid="'+n.id+'">'
@@ -8472,13 +8512,16 @@ function asstRender(){
   if(b){ b.textContent=due.length; b.classList.toggle('on',due.length>0); }
   var b2=document.getElementById('asst-badge2');
   if(b2){ b2.textContent=asstNotifErr?'!':asstNotifs.length; b2.classList.toggle('on',asstNotifs.length>0||!!asstNotifErr); }
+  var b3=document.getElementById('asst-badge3');
+  if(b3){ b3.textContent=asstComps.length; b3.classList.toggle('on',asstComps.length>0); }
   var l=document.getElementById('asst-list'); if(!l) return;
   var h='';
   if(asstNotifErr) h+='<div style="background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:10px">&#9888; Can\'t load your @mentions right now ('+esc(asstNotifErr)+'). You may be missing messages &mdash; <a href="#" onclick="asstNotifLoad();return false" style="color:#991b1b">retry</a> or tell Mike.</div>';
+  if(asstComps.length) h+='<div class="asst-sec" style="color:#166534">\uD83D\uDFE2 COMPS FINISHED \u00b7 '+asstComps.length+'</div><div class="asst-box">'+asstComps.map(asstCompHTML).join('')+'</div>';
   if(asstNotifs.length) h+='<div class="asst-sec" style="color:#a16207">🟡 @MENTIONS · '+asstNotifs.length+'</div><div class="asst-box">'+asstNotifs.map(asstNotifHTML).join('')+'</div>';
   if(due.length) h+='<div class="asst-sec">🔴 NEEDS YOU NOW · '+due.length+'</div><div class="asst-box">'+due.map(function(t){return asstRowHTML(t,true);}).join('')+'</div>';
   if(up.length) h+='<div class="asst-sec">⏳ UPCOMING · '+up.length+'</div><div class="asst-box">'+up.map(function(t){return asstRowHTML(t,false);}).join('')+'</div>';
-  if(!h&&!asstNotifErr) h='<div class="asst-empty">All clear — nothing on your plate. 🎉</div>';
+  if(!h&&!asstNotifErr&&!asstComps.length) h='<div class="asst-empty">All clear — nothing on your plate. 🎉</div>';
   l.innerHTML=h;
 }
 async function asstPatch(id,body){
