@@ -8418,9 +8418,10 @@ async function asstCompLoad(){
   try{
     var since=new Date(Date.now()-14*86400000).toISOString();
     var rows=await sbFetch('crm_comp_jobs?select=id,address,status,error,finished_at,requested_by,extra,result_json&requested_by=eq.'+encodeURIComponent(me)+'&status=in.(done,failed)&finished_at=gte.'+encodeURIComponent(since)+'&order=finished_at.desc&limit=30');
-    asstComps=(rows||[]).filter(function(j){ return !(j.extra&&j.extra.ack); });
+    var all=rows||[], seenA={}; asstComps=[];
+    all.forEach(function(j){ var k=dcwKey(j.address); if(!seenA[k]){ seenA[k]=1; j._ids=all.filter(function(x){return dcwKey(x.address)===k;}); if(!j.extra||!j.extra.ack) asstComps.push(j); } });
     var ids=asstComps.map(function(j){return j.id;});
-    if(asstCompSeen){ var fresh=asstComps.filter(function(j){ return asstCompSeen.indexOf(j.id)<0; }); if(fresh.length) showToast('\u2705 Comp finished: '+fresh[0].address+(fresh.length>1?' (+'+(fresh.length-1)+' more)':''),'success'); }
+    if(asstCompSeen){ var fresh=asstComps.filter(function(j){ return asstCompSeen.indexOf(j.id)<0; }); if(fresh.length) showToast((fresh[0].status==='done'?'\u2705 Comp finished: ':'\u26A0 Comp failed: ')+fresh[0].address+(fresh.length>1?' (+'+(fresh.length-1)+' more)':''),fresh[0].status==='done'?'success':'error'); }
     asstCompSeen=ids; asstRender();
   }catch(e){}
 }
@@ -8434,7 +8435,7 @@ function asstCompHTML(j){
 async function asstCompHandle(id){
   var j=asstComps.find(function(x){return x.id===id;}); if(!j) return;
   asstComps=asstComps.filter(function(x){return x.id!==id;}); asstRender();
-  try{ await sbFetch('crm_comp_jobs?id=eq.'+id,'PATCH',{extra:Object.assign({},j.extra||{},{ack:true})}); }
+  try{ for(var q=0;q<(j._ids||[j]).length;q++){ var x=(j._ids||[j])[q]; if(x.extra&&x.extra.ack) continue; await sbFetch('crm_comp_jobs?id=eq.'+x.id,'PATCH',{extra:Object.assign({},x.extra||{},{ack:true})}); } }
   catch(e){ asstComps.push(j); asstRender(); showToast('Could not mark handled','error'); }
 }
 async function asstCompOpen(id){
