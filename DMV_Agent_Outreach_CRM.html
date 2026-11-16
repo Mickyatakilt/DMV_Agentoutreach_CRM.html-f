@@ -712,7 +712,8 @@
     .stats-bar,.toolbar{overflow-x:auto;-webkit-overflow-scrolling:touch;}
   }
 
- .dcw-sub{font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px}
+ .dcw-al{color:inherit;text-decoration:none}.dcw-al:hover{text-decoration:underline;color:var(--accent)}
+.dcw-sub{font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px}
 .dcw-tbl td{padding:6px 8px!important}.dcw-tbl{font-size:12.5px}
 .dcw-big{font-size:30px!important}
 /* ===== Deal Check v2 (workspace) ===== */
@@ -3711,7 +3712,7 @@ function dcwHeadHTML(d){
   var steps=[['Comps and ARV',!!dcwRes(d)],['Rehab',dcwRehab(d)!=null],['Offer',!!s.saved]], now=false;
   var sh=steps.map(function(x,i){ var c=x[1]?'done':(!now?(now=true,'now'):''); return '<div class="dcw-step '+c+'"><i>'+(x[1]?'&#10003;':(i+1))+'</i>'+x[0]+'</div>'; }).join('');
   return '<div class="dcw-card dcw-pad" style="margin-bottom:14px"><div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">'
-    +'<div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:800">'+esc(d.address||'(no address)')
+    +'<div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:800"><a href="'+esc(buildZillowUrl(d.address))+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none" title="Open on Zillow">'+esc(d.address||'(no address)')+'</a>'
     +' <a class="dcw-z" href="'+esc(buildZillowUrl(d.address))+'" target="_blank" rel="noopener">&#127968; Zillow &#8599;</a></div>'
     +'<div style="font-size:12px;color:var(--text3);margin-top:2px">'+(spec.join(' &middot; ')||'Specs fill in after the first comp search')
     +(s.leadId!=null?' &middot; From Lead #'+s.leadId:'')+(s.taskSent?' &middot; Task created '+esc(s.taskSent):'')+'</div></div>'
@@ -3747,13 +3748,13 @@ function dcwCompsCard(d){
     var src=(c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">source</a>':'';
     var sub=[(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':''),(c.distance_mi!=null?esc(c.distance_mi)+' mi':'')].filter(Boolean).join(' &middot; ');
     return '<tr class="'+(on?'':'off')+'"><td><input type="checkbox" aria-label="Use '+esc(addr)+'" onchange="dcwTog('+d.id+','+i+',this.checked)"'+(on?' checked':'')+'></td>'
-      +'<td class="a">'+esc(addr)+(sub?'<div class="dcw-sub">'+sub+'</div>':'')+'</td><td><b>'+dcMoney(c.sold_price)+'</b></td><td>'+esc(c.sold_date||'')+'</td>'
+      +'<td class="a">'+dcwAddrLink(addr)+(sub?'<div class="dcw-sub">'+sub+'</div>':'')+'</td><td><b>'+dcMoney(c.sold_price)+'</b></td><td>'+esc(c.sold_date||'')+'</td>'
       +'<td>'+esc(c.condition||'')+'</td><td>'+zl+src+'</td></tr>';
   }).join('');
   var cards=comps.map(function(c,i){
     var on=dcwCompOn(d,i), addr=c.address||'';
     return '<div class="dcw-cc'+(on?'':' off')+'"><input type="checkbox" aria-label="Use '+esc(addr)+'" onchange="dcwTog('+d.id+','+i+',this.checked)"'+(on?' checked':'')+'>'
-      +'<div style="font-weight:700;min-width:0">'+esc(addr)+'</div><div style="font-weight:800;font-size:16px">'+dcMoney(c.sold_price)+'</div>'
+      +'<div style="font-weight:700;min-width:0">'+dcwAddrLink(addr)+'</div><div style="font-weight:800;font-size:16px">'+dcMoney(c.sold_price)+'</div>'
       +'<div class="m">'+esc(c.sold_date||'')+' &middot; '+esc(c.condition||'')+' &middot; '+(c.sqft!=null?Number(c.sqft).toLocaleString()+' sqft':'sqft n/a')+(c.distance_mi!=null?' &middot; '+esc(c.distance_mi)+' mi':'')+'</div>'
       +'<div class="x">'+(addr?'<a class="dcw-z" href="'+esc(buildZillowUrl(addr))+'" target="_blank" rel="noopener">Open in Zillow &#8599;</a>':'')
       +((c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">source</a>':'')+'</div></div>';
@@ -3766,9 +3767,21 @@ function dcwCompsCard(d){
     +'<div class="dcw-warn">Found by web search, not confirmed MLS sales. Use the Zillow links to check price and date before you rely on this.</div>'
     +(comps.length?'<div class="dcw-tw"><table class="dcw-tbl"><thead><tr><th></th><th>Address</th><th>Sold</th><th>Date</th><th>Condition</th><th>Links</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="dcw-cards">'+cards+'</div>'
       :'<div style="margin-top:10px;color:#b45309;font-size:13px">No comps came back. Try More comps or Re-run.</div>')
+    +dcwActiveHTML(res)
     +(res.arv&&res.arv.reason?'<div class="dcw-why" style="margin-top:10px"><b>Why this number.</b> '+esc(res.arv.reason)+'</div>':'')
     +(res.notes?'<div style="margin-top:8px;font-size:12px;color:var(--text3)">'+esc(res.notes)+'</div>':'')
     +'<div style="margin-top:6px;font-size:11.5px;color:var(--text4)">'+comps.length+' comps &middot; ran '+esc(dcwDone(d).finished_at?new Date(dcwDone(d).finished_at).toLocaleString():'')+(dcwDone(d).requested_by?' by '+esc(dcwDone(d).requested_by):'')+'</div></div></div>';
+}
+function dcwAddrLink(a){ a=String(a||''); return a?'<a href="'+esc(buildZillowUrl(a))+'" target="_blank" rel="noopener" class="dcw-al" title="Open on Zillow">'+esc(a)+'</a>':''; }
+function dcwActiveHTML(res){
+  if(!res||!Array.isArray(res.active)) return ''; var act=res.active; if(!act.length) return '<div style="margin-top:14px;font-size:12.5px;color:var(--text3)"><b>For sale nearby:</b> none found.</div>';
+  var rows=act.map(function(a){
+    var src=(a.url&&/^https?:\/\//i.test(a.url))?' <a class="dcw-z" href="'+esc(a.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">listing</a>':'';
+    var sub=[(a.beds!=null?esc(a.beds)+' bd':''),(a.baths!=null?esc(a.baths)+' ba':''),(a.sqft!=null?Number(a.sqft).toLocaleString()+' sqft':''),(a.distance_mi!=null?esc(a.distance_mi)+' mi':'')].filter(Boolean).join(' &middot; ');
+    return '<tr><td class="a">'+dcwAddrLink(a.address)+(sub?'<div class="dcw-sub">'+sub+'</div>':'')+'</td><td><b>'+dcMoney(a.list_price)+'</b></td><td>'+(a.days_on_market!=null?esc(a.days_on_market)+' d':'')+'</td><td>'+esc(a.status||'')+'</td><td>'+src+'</td></tr>';
+  }).join('');
+  return '<div style="margin-top:16px"><div class="dcw-lbl" style="margin-bottom:4px">For sale nearby (competition, not used in the ARV) <span class="dcw-chip warn">UNVERIFIED</span></div>'
+    +'<div class="dcw-tw"><table class="dcw-tbl"><thead><tr><th>Address</th><th>List price</th><th>On market</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
 }
 function dcwTog(id,i,on){ var d=crmDealCheckById(id); if(!d) return; dcwSt(d).on[i]=!!on; dcwPersist(d); dcwPaint(); }
 function dcwSet(id,k,v){
