@@ -66,7 +66,7 @@ function render(){
    +'<div class="info">📍 '+(addr?'<a target="_blank" rel="noopener" href="https://maps.apple.com/?q='+encodeURIComponent(addr)+'">'+esc(addr)+'</a>':'<span class="muted">no address on file</span>')+'</div>'
    +(l.email?'<div class="info">✉️ '+esc(l.email)+'</div>':'')
    +(assigned?'<div class="info muted">Assigned to <b>'+esc(assigned)+'</b></div>':'')
-   +'<div class="row" style="margin-top:10px"><a class="btn sec" href="'+CRM+'?open=lead:'+(l.id||'')+'">Open in CRM</a></div></div>'
+   +'<div class="row" style="margin-top:10px"><a class="btn sec" href="'+CRM+'?open=lead:'+(l.id||'')+'">Open in CRM</a>'+(h?'<button class="go" id="btnH" onclick="doHandled()">&#10003; Handled</button>':'')+(l.id?'<button id="btnD" style="background:#dc2626" onclick="doDelete()">Delete</button>':'')+'</div></div>'
    +'<div class="card"><h2>Text messages</h2><div id="thread" class="muted">Loading…</div>'
    +'<div style="margin-top:10px"><textarea id="sms" placeholder="Type a text reply…"></textarea>'
    +'<div class="row" style="margin-top:8px"><button class="go" id="sendSms" onclick="sendSms()">Send text</button><button class="sec" onclick="loadThread()">Refresh</button></div></div></div>'
@@ -104,6 +104,15 @@ async function sendEmail(){
   try{ var d=await fn('lead-quick',Object.assign({action:'email',subject:s,body:b},ids()));
     if(d.ok){ $('ebody').value=''; toast('Email sent'); } else toast('Email failed: '+(d.error||'error'),1);
   }catch(e){ toast('Email failed',1); } btn.disabled=false;
+}
+function doneCard(msg){ $('app').innerHTML='<div class="card"><h1>'+esc(msg)+'</h1><p class="muted">It is cleared from the CRM handoff list.</p><a class="btn sec" href="'+CRM+'">Open CRM</a></div>'; }
+async function doHandled(){
+  $('btnH').disabled=true;
+  try{ var d=await fn('lead-quick',Object.assign({action:'handled'},ids())); if(d.ok) doneCard('Marked handled'); else { toast('Failed: '+(d.error||'error'),1); $('btnH').disabled=false; } }catch(e){ toast('Failed',1); $('btnH').disabled=false; }
+}
+async function doDelete(){
+  if(!confirm('Delete this lead from the CRM? (You can restore it from the CRM trash.)')) return;
+  try{ var d=await fn('lead-quick',Object.assign({action:'delete'},ids())); if(d.ok) doneCard('Lead deleted'); else toast('Failed: '+(d.error||'error'),1); }catch(e){ toast('Failed',1); }
 }
 init();
 </script></body></html>
