@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>Quick Lead</title>
+<style>
+:root{--bg:#f1f5f9;--card:#fff;--tx:#0f172a;--tx2:#475569;--bd:#e2e8f0;--bl:#2563eb;--gr:#16a34a;--am:#b45309}
+@media(prefers-color-scheme:dark){:root{--bg:#0b1220;--card:#162033;--tx:#e8eefc;--tx2:#9fb0cf;--bd:#26334d}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:12px 14px calc(24px + env(safe-area-inset-bottom))}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+h1{font-size:20px;margin:0 0 6px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--tx2);margin:0 0 8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+a.btn,button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:11px 14px;background:var(--bl);color:#fff;text-decoration:none;cursor:pointer}
+button.sec,a.sec{background:var(--bd);color:var(--tx)}button.go{background:var(--gr)}button:disabled{opacity:.5}
+.info{font-size:15px;margin:4px 0}.info a{color:var(--bl);font-weight:600;text-decoration:none}
+.badge{display:inline-block;font-size:12px;font-weight:800;color:var(--am);background:#fef3c7;border-radius:8px;padding:3px 8px}
+#thread{max-height:46vh;overflow:auto;display:flex;flex-direction:column;gap:6px;padding:2px}
+.m{max-width:85%;padding:8px 11px;border-radius:14px;font-size:15px;white-space:pre-wrap;word-break:break-word}
+.in{background:var(--bd);align-self:flex-start;border-bottom-left-radius:4px}.out{background:var(--bl);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.t{font-size:10.5px;opacity:.7;margin-top:2px}
+textarea,input,select{width:100%;font:inherit;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx)}
+textarea{min-height:76px;resize:vertical}.muted{color:var(--tx2);font-size:13px}
+#toast{position:fixed;left:14px;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));background:#0f172a;color:#fff;padding:12px 14px;border-radius:12px;display:none;z-index:9;font-weight:600}
+</style></head><body>
+<div id="app"><div class="card muted">Loading…</div></div>
+<div id="toast"></div>
+<script>
+var SB='https://jwctfsapxrdzznjaaufo.supabase.co', KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3Y3Rmc2FweHJkenpuamFhdWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNTg0ODksImV4cCI6MjA5NjYzNDQ4OX0._9XUgB2K2O_JlDJgWM_Br_KLqJRVKxKnct7dR-pvMHk";
+var CRM='./DMV_Agent_Outreach_CRM.html';
+var qs=new URLSearchParams(location.search), D=null, sess=null, contactId=null;
+function $(i){return document.getElementById(i)}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function toast(t,bad){var e=$('toast');e.textContent=t;e.style.background=bad?'#b91c1c':'#0f172a';e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(function(){e.style.display='none'},3500)}
+function loadSess(){try{sess=JSON.parse(localStorage.getItem('crm_auth')||'null')}catch(e){sess=null}}
+async function ensureToken(){
+  loadSess(); if(!sess||!sess.refresh_token) return false;
+  if(sess.expires_at && sess.expires_at-60 > Date.now()/1000) return true;
+  try{
+    var r=await fetch(SB+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:sess.refresh_token})});
+    var d=await r.json(); if(!r.ok||!d.access_token) return false;
+    sess={access_token:d.access_token,refresh_token:d.refresh_token,expires_at:Math.floor(Date.now()/1000)+(d.expires_in||3600),user:{id:d.user&&d.user.id,email:d.user&&d.user.email}};
+    localStorage.setItem('crm_auth',JSON.stringify(sess)); return true;
+  }catch(e){return false}
+}
+async function fn(name,body){
+  if(!(await ensureToken())) throw new Error('signed_out');
+  var r=await fetch(SB+'/functions/v1/'+name,{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+sess.access_token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  return r.json();
+}
+function ids(){return {handoffId:qs.get('h')?+qs.get('h'):undefined,leadId:qs.get('lead')?+qs.get('lead'):undefined,contactId:qs.get('contact')||undefined}}
+async function init(){
+  if(!(await ensureToken())){ $('app').innerHTML='<div class="card"><h1>Sign in needed</h1><p class="muted">Open the CRM once on this phone and sign in, then tap the alert again.</p><a class="btn" href="'+CRM+'">Open CRM</a></div>'; return; }
+  var d; try{ d=await fn('lead-quick',Object.assign({action:'get'},ids())); }catch(e){ $('app').innerHTML='<div class="card">Could not load. '+esc(e.message)+'</div>'; return; }
+  if(!d.ok){ $('app').innerHTML='<div class="card"><h1>Cannot open</h1><p class="muted">'+esc(d.error||'unknown')+'</p><a class="btn" href="'+CRM+'">Open CRM</a></div>'; return; }
+  D=d; contactId=d.contactId; render(); loadThread();
+}
+function render(){
+  var l=D.lead||{}, h=D.handoff, assigned=(h&&h.assigned_to)||l.assigned_to||'';
+  var phone=D.phone||'', addr=l.address||'';
+  var opts='<option value="">Assign to…</option>'+(D.people||[]).map(function(p){return '<option'+(p===assigned?' selected':'')+'>'+esc(p)+'</option>'}).join('');
+  $('app').innerHTML=
+   '<div class="card"><h1>'+esc(D.name||'Lead')+'</h1>'
+   +(h?'<div class="badge">🤖 Bot handoff</div> <span class="muted">'+esc(h.reason||'')+'</span>':'')
+   +'<div class="info">📞 '+(phone?'<a href="tel:'+esc(phone)+'">'+esc(phone)+'</a>':'<span class="muted">no phone</span>')+'</div>'
+   +'<div class="info">📍 '+(addr?'<a target="_blank" rel="noopener" href="https://maps.apple.com/?q='+encodeURIComponent(addr)+'">'+esc(addr)+'</a>':'<span class="muted">no address on file</span>')+'</div>'
+   +(l.email?'<div class="info">✉️ '+esc(l.email)+'</div>':'')
+   +(assigned?'<div class="info muted">Assigned to <b>'+esc(assigned)+'</b></div>':'')
+   +'<div class="row" style="margin-top:10px"><a class="btn sec" href="'+CRM+'?open=lead:'+(l.id||'')+'">Open in CRM</a></div></div>'
+   +'<div class="card"><h2>Text messages</h2><div id="thread" class="muted">Loading…</div>'
+   +'<div style="margin-top:10px"><textarea id="sms" placeholder="Type a text reply…"></textarea>'
+   +'<div class="row" style="margin-top:8px"><button class="go" id="sendSms" onclick="sendSms()">Send text</button><button class="sec" onclick="loadThread()">Refresh</button></div></div></div>'
+   +'<div class="card"><h2>Assign</h2><div class="row"><select id="who" style="flex:1">'+opts+'</select><button onclick="assign()">Assign</button></div><div class="muted" style="margin-top:6px">They get a phone alert and an email.</div></div>'
+   +'<div class="card"><h2>Send email</h2><input id="esub" placeholder="Subject" value="Following up"><div style="height:8px"></div><textarea id="ebody" placeholder="Email message…"></textarea><div class="row" style="margin-top:8px"><button onclick="sendEmail()" id="sendEm">Send email</button></div><div class="muted" style="margin-top:6px">Goes out from GoHighLevel and lands in the lead\'s conversation.</div></div>';
+}
+async function loadThread(){
+  var t=$('thread'); if(!t) return;
+  if(!contactId){ t.textContent='No GoHighLevel contact linked to this lead.'; return; }
+  try{
+    var d=await fn('ghl-conversation',{action:'thread',contactId:contactId,limit:40});
+    if(!d.ok){ t.textContent='Could not load texts ('+(d.reason||d.status||'error')+')'; return; }
+    if(!d.messages.length){ t.textContent='No texts yet.'; return; }
+    t.className=''; t.innerHTML=d.messages.map(function(m){var out=String(m.direction).toLowerCase()==='outbound';var when=m.dateAdded?new Date(m.dateAdded).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';return '<div class="m '+(out?'out':'in')+'">'+esc(m.body)+'<div class="t">'+esc(when)+'</div></div>'}).join('');
+    t.scrollTop=t.scrollHeight;
+  }catch(e){ t.textContent='Could not load texts.'; }
+}
+async function sendSms(){
+  var v=$('sms').value.trim(); if(!v) return toast('Type a message first',1);
+  if(!contactId) return toast('No contact linked',1);
+  var b=$('sendSms'); b.disabled=true;
+  try{ var d=await fn('ghl-conversation',{action:'send',contactId:contactId,message:v});
+    if(d.ok){ $('sms').value=''; toast('Text sent'); setTimeout(loadThread,1200); } else toast('Send failed: '+(d.reason||d.status||'error'),1);
+  }catch(e){ toast('Send failed',1); } b.disabled=false;
+}
+async function assign(){
+  var p=$('who').value; if(!p) return toast('Pick a person',1);
+  try{ var d=await fn('lead-quick',Object.assign({action:'assign',person:p},ids()));
+    if(d.ok){ toast('Assigned to '+p+(d.emailed?' · emailed':'')); } else toast('Assign failed: '+(d.error||'error'),1);
+  }catch(e){ toast('Assign failed',1); }
+}
+async function sendEmail(){
+  var s=$('esub').value.trim(), b=$('ebody').value.trim(); if(!s||!b) return toast('Subject and message needed',1);
+  var btn=$('sendEm'); btn.disabled=true;
+  try{ var d=await fn('lead-quick',Object.assign({action:'email',subject:s,body:b},ids()));
+    if(d.ok){ $('ebody').value=''; toast('Email sent'); } else toast('Email failed: '+(d.error||'error'),1);
+  }catch(e){ toast('Email failed',1); } btn.disabled=false;
+}
+init();
+</script></body></html>
