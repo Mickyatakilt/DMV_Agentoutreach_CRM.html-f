@@ -28,7 +28,7 @@ textarea{min-height:76px;resize:vertical}.muted{color:var(--tx2);font-size:13px}
 <script>
 var SB='https://jwctfsapxrdzznjaaufo.supabase.co', KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3Y3Rmc2FweHJkenpuamFhdWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNTg0ODksImV4cCI6MjA5NjYzNDQ4OX0._9XUgB2K2O_JlDJgWM_Br_KLqJRVKxKnct7dR-pvMHk";
 var CRM='./DMV_Agent_Outreach_CRM.html';
-var qs=new URLSearchParams(location.search), D=null, sess=null, contactId=null;
+var qs=new URLSearchParams(location.search), MENTION=!!qs.get('c'), D=null, sess=null, contactId=null;
 function $(i){return document.getElementById(i)}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function toast(t,bad){var e=$('toast');e.textContent=t;e.style.background=bad?'#b91c1c':'#0f172a';e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(function(){e.style.display='none'},3500)}
@@ -60,13 +60,14 @@ function render(){
   var phone=D.phone||'', addr=l.address||'';
   var opts='<option value="">Assign to…</option>'+(D.people||[]).map(function(p){return '<option'+(p===assigned?' selected':'')+'>'+esc(p)+'</option>'}).join('');
   $('app').innerHTML=
-   '<div class="card"><h1>'+esc(D.name||'Lead')+'</h1>'
-   +(h?'<div class="badge">🤖 Bot handoff</div> <span class="muted">'+esc(h.reason||'')+'</span>':'')
+   (MENTION?'<div class="card" id="mbanner" style="border-color:var(--bl);border-width:2px"><div style="font-weight:800;color:var(--bl)">&#128172; <span id="mwho">Someone</span> mentioned you</div><div id="mtext" style="margin-top:6px;white-space:pre-wrap;font-size:16px">Loading…</div></div>':'')
+   +'<div class="card"><h1>'+esc(D.name||'Lead')+'</h1>'
+   +(h&&!MENTION?'<div class="badge">🤖 Bot handoff</div> <span class="muted">'+esc(h.reason||'')+'</span>':'')
    +'<div class="info">📞 '+(phone?'<a href="tel:'+esc(phone)+'">'+esc(phone)+'</a>':'<span class="muted">no phone</span>')+'</div>'
    +'<div class="info">📍 '+(addr?'<a target="_blank" rel="noopener" href="https://maps.apple.com/?q='+encodeURIComponent(addr)+'">'+esc(addr)+'</a>':'<span class="muted">no address on file</span>')+'</div>'
    +(l.email?'<div class="info">✉️ '+esc(l.email)+'</div>':'')
    +(assigned?'<div class="info muted">Assigned to <b>'+esc(assigned)+'</b></div>':'')
-   +'<div class="row" style="margin-top:10px"><a class="btn sec" href="'+CRM+'?open=lead:'+(l.id||'')+'">Open in CRM</a>'+(h?'<button class="go" id="btnH" onclick="doHandled()">&#10003; Handled</button>':'')+(l.id?'<button id="btnD" style="background:#dc2626" onclick="doDelete()">Delete</button>':'')+'</div></div>'
+   +'<div class="row" style="margin-top:10px"><a class="btn sec" href="'+CRM+'?open=lead:'+(l.id||'')+'">Open in CRM</a>'+(h&&!MENTION?'<button class="go" id="btnH" onclick="doHandled()">&#10003; Handled</button>':'')+(l.id?'<button id="btnD" style="background:#dc2626" onclick="doDelete()">Delete</button>':'')+'</div></div>'
    +'<div class="card" id="ccard"><h2>Comments</h2><div id="cthread" class="muted">Loading…</div><textarea id="cbody" placeholder="Write a comment… use @Name to alert someone" style="margin-top:8px"></textarea><div class="row" style="margin-top:8px"><button onclick="addComment()" id="btnC">Post comment</button></div></div>'
    +'<div class="card"><h2>Text messages</h2><div id="thread" class="muted">Loading…</div>'
    +'<div style="margin-top:10px"><textarea id="sms" placeholder="Type a text reply…"></textarea>'
@@ -120,6 +121,7 @@ async function loadComments(){
   try{ var d=await fn('lead-comments',{action:'list',leadId:lid});
     if(!d.ok){ t.textContent='Could not load comments.'; return; }
     var hi=+qs.get('c')||0;
+    var mc=d.comments.filter(function(c){return c.id===hi})[0]; if(mc&&$('mwho')){ $('mwho').textContent=mc.author_name; $('mtext').textContent=mc.body; } else if($('mtext')){ $('mtext').textContent='(comment not found, see the thread below)'; }
     if(!d.comments.length){ t.textContent='No comments yet.'; return; }
     t.className=''; t.innerHTML=d.comments.map(function(c){var w=new Date(c.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
       return '<div class="m in" style="max-width:100%;margin-bottom:6px;'+(c.id===hi?'outline:2px solid var(--bl)':'')+'"><b>'+esc(c.author_name)+'</b><br>'+esc(c.body)+'<div class="t">'+esc(w)+'</div></div>'}).join('');
