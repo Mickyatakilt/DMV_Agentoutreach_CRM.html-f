@@ -53,7 +53,7 @@ async function init(){
   if(!(await ensureToken())){ $('app').innerHTML='<div class="card"><h1>Sign in needed</h1><p class="muted">Open the CRM once on this phone and sign in, then tap the alert again.</p><a class="btn" href="'+CRM+'">Open CRM</a></div>'; return; }
   var d; try{ d=await fn('lead-quick',Object.assign({action:'get'},ids())); }catch(e){ $('app').innerHTML='<div class="card">Could not load. '+esc(e.message)+'</div>'; return; }
   if(!d.ok){ $('app').innerHTML='<div class="card"><h1>Cannot open</h1><p class="muted">'+esc(d.error||'unknown')+'</p><a class="btn" href="'+CRM+'">Open CRM</a></div>'; return; }
-  D=d; contactId=d.contactId; render(); loadThread();
+  D=d; contactId=d.contactId; render(); loadThread(); loadComments();
 }
 function render(){
   var l=D.lead||{}, h=D.handoff, assigned=(h&&h.assigned_to)||l.assigned_to||'';
@@ -67,6 +67,7 @@ function render(){
    +(l.email?'<div class="info">✉️ '+esc(l.email)+'</div>':'')
    +(assigned?'<div class="info muted">Assigned to <b>'+esc(assigned)+'</b></div>':'')
    +'<div class="row" style="margin-top:10px"><a class="btn sec" href="'+CRM+'?open=lead:'+(l.id||'')+'">Open in CRM</a>'+(h?'<button class="go" id="btnH" onclick="doHandled()">&#10003; Handled</button>':'')+(l.id?'<button id="btnD" style="background:#dc2626" onclick="doDelete()">Delete</button>':'')+'</div></div>'
+   +'<div class="card" id="ccard"><h2>Comments</h2><div id="cthread" class="muted">Loading…</div><textarea id="cbody" placeholder="Write a comment… use @Name to alert someone" style="margin-top:8px"></textarea><div class="row" style="margin-top:8px"><button onclick="addComment()" id="btnC">Post comment</button></div></div>'
    +'<div class="card"><h2>Text messages</h2><div id="thread" class="muted">Loading…</div>'
    +'<div style="margin-top:10px"><textarea id="sms" placeholder="Type a text reply…"></textarea>'
    +'<div class="row" style="margin-top:8px"><button class="go" id="sendSms" onclick="sendSms()">Send text</button><button class="sec" onclick="loadThread()">Refresh</button></div></div></div>'
@@ -113,6 +114,23 @@ async function doHandled(){
 async function doDelete(){
   if(!confirm('Delete this lead from the CRM? (You can restore it from the CRM trash.)')) return;
   try{ var d=await fn('lead-quick',Object.assign({action:'delete'},ids())); if(d.ok) doneCard('Lead deleted'); else toast('Failed: '+(d.error||'error'),1); }catch(e){ toast('Failed',1); }
+}
+async function loadComments(){
+  var t=$('cthread'); if(!t) return; var lid=(D.lead&&D.lead.id)||ids().leadId; if(!lid){ $('ccard').style.display='none'; return; }
+  try{ var d=await fn('lead-comments',{action:'list',leadId:lid});
+    if(!d.ok){ t.textContent='Could not load comments.'; return; }
+    var hi=+qs.get('c')||0;
+    if(!d.comments.length){ t.textContent='No comments yet.'; return; }
+    t.className=''; t.innerHTML=d.comments.map(function(c){var w=new Date(c.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+      return '<div class="m in" style="max-width:100%;margin-bottom:6px;'+(c.id===hi?'outline:2px solid var(--bl)':'')+'"><b>'+esc(c.author_name)+'</b><br>'+esc(c.body)+'<div class="t">'+esc(w)+'</div></div>'}).join('');
+  }catch(e){ t.textContent='Could not load comments.'; }
+}
+async function addComment(){
+  var v=$('cbody').value.trim(); if(!v) return toast('Write a comment first',1); var lid=(D.lead&&D.lead.id)||ids().leadId;
+  var b=$('btnC'); b.disabled=true;
+  try{ var d=await fn('lead-comments',{action:'add',leadId:lid,body:v});
+    if(d.ok){ $('cbody').value=''; toast(d.mentioned?'Posted · mentioned people alerted':'Posted'); loadComments(); } else toast('Failed: '+(d.error||'error'),1);
+  }catch(e){ toast('Failed',1); } b.disabled=false;
 }
 init();
 </script></body></html>
