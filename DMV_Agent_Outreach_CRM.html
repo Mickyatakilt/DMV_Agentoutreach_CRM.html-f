@@ -1108,6 +1108,16 @@ async function pushToggle(){
     alert('Phone alerts are ON on this device. You will get an early warning here when the database struggles.');
   }catch(e){ alert('Phone alerts error: '+(e && e.message || e)); }
 }
+async function muteAllMenu(){
+  var v=prompt('Mute ALL your hourly phone reminders for how many hours?\n\nType 3, 5, 8 or 24.\nType 0 to turn reminders back on.\n(New replies and mentions still alert you.)','3');
+  if(v===null) return; v=parseInt(v,10);
+  if([0,3,5,8,24].indexOf(v)<0){ alert('Please type 3, 5, 8, 24 or 0.'); return; }
+  try{
+    var r=await fetch(SUPABASE_URL+'/functions/v1/lead-mute',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken()},body:JSON.stringify(v?{action:'set',leadId:0,hours:v}:{action:'clear',leadId:0})});
+    var d=await r.json();
+    alert(d&&d.ok?(v?'All hourly reminders muted for '+v+' hours.':'Hourly reminders are back on.'):'Could not change mute ('+((d&&d.error)||r.status)+').');
+  }catch(e){ alert('Mute error: '+(e&&e.message||e)); }
+}
 // ===== END PHONE ALERTS ===========================================================
 // ===== END AUTH ===================================================================
 
@@ -8889,7 +8899,7 @@ function renderOutreach(){
         <div id="global-search-results" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid var(--border);border-radius:8px;margin-top:4px;max-height:360px;overflow-y:auto;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,.12)"></div>
       </div>
       <div class="header-right">
-        ${isAdmin()?'<button id="push-btn" class="btn btn-white btn-sm" onclick="pushToggle()">&#128276; Phone alerts</button>':''}${isAdmin()?(setTimeout(pushRefreshBtn,400),''):''}
+        ${isAdmin()?'<button id="push-btn" class="btn btn-white btn-sm" onclick="pushToggle()">&#128276; Phone alerts</button>':''}${isAdmin()?'<button id="mute-btn" class="btn btn-white btn-sm" title="Mute the hourly phone reminders" onclick="muteAllMenu()">&#128277; Mute reminders</button>':''}${isAdmin()?(setTimeout(pushRefreshBtn,400),''):''}
         <button class="btn btn-white btn-sm" onclick="showDropdownManager()">&#9881;&#65039; Dropdowns</button>
         <button class="btn btn-white btn-sm" onclick="${isAdmin()?'showManageTeam()':'showTeamManager()'}">&#128101; Team</button>
         <button class="btn btn-white btn-sm" onclick="showTrash()">&#128465; Trash</button>

@@ -68,7 +68,7 @@ function render(){
    +(l.email?'<div class="info">✉️ '+esc(l.email)+'</div>':'')
    +(assigned?'<div class="info muted">Assigned to <b>'+esc(assigned)+'</b></div>':'')
    +'<div class="row" style="margin-top:10px"><a class="btn sec" href="'+CRM+'?open=lead:'+(l.id||'')+'">Open in CRM</a>'+(h&&!MENTION?'<button class="go" id="btnH" onclick="doHandled()">&#10003; Handled</button>':'')+(l.id?'<button id="btnD" style="background:#dc2626" onclick="doDelete()">Delete</button>':'')+'</div></div>'
-   +'<div class="card" id="mcard"><h2>Hourly reminders</h2><div id="mstate" class="muted" style="margin-bottom:8px">On: you get a reminder every hour (8 AM to 6 PM ET) until this is handled.</div><div class="row"><button class="sec" onclick="mute(3)">Mute 3h</button><button class="sec" onclick="mute(5)">5h</button><button class="sec" onclick="mute(8)">8h</button><button class="sec" onclick="mute(24)">24h</button><button class="sec" id="btnU" style="display:none" onclick="mute(0)">Unmute</button></div><div class="muted" style="margin-top:6px">Muting only silences the hourly reminders. New replies and mentions still alert you.</div>'+(MENTION?'<div class="row" style="margin-top:10px"><button class="go" onclick="mentionDone()">&#10003; Done with this mention</button></div>':'')+'</div>'
+   +'<div class="card" id="mcard"><h2>Hourly reminders (just for you)</h2><div id="mstate" class="muted" style="margin-bottom:8px">On: a reminder every hour (8 AM to 6 PM ET) until this is handled.</div><div class="muted">Mute this lead</div><div class="row" style="margin:4px 0 10px"><button class="sec" onclick="mute(3,0)">3h</button><button class="sec" onclick="mute(5,0)">5h</button><button class="sec" onclick="mute(8,0)">8h</button><button class="sec" onclick="mute(24,0)">24h</button><button class="sec" id="btnU" style="display:none" onclick="mute(0,0)">Unmute</button></div><div class="muted">Mute ALL my reminders</div><div id="astate" class="muted"></div><div class="row" style="margin:4px 0"><button class="sec" onclick="mute(3,1)">3h</button><button class="sec" onclick="mute(5,1)">5h</button><button class="sec" onclick="mute(8,1)">8h</button><button class="sec" onclick="mute(24,1)">24h</button><button class="sec" id="btnUA" style="display:none" onclick="mute(0,1)">Unmute all</button></div><div class="muted" style="margin-top:6px">Muting only affects you, and only the hourly reminders. New replies and mentions still alert you.</div>'+(MENTION?'<div class="row" style="margin-top:10px"><button class="go" onclick="mentionDone()">&#10003; Done with this mention</button></div>':'')+((D.lead&&D.lead.assigned_to&&String(D.lead.assigned_to).toLowerCase()===String(D.me||'').toLowerCase()&&!MENTION)?'<div class="row" style="margin-top:10px"><button class="go" onclick="gotIt()">&#10003; Got it (stop reminders for this lead)</button></div>':'')+'</div>'
    +'<div class="card" id="ccard"><h2>Comments</h2><div id="cthread" class="muted">Loading…</div><textarea id="cbody" placeholder="Write a comment… use @Name to alert someone" style="margin-top:8px"></textarea><div class="row" style="margin-top:8px"><button onclick="addComment()" id="btnC">Post comment</button></div></div>'
    +'<div class="card"><h2>Text messages</h2><div id="thread" class="muted">Loading…</div>'
    +'<div style="margin-top:10px"><textarea id="sms" placeholder="Type a text reply…"></textarea>'
@@ -108,7 +108,7 @@ async function sendEmail(){
     if(d.ok){ $('ebody').value=''; toast('Email sent'); } else toast('Email failed: '+(d.error||'error'),1);
   }catch(e){ toast('Email failed',1); } btn.disabled=false;
 }
-function doneCard(msg){ $('app').innerHTML='<div class="card"><h1>'+esc(msg)+'</h1><p class="muted">It is cleared from the CRM handoff list.</p><a class="btn sec" href="'+CRM+'">Open CRM</a></div>'; }
+function doneCard(msg){ $('app').innerHTML='<div class="card"><h1>'+esc(msg)+'</h1><p class="muted">Hourly reminders for this are stopped.</p><a class="btn sec" href="'+CRM+'">Open CRM</a></div>'; }
 async function doHandled(){
   $('btnH').disabled=true;
   try{ var d=await fn('lead-quick',Object.assign({action:'handled'},ids())); if(d.ok) doneCard('Marked handled'); else { toast('Failed: '+(d.error||'error'),1); $('btnH').disabled=false; } }catch(e){ toast('Failed',1); $('btnH').disabled=false; }
@@ -138,21 +138,27 @@ async function addComment(){
 function curLead(){ return (D&&D.lead&&D.lead.id)||ids().leadId; }
 async function loadMute(){
   var lid=curLead(); if(!lid||!$('mstate')) return;
-  try{ var d=await fn('lead-mute',{action:'get',leadId:lid}); showMute(d.muted_until); }catch(e){}
+  try{ var d=await fn('lead-mute',{action:'get',leadId:lid}); showMute(d); }catch(e){}
 }
-function showMute(u){
-  var el=$('mstate'); if(!el) return;
-  if(u){ el.innerHTML='<b>Muted until '+esc(new Date(u).toLocaleString([], {weekday:'short',hour:'numeric',minute:'2-digit'}))+'</b>'; $('btnU').style.display=''; }
-  else { el.textContent='On: you get a reminder every hour (8 AM to 6 PM ET) until this is handled.'; $('btnU').style.display='none'; }
+function fmtU(u){ return new Date(u).toLocaleString([], {weekday:'short',hour:'numeric',minute:'2-digit'}); }
+function showMute(d){
+  if(!$('mstate')) return; d=d||{};
+  if(d.lead_until){ $('mstate').innerHTML='<b>This lead muted until '+esc(fmtU(d.lead_until))+'</b>'; $('btnU').style.display=''; }
+  else { $('mstate').textContent='On: a reminder every hour (8 AM to 6 PM ET) until this is handled.'; $('btnU').style.display='none'; }
+  if(d.all_until){ $('astate').innerHTML='<b>All reminders muted until '+esc(fmtU(d.all_until))+'</b>'; $('btnUA').style.display=''; }
+  else { $('astate').textContent=''; $('btnUA').style.display='none'; }
 }
-async function mute(h){
-  var lid=curLead(); if(!lid) return toast('No lead',1);
+async function mute(h,all){
+  var lid=all?0:curLead(); if(lid===undefined||lid===null) return toast('No lead',1);
   try{ var d=await fn('lead-mute',h?{action:'set',leadId:lid,hours:h}:{action:'clear',leadId:lid});
-    if(d.ok){ showMute(d.muted_until); toast(h?'Reminders muted for '+h+' hours':'Reminders back on'); } else toast('Failed: '+(d.error||'error'),1);
+    if(d.ok){ toast(h?(all?'All reminders':'Reminders')+' muted for '+h+' hours':'Reminders back on'); loadMute(); } else toast('Failed: '+(d.error||'error'),1);
   }catch(e){ toast('Failed',1); }
 }
+async function gotIt(){
+  var lid=curLead(); try{ var d=await fn('lead-mute',{action:'ack',leadId:lid}); if(d.ok) doneCard('Got it'); else toast('Failed: '+(d.error||'error'),1); }catch(e){ toast('Failed',1); }
+}
 async function mentionDone(){
-  var lid=curLead(); try{ var d=await fn('lead-mute',{action:'read',leadId:lid}); if(d.ok) doneCard('Mention marked done'); else toast('Failed: '+(d.error||'error'),1); }catch(e){ toast('Failed',1); }
+  var lid=curLead(); try{ var d=await fn('lead-mute',{action:'read',leadId:lid,commentId:+qs.get('c')||undefined}); if(d.ok) doneCard('Mention marked done'); else toast('Failed: '+(d.error||'error'),1); }catch(e){ toast('Failed',1); }
 }
 init();
 </script></body></html>
