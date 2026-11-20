@@ -8919,6 +8919,7 @@ function renderOutreach(){
       <div class="tab ${activeTab==='sentout'?'active':''}" onclick="setTab('sentout')">&#128231; Sent Out <span style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.shared).length + jvLeads.filter(l=>!l.deleted&&l.shared).length}</span>${(function(){var n=recipientFUAlertCount();return n>0?' <span title="Recipient follow-ups overdue or due today" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">&#10071;'+n+'</span>':'';})()}</div>
       <div class="tab ${activeTab==='review'?'active':''}" onclick="setTab('review')">&#128269; Review <span id="tt-review-badge" title="Daily tasks waiting for your review" style="display:none;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700"></span> <span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700">${leads.filter(l=>!l.deleted&&l.needsReview&&(l.d4dStatus==='review_sent'||(!isD4DLead(l)&&!isFbBatchLead(l)))).length + jvLeads.filter(l=>!l.deleted&&l.needsReview).length}</span></div>
       <div class="tab ${activeTab==='scheduledsms'?'active':''}" onclick="setTab('scheduledsms')">&#128197; Scheduled</div>
+      ${canSeeHot()?`<div class="tab ${activeTab==='hotleads'?'active':''}" onclick="setTab('hotleads')">&#128293; Hot Leads</div>`:''}
       ${isAdmin()?`<div class="tab ${activeTab==='kpi'?'active':''}" onclick="setTab('kpi')">&#128202; KPI</div>`:''}
     </div>
     <div id="tab-content"></div>`;
@@ -8929,6 +8930,7 @@ function renderOutreach(){
   else if(activeTab==='review') renderReviewTab();
   else if(activeTab==='scheduledsms') renderScheduledSmsTab();
   else if(activeTab==='kpi' && isAdmin()) renderKpiTab();
+  else if(activeTab==='hotleads' && canSeeHot()) renderHotLeadsTab();
   else renderNationwideTab();
   ttUpdateReviewBadge();
 }
@@ -13823,6 +13825,98 @@ async function kpiFetch(bodyObj){
   if(r.status===401 && AUTH_ENABLED && authSession){ if(await authForceRefresh()){ r = await doFetch(); } }
   return r.json();
 }
+// ===== Daily Hot Leads tab =====================================================================
+// Filled every night (8 PM New York) by the daily-hot-leads edge function from unread bot texts.
+// Read-only here. "Reply" copies the suggested text and opens the GHL conversation; a person sends it.
+function canSeeHot(){ return !!(AUTH_ENABLED && authProfile && (authProfile.role==='admin' || authProfile.role==='team')); }
+var hotDates = [], hotDate = '', hotRows = null, hotErr = '', hotRun = null;
+var HOT_RANK = { hot:0, warm:1, watch:2 };
+var HOT_BOT = { seller:'Seller', agent:'Agent outreach', listed:'Listed property', jv:'JV' };
+var HOT_STYLE = {
+  hot:  { bg:'var(--red-bg)',    fg:'var(--red)',    label:'HOT' },
+  warm: { bg:'var(--orange-bg)', fg:'var(--orange)', label:'WARM' },
+  watch:{ bg:'var(--gray-bg)',   fg:'var(--gray)',   label:'WATCH' }
+};
+async function hotLoad(date){
+  hotErr = '';
+  try{
+    if(!hotDates.length){
+      hotDates = (await sbFetch('dhl_report_runs?select=report_date,status,leads_kept,threads_seen,finished_at&order=report_date.desc&limit=14')) || [];
+    }
+    if(!date && hotDates.length) date = hotDates[0].report_date;
+    hotDate = date || '';
+    hotRun = hotDates.filter(function(r){ return r.report_date===hotDate; })[0] || null;
+    hotRows = hotDate ? ((await sbFetch('dhl_hot_leads?select=*&report_date=eq.'+encodeURIComponent(hotDate)+'&limit=500')) || []) : [];
+    hotRows.sort(function(a,b){
+      var ra = (HOT_RANK[a.score]==null?9:HOT_RANK[a.score]), rb = (HOT_RANK[b.score]==null?9:HOT_RANK[b.score]);
+      if(ra!==rb) return ra-rb;
+      return String(b.last_inbound_at||'') < String(a.last_inbound_at||'') ? -1 : 1;
+    });
+  }catch(e){ hotErr = String(e.message||e); hotRows = []; }
+}
+function hotPick(d){ hotRows = null; renderHotLeadsTab(d); }
+function hotRefresh(){ hotDates = []; hotRows = null; renderHotLeadsTab(); }
+function hotReply(i){
+  var r = (hotRows||[])[i]; if(!r) return;
+  var url = String(r.ghl_link||'');
+  if(/^https:\/\/app\.gohighlevel\.com\//.test(url)) window.open(url, '_blank', 'noopener');
+  var t = String(r.suggested_reply||'');
+  try{
+    navigator.clipboard.writeText(t).then(function(){ showToast('Reply copied. Paste it in GHL and send.'); }, function(){ showToast('Could not copy. Select the text and copy it.','error'); });
+  }catch(e){ showToast('Could not copy. Select the text and copy it.','error'); }
+}
+function hotCard(r, i){
+  var st = HOT_STYLE[r.score] || HOT_STYLE.watch;
+  var field = function(label, val){ return (val==null||val==='') ? '' : '<div><div style="font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:.4px">'+label+'</div><div style="font-size:13px;color:var(--text)">'+esc(val)+'</div></div>'; };
+  var price = (r.asking_price!=null && r.asking_price!=='') ? '$'+Number(r.asking_price).toLocaleString() : '';
+  var when = ''; try{ when = r.last_inbound_at ? new Date(r.last_inbound_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : ''; }catch(e){}
+  var phone = String(r.phone||'');
+  var phoneHtml = phone ? '<a href="tel:'+esc(phone.replace(/[^+\d]/g,''))+'" style="color:var(--accent);text-decoration:none">'+esc(phone)+'</a>' : '';
+  var miss = Array.isArray(r.missing) ? r.missing.filter(Boolean) : [];
+  var missHtml = miss.length ? '<div style="margin-top:8px;font-size:12px;color:var(--yellow);background:var(--yellow-bg);border-radius:6px;padding:4px 8px;display:inline-block"><b>Missing:</b> '+esc(miss.join(', '))+'</div>' : '';
+  var grid = [field('Address',r.address), field('Asking',price), field('Timeline',r.timeline), field('Motivation',r.motivation), field('Condition',r.condition), field('Occupancy',r.occupancy), field('Beds / baths',r.beds_baths)].join('');
+  return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;box-shadow:var(--shadow)">'
+    +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+    +'<span style="background:'+st.bg+';color:'+st.fg+';font-weight:700;font-size:11px;border-radius:6px;padding:2px 8px">'+st.label+'</span>'
+    +'<span style="font-weight:700;font-size:15px">'+esc(r.contact_name||'Unknown')+'</span>'
+    +'<span style="font-size:11px;color:var(--text3);background:var(--surface3);border-radius:6px;padding:2px 7px">'+esc(HOT_BOT[r.bot]||r.bot||'')+'</span>'
+    +'<span style="font-size:12px;margin-left:auto;color:var(--text3)">'+phoneHtml+(when?' &middot; '+esc(when):'')+(r.msg_count>1?' &middot; '+esc(r.msg_count)+' msgs':'')+'</span></div>'
+    +'<div style="margin-top:6px;font-size:13px;color:var(--text2)">'+esc(r.summary||'')+'</div>'
+    +(r.reason?'<div style="margin-top:2px;font-size:12px;color:var(--text3)"><i>Why: '+esc(r.reason)+'</i></div>':'')
+    +(grid?'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 14px;margin-top:10px">'+grid+'</div>':'')
+    +missHtml
+    +(r.suggested_reply?'<div style="margin-top:10px;border:1px dashed var(--border2);border-radius:8px;padding:8px 10px;background:var(--surface2)"><div style="font-size:10px;color:var(--text4);text-transform:uppercase;letter-spacing:.4px">Suggested reply</div><div style="font-size:13px;margin:2px 0 8px;white-space:pre-wrap">'+esc(r.suggested_reply)+'</div><button class="btn btn-sm btn-primary" onclick="hotReply('+i+')">&#128172; Copy reply &amp; open in GHL</button></div>':'')
+    +'</div>';
+}
+async function renderHotLeadsTab(date){
+  var el = document.getElementById('tab-content'); if(!el) return;
+  if(!canSeeHot()){ el.innerHTML = '<div style="padding:24px;color:var(--text3)">This tab is for the team.</div>'; return; }
+  if(hotRows===null){
+    el.innerHTML = '<div style="padding:24px;color:var(--text4)">Loading the daily report…</div>';
+    await hotLoad(date);
+    if(activeTab!=='hotleads') return; // user switched tabs while loading
+    el = document.getElementById('tab-content'); if(!el) return;
+  }
+  var counts = { hot:0, warm:0, watch:0 };
+  hotRows.forEach(function(r){ if(counts[r.score]!=null) counts[r.score]++; });
+  var dateSel = hotDates.length ? '<select onchange="hotPick(this.value)" style="padding:5px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);font-size:13px">'
+    + hotDates.map(function(r){ return '<option value="'+esc(r.report_date)+'"'+(r.report_date===hotDate?' selected':'')+'>'+esc(r.report_date)+(r.status!=='done'?' ('+esc(r.status)+')':'')+'</option>'; }).join('') + '</select>' : '';
+  var built = ''; try{ built = (hotRun && hotRun.finished_at) ? 'built '+new Date(hotRun.finished_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : ''; }catch(e){}
+  var head = '<div style="padding:16px 24px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">'
+    + '<div><div style="font-size:18px;font-weight:700">&#128293; Daily Hot Leads</div><div style="font-size:12px;color:var(--text3)">What the AI flagged from unread bot texts. Built every night at 8 PM New York'+(built?' &middot; '+esc(built):'')+'</div></div>'
+    + '<div style="display:flex;gap:8px;align-items:center">'+dateSel+'<button class="btn btn-white btn-sm" onclick="hotRefresh()">&#8635; Refresh</button></div></div>';
+  if(hotErr){ el.innerHTML = head + '<div style="color:#dc2626;padding:24px">Could not load the report ('+esc(hotErr)+').</div></div>'; return; }
+  if(!hotRows.length){
+    el.innerHTML = head + '<div style="color:var(--text3);padding:24px;background:var(--surface2);border:1px solid var(--border);border-radius:10px">'
+      + (hotDates.length ? 'No leads flagged in this report.' : 'No report yet. The first one is built tonight at 8 PM New York.') + '</div></div>';
+    return;
+  }
+  var chips = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+    + ['hot','warm','watch'].map(function(k){ var s=HOT_STYLE[k]; return '<span style="background:'+s.bg+';color:'+s.fg+';font-weight:700;font-size:12px;border-radius:8px;padding:4px 10px">'+counts[k]+' '+s.label+'</span>'; }).join('')
+    + '<span style="font-size:12px;color:var(--text3);align-self:center">'+(hotRun&&hotRun.threads_seen!=null?esc(hotRun.threads_seen)+' unread threads reviewed':'')+'</span></div>';
+  el.innerHTML = head + chips + '<div style="display:grid;gap:10px">' + hotRows.map(hotCard).join('') + '</div></div>';
+}
+
 function kpiPct(a,b){ return b>0 ? (Math.round(a/b*1000)/10)+'%' : '0%'; }
 function kpiDelta(a,b,goodUp){ var d=a-b; if(!d) return '<span style="color:var(--text4)">same as before</span>'; var up=d>0; var good=(up===(goodUp!==false)); return '<span style="color:'+(good?'#15803d':'#dc2626')+'">'+(up?'+':'')+d+' vs before</span>'; }
 function kpiSetRange(r){ kpiRange=r; kpiData=null; renderKpiTab(); }
