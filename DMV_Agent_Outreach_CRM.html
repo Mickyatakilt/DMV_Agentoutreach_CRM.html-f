@@ -10623,7 +10623,7 @@ function listingChipHTML(l){
 }
 var listingDnd = {};
 function dndBadgeHTML(l){
-  return (l && listingDnd[l.id]) ? '<span title="Do Not Disturb is ON in GHL: no texts or calls" style="font-weight:800;color:#fff;background:#dc2626;border-radius:6px;padding:1px 7px;font-size:11px;margin-right:4px">&#128683; DND</span>' : '';
+  return (l && listingDnd[l.id]) ? '<span title="Do Not Disturb is ON in GHL: unsubscribed, never contact" style="font-weight:800;color:#fff;background:#dc2626;border-radius:6px;padding:1px 7px;font-size:11px;margin-right:4px">&#128683; Unsubscribed</span>' : '';
 }
 // loads (a) every lead whose GHL contact is on DND -> red DND in Marketing, (b) the latest Bot-text problem per lead (skipped / failed / queued, last 14 days) -> chip
 async function listingBootLoad(){
@@ -14181,21 +14181,45 @@ function emailOfferSectionHTML(l, kind){
     +     '<button class="btn btn-primary btn-sm" onclick="sendEmailOffer(\''+kind+'\','+l.id+')">&#9993;&#65039; Send Email Offer</button>'
     +     '<button class="btn btn-secondary btn-sm" title="Searches your Gmail for the existing thread — by contact email if you have one, otherwise by the property address" onclick="followUpEmail(\''+kind+'\','+l.id+')">&#128269; Follow Up Email</button>'
     +   '</div>'
+    +   '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px">'
+    +     '<div style="font-size:12px;font-weight:700">&#128247; Ask the seller / contact</div>'
+    +     '<label style="font-size:12px"><input type="checkbox" id="eq-photos" checked> Do you have interior pictures of the property?</label>'
+    +     '<label style="font-size:12px"><input type="checkbox" id="eq-price" checked> Is the seller flexible on price / would they consider a lower price?</label>'
+    +     '<div><button class="btn btn-primary btn-sm" onclick="sendQuestionEmail(\''+kind+'\','+l.id+')">&#9993;&#65039; Send Questions</button></div>'
+    +   '</div>'
+    +   '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px">'
+    +     '<div style="font-size:12px;font-weight:700">&#127970; Agent Outreach</div>'
+    +     '<label style="font-size:12px"><input type="checkbox" id="ea-avail" checked> Is the property still available?</label>'
+    +     '<label style="font-size:12px"><input type="checkbox" id="ea-lower" checked> Would the seller accept a lower offer?</label>'
+    +     '<div><button class="btn btn-primary btn-sm" onclick="sendAgentOutreach(\''+kind+'\','+l.id+')">&#9993;&#65039; Send Agent Outreach</button></div>'
+    +   '</div>'
     +   (hasTeam?'':'<div style="font-size:11px;color:var(--text4)">Tip: add your teammates under &ldquo;Manage team&rdquo; so you can log who the offer was sent from.</div>')
     + '</div></div>';
 }
 function rememberEmailFrom(v){ if(v) localStorage.setItem('crm_email_from', v); }
 // Plain-text MESTATE signature baked into the mailto body (the desktop mail app doesn't have
 // the Gmail signature, and a mailto: body is plain text so the logo image can't be embedded).
-function buildEmailSignature(){
-  return 'Micky Atakilt\n'
-    + 'Managing Partner\n'
-    + '\uD83D\uDCDE  202-509-5722\n'
-    + '\uD83D\uDCCD  2300 Wilson Blvd, Arlington VA 22201\n'
-    + '\u2709\uFE0F  contact@mestate.info\n'
-    + '\uD83C\uDF10  https://www.mestate.info/\n';
+// Per-sender signatures. Picked by the "Send from" teammate (name or email). Edit these lines to change a signature.
+var EMAIL_SIGNATURES = {
+  micky: {name:'Micky Atakilt', title:'Managing Partner', phone:'202-509-5722', email:'contact@mestate.info'},
+  biruk: {name:'Biruk', title:'Acquisitions', phone:'', email:''}   // TODO: fill in Biruk's real title + phone
+};
+function signatureKeyFor(from){
+  var m = getTeamMembers().find(function(x){ return (x.email||'').toLowerCase()===String(from||'').toLowerCase(); });
+  var hay = ((m&&m.name)||'')+' '+(from||'');
+  return /biruk/i.test(hay) ? 'biruk' : 'micky';
 }
-function buildOfferBody(addr, price){
+function buildEmailSignature(from){
+  var sig = EMAIL_SIGNATURES[signatureKeyFor(from)];
+  var out = sig.name+'\n';
+  if(sig.title) out += sig.title+'\n';
+  if(sig.phone) out += '\uD83D\uDCDE  '+sig.phone+'\n';
+  out += '\uD83D\uDCCD  2300 Wilson Blvd, Arlington VA 22201\n';
+  out += '\u2709\uFE0F  '+(sig.email||from||'contact@mestate.info')+'\n';
+  out += '\uD83C\uDF10  https://www.mestate.info/\n';
+  return out;
+}
+function buildOfferBody(addr, price, from){
   return 'Hello,\n\n'
     + 'Below is a summary of our proposed offer. If the seller agrees to the terms, we will prepare and submit a formal offer for the property.\n\n'
     + 'Address: ' + (addr||'') + '\n\n'
@@ -14208,7 +14232,7 @@ function buildOfferBody(addr, price){
     + 'Closing Costs: Split between Buyer and Seller\n\n'
     + 'Agent Commission: Paid by Seller\n\n'
     + 'We are open to having you or a colleague from your brokerage or another firm represent us on this transaction and work with us to close the deal. Alternatively, we are comfortable proceeding as an unrepresented buyer and reviewing the contract directly.\n\n\n'
-    + buildEmailSignature();
+    + buildEmailSignature(from);
 }
 // Save the entered email onto the record (as its Email/contact field) + persist,
 // so it shows in the contact info next time — for DMV, Nationwide, and Tasks.
@@ -14235,7 +14259,7 @@ function sendEmailOffer(kind, id){
   // desktop app doesn't have the Gmail signature.
   var mailto = 'mailto:' + encodeURIComponent(to)
     + '?subject=' + encodeURIComponent(subject)
-    + '&body=' + encodeURIComponent(buildOfferBody(ctx.address, ctx.price));
+    + '&body=' + encodeURIComponent(buildOfferBody(ctx.address, ctx.price, from));
   window.location.href = mailto;
   // Record who sent it (from-account is record-only; the mail app controls the real sender).
   var rec = ctx.rec;
@@ -14243,6 +14267,40 @@ function sendEmailOffer(kind, id){
   rec.activityLog.push({type:'Email Offer', by:from||((currentUser&&currentUser.name)||'Team'), at:new Date().toISOString(), note:'Offer emailed to '+to+(from?(' (from '+from+')'):'')});
   saveContactEmailOnRecord(ctx, to);
   showToast('Offer opened in your mail app for '+to+' — email saved to contact', 'success');
+}
+function emailComposeAndLog(kind, id, type, subjectBase, bodyFn){
+  var ctx = emailRecordFor(kind, id); if(!ctx) return;
+  var to = ((document.getElementById('email-contact-addr')||{}).value||'').trim();
+  if(!to){ showToast('Enter the contact’s email first', 'error'); var box=document.getElementById('email-contact-addr'); if(box) box.focus(); return; }
+  var from = (document.getElementById('email-from-select')||{}).value||'';
+  var body = bodyFn(ctx);
+  if(!body){ showToast('Tick at least one question first', 'error'); return; }
+  var subject = subjectBase + (ctx.address?(' at '+ctx.address):'');
+  window.location.href = 'mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body+'\n\n'+buildEmailSignature(from));
+  var rec = ctx.rec; if(!rec.activityLog) rec.activityLog=[];
+  rec.activityLog.push({type:type, by:from||((currentUser&&currentUser.name)||'Team'), at:new Date().toISOString(), note:type+' emailed to '+to+(from?(' (from '+from+')'):'')});
+  saveContactEmailOnRecord(ctx, to);
+  showToast(type+' opened in your mail app for '+to, 'success');
+}
+function sendQuestionEmail(kind, id){
+  emailComposeAndLog(kind, id, 'Property Questions', 'Questions about your property', function(ctx){
+    var q=[];
+    if((document.getElementById('eq-photos')||{}).checked) q.push('Do you have any interior pictures of the property you could send over?');
+    if((document.getElementById('eq-price')||{}).checked) q.push('Is the seller flexible on price, and would they consider a lower price?');
+    if(!q.length) return '';
+    return 'Hello,\n\nI am interested in the property'+(ctx.address?(' at '+ctx.address):'')+' and have a couple of quick questions:\n\n'
+      + q.map(function(x,i){return (i+1)+'. '+x;}).join('\n') + '\n\nThank you, I look forward to hearing from you.\n';
+  });
+}
+function sendAgentOutreach(kind, id){
+  emailComposeAndLog(kind, id, 'Agent Outreach', 'Is your listing still available?', function(ctx){
+    var q=[];
+    if((document.getElementById('ea-avail')||{}).checked) q.push('Is the property still available?');
+    if((document.getElementById('ea-lower')||{}).checked) q.push('Would the seller accept a lower offer?');
+    if(!q.length) return '';
+    return 'Hello,\n\nMy name is '+(EMAIL_SIGNATURES[signatureKeyFor((document.getElementById('email-from-select')||{}).value||'')].name)+' and I am reaching out about your listing'+(ctx.address?(' at '+ctx.address):'')+'. I work with cash buyers and had a couple of quick questions:\n\n'
+      + q.map(function(x,i){return (i+1)+'. '+x;}).join('\n') + '\n\nIf the seller is open to it, we can move quickly with a cash offer and a flexible closing. Thank you for your time.\n';
+  });
 }
 function followUpEmail(kind, id){
   var ctx = emailRecordFor(kind, id); if(!ctx) return;
