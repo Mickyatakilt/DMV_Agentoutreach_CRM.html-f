@@ -515,6 +515,15 @@
   .asst-d{font-size:12px;color:var(--text3);margin-top:2px;}
   .asst-d.red{color:#dc2626;font-weight:700;}
   .asst-empty{padding:18px 6px;color:var(--text3);font-size:13px;text-align:center;}
+  /* ---- Important button (red, under Assistance) ---- */
+  .asst-fab{bottom:68px !important;} .ho-fab{bottom:130px !important;} .asst-panel{bottom:130px !important;} .ho-panel{bottom:192px !important;} .ho-toast{bottom:196px !important;}
+  .asst-imp{position:fixed;right:22px;bottom:22px;z-index:360;display:flex;align-items:center;justify-content:center;gap:8px;border:none;cursor:pointer;background:linear-gradient(135deg,#ef4444,#b91c1c);color:#fff;font-weight:800;font-size:14px;padding:9px 18px;border-radius:999px;box-shadow:0 8px 24px rgba(185,28,28,.45);min-width:158px;}
+  .asst-imp .n{background:#fff;color:#b91c1c;border-radius:12px;min-width:24px;text-align:center;padding:1px 7px;font-size:13px;}
+  .asst-vt{display:flex;gap:6px;padding:10px 14px 0;} .asst-vt button{flex:1;border:1.5px solid var(--border2);background:var(--surface);color:var(--text);border-radius:10px;padding:8px;font-weight:800;font-size:13px;cursor:pointer;} .asst-vt button.on{background:#0f766e;color:#fff;border-color:#0f766e;} .asst-vt button.imp.on{background:#dc2626;border-color:#dc2626;color:#fff;}
+  .asst-row button.asst-impadd{background:#dc2626;color:#fff;white-space:nowrap;}
+  .asst-t.imp{border-left:5px solid #dc2626 !important;background:#fef2f2;} .asst-t.imp .asst-n{color:#7f1d1d;}
+  .asst-impact{display:flex;gap:6px;margin-top:8px;align-items:center;} .asst-impact button{border:0;border-radius:8px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer;} .asst-impact .unf{background:#fee2e2;color:#991b1b;} .asst-impact .hd{background:#7f1d1d;color:#fff;margin-left:auto;} .asst-impact .mk{background:transparent;color:#b91c1c;border:1px solid #fca5a5;}
+  @media(max-width:768px){ .asst-imp{right:14px;bottom:calc(62px + env(safe-area-inset-bottom) + 12px);} .asst-fab{bottom:calc(62px + env(safe-area-inset-bottom) + 58px) !important;} .ho-fab{bottom:calc(62px + env(safe-area-inset-bottom) + 118px) !important;} .asst-panel{bottom:calc(62px + env(safe-area-inset-bottom) + 116px) !important;} .ho-panel{bottom:calc(62px + env(safe-area-inset-bottom) + 178px) !important;} .ho-toast{bottom:calc(62px + env(safe-area-inset-bottom) + 176px) !important;} body:has(#modal-container .modal-overlay) .asst-imp{display:none !important;} }
   .asst-undo{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:380;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;display:none;gap:14px;}
   .asst-undo.on{display:flex;}
   .asst-undo b{color:#5eead4;cursor:pointer;}
@@ -8482,7 +8491,7 @@ async function hoDelete(id,leadId){
   await hoHandled(id);
 }
 // =================== Assistance (task reminders on every tab) ===================
-var asstNotifs=[], asstNotifDraft={}, asstTasks=[], asstLast=null, asstOpen=false, asstEditing=null, asstUndoT=null, asstDraft=null;
+var asstView='all', asstNotifs=[], asstNotifDraft={}, asstTasks=[], asstLast=null, asstOpen=false, asstEditing=null, asstUndoT=null, asstDraft=null;
 function asstToday(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Due now = no follow-up date, OR today has reached the follow-up date.
 function asstIsDue(t){ return !t.follow_up_date || asstToday() >= t.follow_up_date; }
@@ -8493,11 +8502,13 @@ function asstMount(){
   if(document.getElementById('asst-root')) return;
   var root=document.createElement('div'); root.id='asst-root';
   root.innerHTML='<button id="asst-fab" class="asst-fab" onclick="asstToggle()" title="Assistance"><span>🗒️</span><span>Assistance</span><span id="asst-badge" class="asst-badge"></span><span id="asst-badge2" class="asst-badge2" title="Comments that @mentioned you"></span><span id="asst-badge3" class="asst-badge3" title="Your finished comps"></span></button>'
+    +'<button id="asst-impbtn" class="asst-imp" onclick="asstOpenImp()" title="Your Important list"><span>⭐ Important</span><span class="n" id="asst-impn">0</span></button>'
     +'<div id="asst-panel" class="asst-panel">'
       +'<div class="asst-head"><span><b>🗒️ Assistance</b><small>your day-to-day guide</small></span><button class="asst-x" onclick="asstToggle(false)">✕</button></div>'
       +'<div class="asst-add"><input type="text" id="asst-note" placeholder="Quick note… e.g. Meeting with Mike" onkeydown="if(event.key===\'Enter\')asstAdd()">'
-        +'<div class="asst-row"><input type="date" id="asst-date"><button onclick="asstAdd()">Add</button></div>'
+        +'<div class="asst-row"><input type="date" id="asst-date"><button onclick="asstAdd()">Add</button><button class="asst-impadd" onclick="asstAdd(true)">⭐ Important</button></div>'
         +'<div class="asst-hint">No date = shows right away. With a date = shows on that day.</div></div>'
+      +'<div class="asst-vt"><button id="asst-vt-all" onclick="asstSetView(\'all\')">📋 All tasks</button><button id="asst-vt-imp" class="imp" onclick="asstSetView(\'imp\')">⭐ Important <span id="asst-vt-n">0</span></button></div>'
       +'<div id="asst-list" class="asst-list"></div>'
     +'</div>'
     +'<div id="asst-undo" class="asst-undo"><span>Task removed</span><b onclick="asstUndo()">Undo</b></div>';
@@ -8611,6 +8622,9 @@ async function asstNotifReply(id, notify){
     asstRender();
   }catch(e){ showToast('Could not send — '+((e&&e.message)||'try again'),'error'); }
 }
+function asstSetView(v){ asstView=v; asstRender(); }
+function asstOpenImp(){ asstView='imp'; asstToggle(true); asstRender(); }
+function asstToggleImp(id){ var t=asstTasks.find(function(x){return x.id===id;}); if(!t) return; asstPatch(id,{important:!t.important}); }
 function asstRowHTML(t,isDue){
   if(asstEditing===t.id){
     var dr=asstDraft||{note:t.note,date:t.follow_up_date||'',items:asstItems(t).map(function(x){return {text:x.text,done:x.done};})};
@@ -8625,17 +8639,23 @@ function asstRowHTML(t,isDue){
   var items=asstItems(t), done=items.filter(function(x){return x.done;}).length;
   var d=!t.follow_up_date?'No date · added '+asstFmt((t.created_at||'').slice(0,10)||asstToday())
     :(isDue?'Follow-up '+asstFmt(t.follow_up_date)+' · due now':'Reminds '+asstFmt(t.follow_up_date));
-  return '<div class="asst-t'+(isDue?' due':'')+'" data-tid="'+t.id+'" style="flex-direction:column;gap:0">'
+  return '<div class="asst-t'+(isDue?' due':'')+(t.important?' imp':'')+'" data-tid="'+t.id+'" style="flex-direction:column;gap:0">'
     +'<div class="asst-top"><span class="asst-grip" data-kind="note" title="Drag to reorder">⠇</span><button class="asst-chk" title="Remove" onclick="asstRemove('+t.id+')"></button>'
       +'<div class="asst-body"><div class="asst-n">'+esc(t.note)+'</div><div class="asst-d'+(isDue?' red':'')+'">'+d+'</div>'
       +(items.length?'<div class="asst-prog">'+done+'/'+items.length+' done</div>':'')+'</div>'
       +'<button class="asst-pen" title="Edit" onclick="asstStartEdit('+t.id+')">✏️ Edit</button></div>'
     +(items.length?'<div class="asst-items">'+items.map(function(it,i){ return '<div class="asst-it'+(it.done?' done':'')+'" data-idx="'+i+'"><span class="asst-grip" data-kind="item" title="Drag to reorder">⠇</span><input type="checkbox"'+(it.done?' checked':'')+' onchange="asstToggleItem('+t.id+','+i+')"><span>'+esc(it.text)+'</span></div>'; }).join('')+'</div>':'')
+    +'<div class="asst-impact">'+(t.important?'<button class="unf" onclick="asstToggleImp('+t.id+')">☆ Unflag</button><button class="hd" onclick="asstRemove('+t.id+')">✓ Handled</button>':'<button class="mk" onclick="asstToggleImp('+t.id+')">⭐ Make important</button>')+'</div>'
     +'<div class="asst-newit"><input type="text" id="asst-ni-'+t.id+'" placeholder="+ Add a task inside this note" onkeydown="if(event.key===\'Enter\')asstAddItem('+t.id+')"></div>'
   +'</div>';
 }
 function asstRender(){
-  var due=asstTasks.filter(asstIsDue), up=asstTasks.filter(function(t){return !asstIsDue(t);});
+  var impAll=asstTasks.filter(function(t){return t.important;});
+  var norm=asstTasks.filter(function(t){return !t.important;});
+  var due=norm.filter(asstIsDue), up=norm.filter(function(t){return !asstIsDue(t);});
+  ['asst-impn','asst-vt-n'].forEach(function(i){ var e=document.getElementById(i); if(e) e.textContent=impAll.length; });
+  var va=document.getElementById('asst-vt-all'), vi=document.getElementById('asst-vt-imp');
+  if(va) va.className=asstView==='all'?'on':''; if(vi) vi.className='imp'+(asstView==='imp'?' on':'');
   var b=document.getElementById('asst-badge');
   if(b){ b.textContent=due.length; b.classList.toggle('on',due.length>0); }
   var b2=document.getElementById('asst-badge2');
@@ -8644,6 +8664,10 @@ function asstRender(){
   if(b3){ b3.textContent=asstComps.length; b3.classList.toggle('on',asstComps.length>0); }
   var l=document.getElementById('asst-list'); if(!l) return;
   var h='';
+  if(asstView==='imp'){
+    h='<div class="asst-sec" style="color:#b91c1c">⭐ IMPORTANT · '+impAll.length+'</div>'+(impAll.length?'<div class="asst-box">'+impAll.map(function(t){return asstRowHTML(t,asstIsDue(t));}).join('')+'</div>':'<div class="asst-empty">No important items. 🎉</div>');
+    l.innerHTML=h; return;
+  }
   if(asstNotifErr) h+='<div style="background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;border-radius:10px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:10px">&#9888; Can\'t load your @mentions right now ('+esc(asstNotifErr)+'). You may be missing messages &mdash; <a href="#" onclick="asstNotifLoad();return false" style="color:#991b1b">retry</a> or tell Mike.</div>';
   if(asstComps.length) h+='<div class="asst-sec" style="color:#166534">\uD83D\uDFE2 COMPS FINISHED \u00b7 '+asstComps.length+'</div><div class="asst-box">'+asstComps.map(asstCompHTML).join('')+'</div>';
   if(asstNotifs.length) h+='<div class="asst-sec" style="color:#a16207">🟡 @MENTIONS · '+asstNotifs.length+'</div><div class="asst-box">'+asstNotifs.map(asstNotifHTML).join('')+'</div>';
@@ -8693,10 +8717,10 @@ function asstToggleItem(id,idx){
   var items=asstItems(t).map(function(x,i){ return i===idx?{text:x.text,done:!x.done}:x; });
   asstPatch(id,{items:items});
 }
-async function asstAdd(){
+async function asstAdd(imp){
   var n=document.getElementById('asst-note'), d=document.getElementById('asst-date');
   var note=(n.value||'').trim(); if(!note) return;
-  var body={note:note, follow_up_date:d.value||null};
+  var body={note:note, follow_up_date:d.value||null}; if(imp===true){ body.important=true; asstView='imp'; } else if(asstView==='imp'){ asstView='all'; }
   try{ var r=await sbFetch('assistant_tasks','POST',body); if(r&&r[0]) asstTasks.push(r[0]); n.value=''; d.value=''; asstRender(); }
   catch(e){ alert('Could not save the task: '+(e.message||e)); }
 }
@@ -8704,7 +8728,7 @@ async function asstRemove(id){
   var t=asstTasks.find(function(x){return x.id===id;}); if(!t) return;
   asstTasks=asstTasks.filter(function(x){return x.id!==id;}); asstRender();
   try{ await sbFetch('assistant_tasks?id=eq.'+id,'DELETE'); }catch(e){ asstTasks.push(t); asstRender(); alert('Could not remove: '+(e.message||e)); return; }
-  asstLast={note:t.note, follow_up_date:t.follow_up_date, items:asstItems(t)};
+  asstLast={note:t.note, follow_up_date:t.follow_up_date, items:asstItems(t), important:!!t.important};
   var u=document.getElementById('asst-undo'); if(u){ u.classList.add('on'); clearTimeout(asstUndoT); asstUndoT=setTimeout(function(){ u.classList.remove('on'); asstLast=null; },5000); }
 }
 async function asstUndo(){
