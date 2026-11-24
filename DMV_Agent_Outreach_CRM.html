@@ -1800,6 +1800,7 @@ async function loadFromSupabase() {
       leads = rows.map(fromRow);
       localStorage.setItem('crm_leads', JSON.stringify(leads));
       showSyncStatus('synced');
+      try{ if(typeof listingBootLoad==='function') listingBootLoad(); }catch(e){}
       return true;
     }
     // Cloud is empty -- upload our local leads
@@ -10611,8 +10612,25 @@ function listingChipHTML(l){
   var chip=function(bg,fg,t){ return '<br><div style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;background:'+bg+';color:'+fg+';margin-top:2px;white-space:nowrap;display:inline-block">'+t+'</div>'; };
   if(s.status==='pending'||s.status==='sending') return chip('#e0f2fe','#075985','&#9201; Bot text queued');
   if(s.status==='failed') return chip('#fee2e2','#b91c1c','&#9888; Bot text failed: '+esc(s.note||''));
-  if(s.status==='cancelled') return chip('#fef3c7','#92400e','Bot text skipped: '+esc(s.note||''));
+  if(s.status==='cancelled'){
+    if(/^combined into one text/i.test(s.note||'')) return chip('#dcfce7','#166534','&#10003; Sent together: '+esc((s.note||'').replace(/^combined into one text with\s*/i,'')));
+    return chip('#fef3c7','#92400e','Bot text skipped: '+esc(s.note||''));
+  }
   return '';
+}
+var listingDnd = {};
+function dndBadgeHTML(l){
+  return (l && listingDnd[l.id]) ? '<span title="Do Not Disturb is ON in GHL: no texts or calls" style="font-weight:800;color:#fff;background:#dc2626;border-radius:6px;padding:1px 7px;font-size:11px;margin-right:4px">&#128683; DND</span>' : '';
+}
+// loads (a) every lead whose GHL contact is on DND -> red DND in Marketing, (b) the latest Bot-text problem per lead (skipped / failed / queued, last 14 days) -> chip
+async function listingBootLoad(){
+  try{
+    var d=await listingTextCall({action:'dnd_all'});
+    if(d&&d.ok){ listingDnd={}; (d.lead_ids||[]).forEach(function(i){ listingDnd[i]=true; }); }
+    var r=await listingTextCall({action:'recent'});
+    if(r&&r.ok){ (r.rows||[]).forEach(function(x){ if(!listingStatus[x.lead_id]) listingStatus[x.lead_id]=x; }); }
+    try{ render(); }catch(e){}
+  }catch(e){}
 }
 async function listingStatusLoad(ids){
   ids=(ids||[]).filter(Boolean); if(!ids.length) return;
@@ -11383,7 +11401,7 @@ function renderTable(data,start,end){
       <td onclick="openDetail(${l.id})"><div class="phone-cell">${l.phone?`<a href="#" data-phone="${l.phone.split('/')[0].trim()}" data-cid="${l.ghlContactId||''}" onclick="openGHL(this.dataset.phone,this.dataset.cid,event);event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-weight:600" title="${l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel'}">${esc(l.phone.split('/')[0].trim())} &#8599;</a>${ghlCallBtn(l.ghlContactId)}${listingTextBtn(l)}`:''}</div></td>
       <td onclick="openDetail(${l.id})"><span class="money-val">${formatMoney(l.offer)}</span></td>
       <td onclick="openDetail(${l.id})"><span class="arv-val">${formatMoney(l.arv)}</span></td>
-      <td onclick="openDetail(${l.id})" style="font-size:12px;color:var(--text2)">${l.marketingType==='Bot'?'<span style="font-weight:800;color:#0f766e">&#129302; Bot</span>':esc(l.marketingType)||''}${listingChipHTML(l)}</td>
+      <td onclick="openDetail(${l.id})" style="font-size:12px;color:var(--text2)">${dndBadgeHTML(l)}${l.marketingType==='Bot'?'<span style="font-weight:800;color:#0f766e">&#129302; Bot</span>':esc(l.marketingType)||''}${listingChipHTML(l)}</td>
       <td onclick="openDetail(${l.id})">${statusBadge(l.status)}</td>
       <td onclick="openDetail(${l.id})">${leadScoreBadgeHTML(l.score)}</td>
       <td onclick="openDetail(${l.id})" style="white-space:nowrap;font-size:12px;color:var(--text2)">${l.date?esc(l.date):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
@@ -12636,7 +12654,7 @@ function renderNationwideTab(){
           <td><div class="phone-cell">${l.phone?'<a href="#" data-phone="'+l.phone.split('/')[0].trim()+'" data-cid="'+(l.ghlContactId||'')+'" onclick="openGHL(this.dataset.phone,this.dataset.cid,event)" style="color:var(--accent);text-decoration:none;font-weight:600" title="'+(l.ghlContactId?'Open contact in GoHighLevel':'Copy number &amp; open GoHighLevel')+'">'+esc(l.phone.split('/')[0].trim())+' &#8599;</a>'+ghlCallBtn(l.ghlContactId):''}</div></td>
           <td><span class="money-val">${formatMoney(l.offer)}</span></td>
           <td><span class="arv-val">${formatMoney(l.arv)}</span></td>
-          <td style="font-size:12px;color:var(--text2)">${l.marketingType==='Bot'?'<span style="font-weight:800;color:#0f766e">&#129302; Bot</span>':esc(l.marketingType)||''}${listingChipHTML(l)}</td>
+          <td style="font-size:12px;color:var(--text2)">${dndBadgeHTML(l)}${l.marketingType==='Bot'?'<span style="font-weight:800;color:#0f766e">&#129302; Bot</span>':esc(l.marketingType)||''}${listingChipHTML(l)}</td>
           <td onclick="event.stopPropagation()">${statusBadge(l.status)}${l.status==='Review Complete'?'<button onclick="clearReviewComplete('+l.id+')" title="Clear Review Complete" style="margin-left:4px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;font-weight:700;vertical-align:middle">&#10005;</button>':''}</td>
           <td>${leadScoreBadgeHTML(l.score)}</td>
           <td>${l.followUpDate?followUpChip(l.followUpDate,isBotFu(l)):'<span style="color:var(--text4);font-size:11px">&#8212;</span>'}</td>
