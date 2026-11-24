@@ -516,14 +516,14 @@
   .asst-d.red{color:#dc2626;font-weight:700;}
   .asst-empty{padding:18px 6px;color:var(--text3);font-size:13px;text-align:center;}
   /* ---- Important button (red, under Assistance) ---- */
-  .asst-fab{bottom:68px !important;} .ho-fab{bottom:130px !important;} .asst-panel{bottom:130px !important;} .ho-panel{bottom:192px !important;} .ho-toast{bottom:196px !important;}
+  body.asst-hasimp .asst-fab{bottom:68px !important;} body.asst-hasimp .ho-fab{bottom:130px !important;} body.asst-hasimp .asst-panel{bottom:130px !important;} body.asst-hasimp .ho-panel{bottom:192px !important;} body.asst-hasimp .ho-toast{bottom:196px !important;}
   .asst-imp{position:fixed;right:22px;bottom:22px;z-index:360;display:flex;align-items:center;justify-content:center;gap:8px;border:none;cursor:pointer;background:linear-gradient(135deg,#ef4444,#b91c1c);color:#fff;font-weight:800;font-size:14px;padding:9px 18px;border-radius:999px;box-shadow:0 8px 24px rgba(185,28,28,.45);min-width:158px;}
   .asst-imp .n{background:#fff;color:#b91c1c;border-radius:12px;min-width:24px;text-align:center;padding:1px 7px;font-size:13px;}
   .asst-vt{display:flex;gap:6px;padding:10px 14px 0;} .asst-vt button{flex:1;border:1.5px solid var(--border2);background:var(--surface);color:var(--text);border-radius:10px;padding:8px;font-weight:800;font-size:13px;cursor:pointer;} .asst-vt button.on{background:#0f766e;color:#fff;border-color:#0f766e;} .asst-vt button.imp.on{background:#dc2626;border-color:#dc2626;color:#fff;}
   .asst-row button.asst-impadd{background:#dc2626;color:#fff;white-space:nowrap;}
   .asst-t.imp{border-left:5px solid #dc2626 !important;background:#fef2f2;} .asst-t.imp .asst-n{color:#7f1d1d;}
   .asst-impact{display:flex;gap:6px;margin-top:8px;align-items:center;} .asst-impact button{border:0;border-radius:8px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer;} .asst-impact .unf{background:#fee2e2;color:#991b1b;} .asst-impact .hd{background:#7f1d1d;color:#fff;margin-left:auto;} .asst-impact .mk{background:transparent;color:#b91c1c;border:1px solid #fca5a5;}
-  @media(max-width:768px){ .asst-imp{right:14px;bottom:calc(62px + env(safe-area-inset-bottom) + 12px);} .asst-fab{bottom:calc(62px + env(safe-area-inset-bottom) + 58px) !important;} .ho-fab{bottom:calc(62px + env(safe-area-inset-bottom) + 118px) !important;} .asst-panel{bottom:calc(62px + env(safe-area-inset-bottom) + 116px) !important;} .ho-panel{bottom:calc(62px + env(safe-area-inset-bottom) + 178px) !important;} .ho-toast{bottom:calc(62px + env(safe-area-inset-bottom) + 176px) !important;} body:has(#modal-container .modal-overlay) .asst-imp{display:none !important;} }
+  @media(max-width:768px){ .asst-imp{right:14px;bottom:calc(62px + env(safe-area-inset-bottom) + 12px);} body.asst-hasimp .asst-fab{bottom:calc(62px + env(safe-area-inset-bottom) + 58px) !important;} body.asst-hasimp .ho-fab{bottom:calc(62px + env(safe-area-inset-bottom) + 118px) !important;} body.asst-hasimp .asst-panel{bottom:calc(62px + env(safe-area-inset-bottom) + 116px) !important;} body.asst-hasimp .ho-panel{bottom:calc(62px + env(safe-area-inset-bottom) + 178px) !important;} body.asst-hasimp .ho-toast{bottom:calc(62px + env(safe-area-inset-bottom) + 176px) !important;} body:has(#modal-container .modal-overlay) .asst-imp{display:none !important;} }
   .asst-undo{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:380;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;display:none;gap:14px;}
   .asst-undo.on{display:flex;}
   .asst-undo b{color:#5eead4;cursor:pointer;}
@@ -8502,8 +8502,8 @@ function asstMount(){
   if(authProfile && authProfile.role==='recipient') return;
   if(document.getElementById('asst-root')) return;
   var root=document.createElement('div'); root.id='asst-root';
-  root.innerHTML='<button id="asst-fab" class="asst-fab" onclick="asstToggle()" title="Assistance"><span>🗒️</span><span>Assistance</span><span id="asst-badge" class="asst-badge"></span><span id="asst-badge2" class="asst-badge2" title="Comments that @mentioned you"></span><span id="asst-badge3" class="asst-badge3" title="Your finished comps"></span></button>'
-    +'<button id="asst-impbtn" class="asst-imp" onclick="asstOpenImp()" title="Your Important list"><span>⭐ Important</span><span class="n" id="asst-impn">0</span></button>'
+  root.innerHTML='<button id="asst-fab" class="asst-fab" onclick="asstFab()" title="Assistance"><span>🗒️</span><span>Assistance</span><span id="asst-badge" class="asst-badge"></span><span id="asst-badge2" class="asst-badge2" title="Comments that @mentioned you"></span><span id="asst-badge3" class="asst-badge3" title="Your finished comps"></span></button>'
+    +'<button id="asst-impbtn" class="asst-imp" style="display:none" onclick="asstOpenImp()" title="Your Important list"><span>⭐ Important</span><span class="n" id="asst-impn">0</span></button>'
     +'<div id="asst-panel" class="asst-panel">'
       +'<div class="asst-head"><span><b>🗒️ Assistance</b><small>your day-to-day guide</small></span><button class="asst-x" onclick="asstToggle(false)">✕</button></div>'
       +'<div class="asst-add"><input type="text" id="asst-note" placeholder="Quick note… e.g. Meeting with Mike" onkeydown="if(event.key===\'Enter\')asstAdd()">'
@@ -8623,6 +8623,7 @@ async function asstNotifReply(id, notify){
     asstRender();
   }catch(e){ showToast('Could not send — '+((e&&e.message)||'try again'),'error'); }
 }
+function asstFab(){ if(!asstOpen) asstView='all'; asstToggle(); asstRender(); }
 function asstSetView(v){ asstView=v; asstRender(); }
 function asstOpenImp(){ asstView='imp'; asstToggle(true); asstRender(); }
 function asstToggleImp(id){ var t=asstTasks.find(function(x){return x.id===id;}); if(!t) return; asstPatch(id,{important:!t.important}); }
@@ -8654,6 +8655,8 @@ function asstRender(){
   var impAll=asstTasks.filter(function(t){return t.important;});
   var norm=asstTasks.filter(function(t){return !t.important;});
   var due=norm.filter(asstIsDue), up=norm.filter(function(t){return !asstIsDue(t);});
+  if(!impAll.length && asstView==='imp') asstView='all';
+  var ib=document.getElementById('asst-impbtn'); if(ib) ib.style.display=impAll.length?'flex':'none'; document.body.classList.toggle('asst-hasimp',impAll.length>0);
   ['asst-impn','asst-vt-n'].forEach(function(i){ var e=document.getElementById(i); if(e) e.textContent=impAll.length; });
   var va=document.getElementById('asst-vt-all'), vi=document.getElementById('asst-vt-imp');
   if(va) va.className=asstView==='all'?'on':''; if(vi) vi.className='imp'+(asstView==='imp'?' on':'');
