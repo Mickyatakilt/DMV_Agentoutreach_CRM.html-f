@@ -3603,7 +3603,70 @@ async function dcwLoadJobs(){
 }
 function dcwJob(d){ var o=(dcw.jobs||{})[dcwKey(d.address)]; return o?o.latest:null; }
 function dcwDone(d){ var o=(dcw.jobs||{})[dcwKey(d.address)]; return o?o.done:null; }
-function dcwRes(d){ var j=dcwDone(d); return j?(j.result_json||null):null; }
+function dcwRes(d){
+  var j=dcwDone(d), r=j?(j.result_json||null):null, st=d.dealState, m=st&&st.mls;
+  if(!m||!m.length) return r;
+  // MLS comps pasted by the team replace the web-search comps (they are real closed sales). Subject info + active list still come from the search.
+  var o=Object.assign({},r||{}), sq=dcNum(d.sqft)||(r&&r.subject&&+r.subject.sqft)||0;
+  var ppsf=m.filter(function(c){ return c.sold_price&&c.sqft; }).map(function(c){ return c.sold_price/c.sqft; }).sort(function(a,b){return a-b;});
+  var v=null;
+  if(ppsf.length&&sq){ var k=Math.floor(ppsf.length/2), md=ppsf.length%2?ppsf[k]:(ppsf[k-1]+ppsf[k])/2; v=Math.round(md*sq/1000)*1000; }
+  else { var pr=m.map(function(c){return c.sold_price;}).sort(function(a,b){return a-b;}); if(pr.length){ var k2=Math.floor(pr.length/2); v=Math.round((pr.length%2?pr[k2]:(pr[k2-1]+pr[k2])/2)/1000)*1000; } }
+  o.comps=m; o.arv={value:v,reason:'Median of '+m.length+' MLS closed sales pasted by the team'+(ppsf.length&&sq?' ($/total sqft x '+sq+' sqft)':' (plain median price)')+'.'};
+  o.quality={level:'high',usable:m.length,radius_mi:Math.max.apply(null,m.map(function(c){return +c.distance_mi||0;}))||0.5,source:'mls',dropped:[]};
+  o.notes='Comps pasted from MLS.';
+  return o;
+}
+function dcwParseMls(text){
+  var lines=String(text||'').split(/\r?\n/).map(function(l){return l.replace(/\s+$/,'');}).filter(function(l){return l.trim();});
+  var cols=null, out=[], bad=0;
+  function cells(l){ var c=l.split('\t'); if(c.length<5) c=l.trim().split(/\s{2,}/); return c.map(function(x){return x.trim();}); }
+  function num(x){ var n=parseFloat(String(x||'').replace(/[^0-9.]/g,'')); return isFinite(n)?n:null; }
+  function iso(x){ var m=String(x||'').match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if(!m) return null; var y=+m[3]; if(y<100) y+=2000; return y+'-'+('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2); }
+  lines.forEach(function(l){
+    var c=cells(l), low=c.map(function(x){return x.toLowerCase();});
+    if(low.indexOf('address')>=0&&(low.indexOf('price')>=0||low.indexOf('date')>=0)){ cols={}; low.forEach(function(h,i){ if(h&&cols[h]==null) cols[h]=i; }); return; }
+    var g=function(n){ return cols&&cols[n]!=null?c[cols[n]]:null; };
+    var price=null,date=null,addr=null,dist=null,city=null,zip=null,state='',sqft=null,beds=null,baths=null,struct='',status='';
+    if(cols){
+      price=num(g('price')); date=iso(g('date')); addr=g('address'); dist=num(g('distance')); city=g('city'); zip=g('zip code')||g('zip');
+      var cty=g('county')||''; var sm=cty.match(/,\s*([A-Z]{2})\s*$/); if(sm) state=sm[1];
+      sqft=num(g('total sqft'))||num(g('above gr'))||num(g('sqft')); beds=num(g('beds')); var bs=String(g('baths')||''); var bm=bs.match(/(\d+)\s*\/\s*(\d+)/); baths=bm?(+bm[1]+0.5*(+bm[2])):num(bs);
+      struct=(g('structure type')||'').toLowerCase(); status=(g('status')||'').toUpperCase();
+    } else {
+      var pm=l.match(/\$\s?([\d,]{5,})/); price=pm?num(pm[1]):null; date=iso(l);
+      for(var ci=0;ci<c.length;ci++){ if(/^\d{1,6}[A-Za-z]?\s+[A-Za-z][A-Za-z0-9 .'-]+$/.test(c[ci])&&!/\bmi$/i.test(c[ci])){ addr=c[ci]; if(/^[A-Za-z .'-]+$/.test(c[ci+1]||'')) city=c[ci+1]; break; } }
+      var dm=l.match(/([\d.]+)\s*mi\b/i); dist=dm?num(dm[1]):null; var zm=l.match(/\b(\d{5})\b/); zip=zm?zm[1]:null;
+    }
+    if(!addr||!price||!date){ if(/\d/.test(l)&&!cols) bad++; else if(cols) bad++; return; }
+    if(status&&status!=='CLS'&&status!=='CLOSED'&&status!=='SOLD') return;
+    var ht=/detach/i.test(struct)&&!/semi/i.test(struct)?'sfh_detached':(/semi/i.test(struct)?'semi_detached':(/town|row|attach|end/i.test(struct)?'townhouse_interior':null));
+    out.push({address:addr+(city?', '+city:'')+(state?', '+state:'')+(zip?' '+zip:''),sold_price:price,sold_date:date,beds:beds,baths:baths,sqft:sqft,distance_mi:dist,dist_src:'mls',condition:null,url:null,verified:true,house_type:ht,listing_status:'sold',source:'mls'});
+  });
+  return {rows:out,bad:bad};
+}
+function dcwMlsToggle(id){ dcw.mlsOpen=dcw.mlsOpen===id?null:id; dcwPaint(); }
+function dcwMlsSave(id){
+  var d=crmDealCheckById(id), ta=document.getElementById('dcw-mls-ta'); if(!d||!ta) return;
+  var r=dcwParseMls(ta.value);
+  if(!r.rows.length){ showToast('Could not read any sold rows. Copy the whole MLS results table (with the header row) and paste again.','error'); return; }
+  var s=dcwSt(d); s.mls=r.rows; s.on={}; dcw.mlsOpen=null; dcwPersist(d); dcwPaint();
+  showToast(r.rows.length+' MLS comps added'+(r.bad?' ('+r.bad+' rows skipped)':''),'success');
+}
+function dcwMlsClear(id){ var d=crmDealCheckById(id); if(!d) return; var s=dcwSt(d); delete s.mls; s.on={}; dcwPersist(d); dcwPaint(); showToast('MLS comps removed, back to the web-search comps','success'); }
+function dcwMlsHTML(d){
+  var s=dcwSt(d), has=s.mls&&s.mls.length, open=dcw.mlsOpen===d.id;
+  var h='<button class="btn btn-secondary btn-sm" onclick="dcwMlsToggle('+d.id+')" title="Paste the sold results table from MLS (real closed sales)">'+(has?'MLS comps ('+s.mls.length+')':'Paste MLS comps')+'</button>';
+  return h;
+}
+function dcwMlsPanel(d){
+  var s=dcwSt(d), has=s.mls&&s.mls.length;
+  if(dcw.mlsOpen!==d.id) return '';
+  return '<div class="dcw-why" style="margin-bottom:10px"><b>Paste MLS comps.</b> In MLS, run the sold search, select the whole results table (with the header row), copy, and paste here. Real closed sales replace the web-search comps for this deal.'
+    +'<textarea id="dcw-mls-ta" class="form-input" rows="6" style="width:100%;margin-top:8px;font-size:12px" placeholder="Distance  MLS #  Type  Status  Address  City  County  Zip Code  Beds  Baths  Structure Type  Date  Price  Above Gr  Below  Total SQFT  Lot Size"></textarea>'
+    +'<div style="margin-top:8px;display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="dcwMlsSave('+d.id+')">Use these comps</button>'+(has?'<button class="btn btn-secondary btn-sm" onclick="dcwMlsClear('+d.id+')">Remove MLS comps</button>':'')+'<button class="btn btn-secondary btn-sm" onclick="dcwMlsToggle('+d.id+')">Cancel</button></div></div>';
+}
+
 function dcwActive(d){ var j=dcwJob(d); return !!(j&&(j.status==='queued'||j.status==='running')); }
 function dcwSt(d){
   var s=d.dealState;
@@ -3617,7 +3680,7 @@ function dcwSt(d){
 }
 function dcwSysArv(res){ var a=res&&res.arv; if(!a) return null; return a.value!=null?a.value:(a.expected!=null?a.expected:null); }
 function dcwYour(d){ var s=dcwSt(d); if(s.your!=null&&s.your!=='') return +s.your; var v=dcwSysArv(dcwRes(d)); return v!=null?v:(+d.arv||0); }
-function dcwCompOn(d,i){ var s=dcwSt(d); return s.on[i]==null?true:!!s.on[i]; }
+function dcwCompOn(d,i){ var s=dcwSt(d); if(s.on[i]!=null) return !!s.on[i]; var r=dcwRes(d), c=r&&r.comps&&r.comps[i]; return !(c&&c.reject_default); }
 function dcwRehab(d){
   var s=dcwSt(d), lo=+d.rehabLow||0, hi=+d.rehabHigh||0;
   if(s.pick==='own'&&s.own!=null&&s.own!=='') return +s.own;
@@ -3738,6 +3801,17 @@ function dcwDetailHTML(d){
 }
 
 // ---------- comps ----------
+
+function dcwQualityHTML(res){
+  var q=res&&res.quality, base='Found by web search, not confirmed MLS sales. Use the Zillow links to check price and date before you rely on this.';
+  if(!q) return '<div class="dcw-warn">'+base+' <b>Older result: comps were not distance-checked. Press Re-run.</b></div>';
+  if(q.source==='mls') return '<div class="dcw-warn" style="background:#dcfce7;color:#166534"><b>MLS comps:</b> '+(+q.usable)+' closed sales pasted by the team. Distances and sizes are from MLS.</div>';
+  var lv=q.level, col=lv==='high'?'#166534':(lv==='medium'?'#92400e':'#991b1b'), bg=lv==='high'?'#dcfce7':(lv==='medium'?'#fef3c7':'#fee2e2');
+  var h='<div class="dcw-warn" style="background:'+bg+';color:'+col+'"><b>'+(lv==='high'?'Good comps':(lv==='medium'?'Okay comps':'Weak comps'))+':</b> '+(+q.usable||0)+' usable, all within '+(+q.radius_mi).toFixed(1)+' mi'+(q.widened?' (widened to '+esc(q.widened)+' because too few were closer)':'')+'. '+base+'</div>';
+  if(q.sqft_conflict) h+='<div class="dcw-warn" style="margin-top:6px">&#9888; '+esc(q.sqft_conflict)+'</div>';
+  if(q.dropped&&q.dropped.length) h+='<details style="margin-top:6px;font-size:12px;color:var(--text3)"><summary>'+q.dropped.length+' search result(s) removed by the checker</summary><ul style="margin:4px 0 0 18px;padding:0">'+q.dropped.map(function(x){ return '<li>'+esc(x.address||'')+': '+esc(x.why||'')+'</li>'; }).join('')+'</ul></details>';
+  return h;
+}
 function dcwCompsCard(d){
   var job=dcwJob(d), res=dcwRes(d), active=dcwActive(d);
   var top='<div class="dcw-card"><div class="dcw-card-h"><b>Comps and ARV</b><span style="flex:1"></span>';
@@ -3749,7 +3823,7 @@ function dcwCompsCard(d){
         +(job.status==='queued'&&age>150?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Still waiting for the cloud runner ('+Math.round(age/60)+' min). If this stays queued past 10 minutes, the runner may be down.</div>':'')
         +(job.status==='running'&&age>240?'<div style="margin-top:8px;color:#b45309;font-size:12.5px">Taking longer than normal. It stops by itself after a few minutes, then press Try again.</div>':'')+'</div></div>';
     }
-    return top+'</div><div class="dcw-pad"><div style="color:#b91c1c;font-size:13px;margin-bottom:10px">Comp search failed: '+esc(job.error||'unknown error')+'</div><button class="btn btn-primary" onclick="dcwRerun('+d.id+')">Try again</button></div></div>';
+    return top+'</div><div class="dcw-pad"><div style="color:#b91c1c;font-size:13px;margin-bottom:10px">Comp search failed: '+esc(job.error||'unknown error')+'</div><button class="btn btn-primary" onclick="dcwRerun('+d.id+')">Try again</button> '+dcwMlsHTML(d)+dcwMlsPanel(d)+'</div></div>';
   }
   var comps=res.comps||[], sys=dcwSysArv(res), med=dcwMedian(d), sq=dcNum(d.sqft), s=dcwSt(d);
   var more=(job&&job.status==='failed'&&job.extra&&job.extra.more)?'<div class="dcw-warn" style="background:#fee2e2;color:#991b1b">The last "More comps" search failed: '+esc(job.error||'unknown error')+'</div>':'';
@@ -3771,18 +3845,18 @@ function dcwCompsCard(d){
       +'<div class="x">'+(addr?'<a class="dcw-z" href="'+esc(buildZillowUrl(addr))+'" target="_blank" rel="noopener">Open in Zillow &#8599;</a>':'')
       +((c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">source</a>':'')+'</div></div>';
   }).join('');
-  return top+'<span class="dcw-chip warn">UNVERIFIED</span>'+dcwTypeSel(d)+'<button class="btn btn-secondary btn-sm" onclick="dcwMore('+d.id+')"'+(active?' disabled':'')+' title="Find more sold comps and keep the ones you have">&#43; More comps</button><button class="btn btn-secondary btn-sm" onclick="dcwRerun('+d.id+')"'+(active?' disabled':'')+' title="Start over with a fresh search">Re-run</button></div><div class="dcw-pad">'
-    +more+morebusy
+  return top+'<span class="dcw-chip warn">UNVERIFIED</span>'+dcwTypeSel(d)+dcwMlsHTML(d)+'<button class="btn btn-secondary btn-sm" onclick="dcwMore('+d.id+')"'+(active?' disabled':'')+' title="Find more sold comps and keep the ones you have">&#43; More comps</button><button class="btn btn-secondary btn-sm" onclick="dcwRerun('+d.id+')"'+(active?' disabled':'')+' title="Start over with a fresh search">Re-run</button></div><div class="dcw-pad">'
+    +more+morebusy+dcwMlsPanel(d)
     +'<div class="dcw-arvrow"><div><div class="dcw-lbl">Estimated ARV</div><div class="dcw-big">'+dcMoney(sys)+'</div></div>'
     +'<div class="dcw-yours"><label class="dcw-lbl" for="dcw-your">Your ARV (feeds the offer)</label><input type="number" id="dcw-your" class="form-input" step="1000" value="'+Math.round(dcwYour(d))+'" onchange="dcwSet('+d.id+',\'your\',this.value)"></div>'
     +(comps.length&&sq?'<div style="font-size:12px;color:var(--text3);padding-bottom:6px">Ticked median: <b style="color:var(--text)">'+dcMoney(med)+'</b> <button class="btn btn-secondary btn-sm" onclick="dcwUseMed('+d.id+')">Use</button></div>':'')+'</div>'
-    +'<div class="dcw-warn">Found by web search, not confirmed MLS sales. Use the Zillow links to check price and date before you rely on this.</div>'
+    +dcwQualityHTML(res)
     +(comps.length?'<div class="dcw-tw"><table class="dcw-tbl"><thead><tr><th></th><th>Address</th><th>Dist.</th><th>Type</th><th>Sold</th><th>Date</th><th>Condition</th><th>Links</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="dcw-cards">'+cards+'</div>'
       :'<div style="margin-top:10px;color:#b45309;font-size:13px">No comps came back. Try More comps or Re-run.</div>')
     +dcwActiveHTML(res,d)
     +(res.arv&&res.arv.reason?'<div class="dcw-why" style="margin-top:10px"><b>Why this number.</b> '+esc(res.arv.reason)+'</div>':'')
     +(res.notes?'<div style="margin-top:8px;font-size:12px;color:var(--text3)">'+esc(res.notes)+'</div>':'')
-    +'<div style="margin-top:6px;font-size:11.5px;color:var(--text4)">'+comps.length+' comps &middot; ran '+esc(dcwDone(d).finished_at?new Date(dcwDone(d).finished_at).toLocaleString():'')+(dcwDone(d).requested_by?' by '+esc(dcwDone(d).requested_by):'')+'</div></div></div>';
+    +'<div style="margin-top:6px;font-size:11.5px;color:var(--text4)">'+comps.length+' comps &middot; ran '+esc((dcwDone(d)&&dcwDone(d).finished_at)?new Date(dcwDone(d).finished_at).toLocaleString():'')+((dcwDone(d)&&dcwDone(d).requested_by)?' by '+esc(dcwDone(d).requested_by):'')+'</div></div></div>';
 }
 var DCW_TYPES=[['land','Land (vacant lot)','Land'],['manufactured','Manufactured house','Manufactured'],['sfh_detached','SFH detached','SFH'],['semi_detached','Semi-detached','Semi'],['townhouse_end','Townhouse / row, end unit','TH end'],['townhouse_interior','Townhouse / row, interior unit','TH interior'],['condo_coop','Condo / Co-op','Condo/Co-op']];
 function dcwTypeLabel(k,short){ for(var i=0;i<DCW_TYPES.length;i++) if(DCW_TYPES[i][0]===k) return DCW_TYPES[i][short?2:1]; return ''; }
@@ -3807,7 +3881,7 @@ async function dcwSetType(id,v){
 function dcwActTag(t,tip){ return '<span class="dcw-act" title="'+esc(tip||'')+'">'+esc(String(t||'ACTIVE').toUpperCase())+'</span>'; }
 function dcwCompStatus(c){ var t=c&&c.listing_status; return (t==='active'||t==='pending'||t==='coming_soon')?String(t).replace('_',' '):''; }
 function dcwCompActive(c){ return !!dcwCompStatus(c); }
-function dcwDist(x){ var n=x&&x.distance_mi; if(n==null||n===''||isNaN(+n)) return 'n/a'; return (x.dist_src==='map'?'':'~')+(+n).toFixed(2)+' mi'; }
+function dcwDist(x){ var n=x&&x.distance_mi; if(n==null||n===''||isNaN(+n)) return 'n/a'; return (x.dist_src==='map'||x.dist_src==='mls'?'':'~')+(+n).toFixed(2)+' mi'; }
 function dcwTypeCell(d,x){
   var t=x&&x.house_type, st=dcwType(d); if(!t) return '<span style="color:var(--text4)">?</span>';
   var bad=st&&t!==st; return '<span'+(bad?' class="dcw-mm" title="Different type than the subject ('+esc(dcwTypeLabel(st))+')"':'')+'>'+(bad?'&#9888; ':'')+esc(dcwTypeLabel(t,true))+'</span>';
