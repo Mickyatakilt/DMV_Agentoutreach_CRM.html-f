@@ -3640,7 +3640,7 @@ function dcwParseMls(text){
     }
     if(!addr||!price||!date){ if(/\d/.test(l)&&!cols) bad++; else if(cols) bad++; return; }
     if(status&&status!=='CLS'&&status!=='CLOSED'&&status!=='SOLD') return;
-    var ht=/detach/i.test(struct)&&!/semi/i.test(struct)?'sfh_detached':(/semi/i.test(struct)?'semi_detached':(/town|row|attach|end/i.test(struct)?'townhouse_interior':null));
+    var ht=/detach/i.test(struct)?'sfh_detached':(/semi/i.test(struct)?'semi_detached':(/\bend\b/i.test(struct)?'townhouse_end':(/town|row|attach/i.test(struct)?'townhouse_interior':null)));
     out.push({address:addr+(city?', '+city:'')+(state?', '+state:'')+(zip?' '+zip:''),sold_price:price,sold_date:date,beds:beds,baths:baths,sqft:sqft,distance_mi:dist,dist_src:'mls',condition:null,url:null,verified:true,house_type:ht,listing_status:'sold',source:'mls'});
   });
   return {rows:out,bad:bad};
@@ -3845,7 +3845,7 @@ function dcwCompsCard(d){
       +'<div class="x">'+(addr?'<a class="dcw-z" href="'+esc(buildZillowUrl(addr))+'" target="_blank" rel="noopener">Open in Zillow &#8599;</a>':'')
       +((c.url&&/^https?:\/\//i.test(c.url))?'<a class="dcw-z" href="'+esc(c.url)+'" target="_blank" rel="noopener" style="font-weight:500;color:var(--text3)">source</a>':'')+'</div></div>';
   }).join('');
-  return top+'<span class="dcw-chip warn">UNVERIFIED</span>'+dcwTypeSel(d)+dcwMlsHTML(d)+'<button class="btn btn-secondary btn-sm" onclick="dcwMore('+d.id+')"'+(active?' disabled':'')+' title="Find more sold comps and keep the ones you have">&#43; More comps</button><button class="btn btn-secondary btn-sm" onclick="dcwRerun('+d.id+')"'+(active?' disabled':'')+' title="Start over with a fresh search">Re-run</button></div><div class="dcw-pad">'
+  return top+'<span class="dcw-chip warn">UNVERIFIED</span>'+dcwTypeSel(d)+dcwMlsHTML(d)+'<button class="btn btn-secondary btn-sm" onclick="dcwMore('+d.id+')"'+((active||(dcwSt(d).mls&&dcwSt(d).mls.length))?' disabled':'')+' title="Find more sold comps and keep the ones you have (off while MLS comps are used)">&#43; More comps</button><button class="btn btn-secondary btn-sm" onclick="dcwRerun('+d.id+')"'+(active?' disabled':'')+' title="Start over with a fresh search">Re-run</button></div><div class="dcw-pad">'
     +more+morebusy+dcwMlsPanel(d)
     +'<div class="dcw-arvrow"><div><div class="dcw-lbl">Estimated ARV</div><div class="dcw-big">'+dcMoney(sys)+'</div></div>'
     +'<div class="dcw-yours"><label class="dcw-lbl" for="dcw-your">Your ARV (feeds the offer)</label><input type="number" id="dcw-your" class="form-input" step="1000" value="'+Math.round(dcwYour(d))+'" onchange="dcwSet('+d.id+',\'your\',this.value)"></div>'
