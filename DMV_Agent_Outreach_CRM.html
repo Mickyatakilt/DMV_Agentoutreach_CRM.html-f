@@ -14185,12 +14185,14 @@ function emailOfferSectionHTML(l, kind){
     +     '<div style="font-size:12px;font-weight:700">&#128247; Ask the seller / contact</div>'
     +     '<label style="font-size:12px"><input type="checkbox" id="eq-photos" checked> Do you have interior pictures of the property?</label>'
     +     '<label style="font-size:12px"><input type="checkbox" id="eq-price" checked> Is the seller flexible on price / would they consider a lower price?</label>'
+    +     '<textarea id="eq-note" class="form-input" rows="2" spellcheck="true" placeholder="Add your own note (optional) — spelling and grammar get tidied in the email" style="font-size:12px;resize:vertical"></textarea>'
     +     '<div><button class="btn btn-primary btn-sm" onclick="sendQuestionEmail(\''+kind+'\','+l.id+')">&#9993;&#65039; Send Questions</button></div>'
     +   '</div>'
     +   '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px">'
     +     '<div style="font-size:12px;font-weight:700">&#127970; Agent Outreach</div>'
     +     '<label style="font-size:12px"><input type="checkbox" id="ea-avail" checked> Is the property still available?</label>'
     +     '<label style="font-size:12px"><input type="checkbox" id="ea-lower" checked> Would the seller accept a lower offer?</label>'
+    +     '<textarea id="ea-note" class="form-input" rows="2" spellcheck="true" placeholder="Add your own note (optional) — spelling and grammar get tidied in the email" style="font-size:12px;resize:vertical"></textarea>'
     +     '<div><button class="btn btn-primary btn-sm" onclick="sendAgentOutreach(\''+kind+'\','+l.id+')">&#9993;&#65039; Send Agent Outreach</button></div>'
     +   '</div>'
     +   (hasTeam?'':'<div style="font-size:11px;color:var(--text4)">Tip: add your teammates under &ldquo;Manage team&rdquo; so you can log who the offer was sent from.</div>')
@@ -14202,7 +14204,7 @@ function rememberEmailFrom(v){ if(v) localStorage.setItem('crm_email_from', v); 
 // Per-sender signatures. Picked by the "Send from" teammate (name or email). Edit these lines to change a signature.
 var EMAIL_SIGNATURES = {
   micky: {name:'Micky Atakilt', title:'Managing Partner', phone:'202-509-5722', email:'contact@mestate.info'},
-  biruk: {name:'Biruk', title:'Acquisitions', phone:'', email:''}   // TODO: fill in Biruk's real title + phone
+  biruk: {name:'Biruk', title:'', phone:'', email:'birukmestate@gmail.com'}
 };
 function signatureKeyFor(from){
   var m = getTeamMembers().find(function(x){ return (x.email||'').toLowerCase()===String(from||'').toLowerCase(); });
@@ -14268,6 +14270,21 @@ function sendEmailOffer(kind, id){
   saveContactEmailOnRecord(ctx, to);
   showToast('Offer opened in your mail app for '+to+' — email saved to contact', 'success');
 }
+// Tidies a free-typed note before it goes into an email: fixes spacing, common typos, "i" -> "I",
+// capitalizes each sentence and adds end punctuation. (Browser spellcheck underlines the rest while typing.)
+function cleanNote(t){
+  t=String(t||'').replace(/\r/g,'').trim(); if(!t) return '';
+  var fix={dont:"don\u2019t",cant:"can\u2019t",wont:"won\u2019t",doesnt:"doesn\u2019t",didnt:"didn\u2019t",isnt:"isn\u2019t",im:"I\u2019m",ive:"I\u2019ve",ill:"I\u2019ll",thx:"thanks",pls:"please",plz:"please",flexable:"flexible",flexibile:"flexible",intrested:"interested",interessted:"interested",availible:"available",avaliable:"available",pictuers:"pictures",picutres:"pictures",pitures:"pictures",proprety:"property",propery:"property",recieve:"receive",definately:"definitely",seperate:"separate",teh:"the",adn:"and",wich:"which",wether:"whether",thier:"their",becuase:"because",alot:"a lot",apprieciate:"appreciate",appreciat:"appreciate",aggreed:"agreed",offfer:"offer",pirce:"price",prise:"price",kitchne:"kitchen",bathrom:"bathroom",bedrom:"bedroom"};
+  var lines=t.split(/\n+/).map(function(line){
+    line=line.replace(/\s+/g,' ').trim(); if(!line) return '';
+    line=line.replace(/\b[A-Za-z']+\b/g,function(w){ var k=w.toLowerCase(); if(k==='i') return 'I'; return fix.hasOwnProperty(k)?fix[k]:w; });
+    line=line.replace(/\s+([,.!?;:])/g,'$1').replace(/([,.!?;:])(?=[A-Za-z])/g,'$1 ');
+    line=line.replace(/(^|[.!?]\s+)([a-z])/g,function(m,a,b){return a+b.toUpperCase();});
+    if(!/[.!?]$/.test(line)) line+='.';
+    return line;
+  }).filter(Boolean);
+  return lines.join('\n');
+}
 function emailComposeAndLog(kind, id, type, subjectBase, bodyFn){
   var ctx = emailRecordFor(kind, id); if(!ctx) return;
   var to = ((document.getElementById('email-contact-addr')||{}).value||'').trim();
@@ -14284,14 +14301,17 @@ function emailComposeAndLog(kind, id, type, subjectBase, bodyFn){
 }
 function sendQuestionEmail(kind, id){
   emailComposeAndLog(kind, id, 'Property Questions', 'Questions about your property', function(ctx){
-    var q=[];
-    if((document.getElementById('eq-photos')||{}).checked) q.push('Do you have any interior pictures of the property you could send over?');
-    if((document.getElementById('eq-price')||{}).checked) q.push('Is the seller flexible on price, and would they consider a lower price?');
-    if(!q.length) return '';
-    return 'Hello,\n\nI am interested in the property'+(ctx.address?(' at '+ctx.address):'')+' and have a couple of quick questions:\n\n'
-      + q.map(function(x,i){return (i+1)+'. '+x;}).join('\n') + '\n\nThank you, I look forward to hearing from you.\n';
+    var photos=(document.getElementById('eq-photos')||{}).checked, price=(document.getElementById('eq-price')||{}).checked;
+    if(!photos && !price) return '';
+    var intro = 'Hello,\n\nI\u2019m interested in the property' + (ctx.address ? (' at ' + ctx.address) : '') + '. ';
+    var priceTxt = 'I\u2019m checking to see if the seller is flexible on price if we offer cash or hard money lender (HML) financing and close in 21 days or less.';
+    var photoTxt = 'Do you have any interior pictures of the property?';
+    var mid = price ? (priceTxt + (photos ? ' Also, ' + photoTxt.charAt(0).toLowerCase() + photoTxt.slice(1) : '')) : photoTxt;
+    var note=cleanNote((document.getElementById('eq-note')||{}).value);
+    return intro + mid + (note?('\n\n'+note):'') + '\n\nThank you, and I look forward to hearing from you.\n';
   });
 }
+
 function sendAgentOutreach(kind, id){
   emailComposeAndLog(kind, id, 'Agent Outreach', 'Is your listing still available?', function(ctx){
     var q=[];
@@ -14299,7 +14319,7 @@ function sendAgentOutreach(kind, id){
     if((document.getElementById('ea-lower')||{}).checked) q.push('Would the seller accept a lower offer?');
     if(!q.length) return '';
     return 'Hello,\n\nMy name is '+(EMAIL_SIGNATURES[signatureKeyFor((document.getElementById('email-from-select')||{}).value||'')].name)+' and I am reaching out about your listing'+(ctx.address?(' at '+ctx.address):'')+'. I work with cash buyers and had a couple of quick questions:\n\n'
-      + q.map(function(x,i){return (i+1)+'. '+x;}).join('\n') + '\n\nIf the seller is open to it, we can move quickly with a cash offer and a flexible closing. Thank you for your time.\n';
+      + q.map(function(x,i){return (i+1)+'. '+x;}).join('\n') + (cleanNote((document.getElementById('ea-note')||{}).value)?('\n\n'+cleanNote((document.getElementById('ea-note')||{}).value)):'') + '\n\nIf the seller is open to it, we can move quickly with a cash offer and a flexible closing. Thank you for your time.\n';
   });
 }
 function followUpEmail(kind, id){
