@@ -10602,8 +10602,8 @@ var LISTING_TEMPLATES = [
   'Hi {name}, it\'s Mike at Mestate Investment Group. Is the property at {address} still available?',
   'Hello {name}, Mike here with Mestate Investment Group. Is {address} still available?'
 ];
-async function listingTextCall(payload){
-  var r=await fetch(LISTING_TEXT_URL,{ method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:JSON.stringify(payload) });
+async function listingTextCall(payload,url){
+  var r=await fetch(url||LISTING_TEXT_URL,{ method:'POST', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+sbAuthToken(), 'Content-Type':'application/json' }, body:JSON.stringify(payload) });
   return r.json().catch(function(){ return {ok:false,message:'Bad answer from the server'}; });
 }
 function listingTextBtn(l){
@@ -10628,7 +10628,7 @@ function dndBadgeHTML(l){
 // loads (a) every lead whose GHL contact is on DND -> red DND in Marketing, (b) the latest Bot-text problem per lead (skipped / failed / queued, last 14 days) -> chip
 async function listingBootLoad(){
   try{
-    var d=await listingTextCall({action:'dnd_all'});
+    var d=await listingTextCall({action:'dnd_all'},SUPABASE_URL+'/functions/v1/ghl-dnd-scan');
     if(d&&d.ok){ listingDnd={}; (d.lead_ids||[]).forEach(function(i){ listingDnd[i]=true; }); }
     var r=await listingTextCall({action:'recent'});
     if(r&&r.ok){ (r.rows||[]).forEach(function(x){ if(!listingStatus[x.lead_id]) listingStatus[x.lead_id]=x; }); }
@@ -14276,7 +14276,7 @@ function cleanNote(t){
   t=String(t||'').replace(/\r/g,'').trim(); if(!t) return '';
   var fix={dont:"don\u2019t",cant:"can\u2019t",wont:"won\u2019t",doesnt:"doesn\u2019t",didnt:"didn\u2019t",isnt:"isn\u2019t",im:"I\u2019m",ive:"I\u2019ve",ill:"I\u2019ll",thx:"thanks",pls:"please",plz:"please",flexable:"flexible",flexibile:"flexible",intrested:"interested",interessted:"interested",availible:"available",avaliable:"available",pictuers:"pictures",picutres:"pictures",pitures:"pictures",proprety:"property",propery:"property",recieve:"receive",definately:"definitely",seperate:"separate",teh:"the",adn:"and",wich:"which",wether:"whether",thier:"their",becuase:"because",alot:"a lot",apprieciate:"appreciate",appreciat:"appreciate",aggreed:"agreed",offfer:"offer",pirce:"price",prise:"price",kitchne:"kitchen",bathrom:"bathroom",bedrom:"bedroom"};
   // The email already opens with "Hello," so a greeting typed in the note (hi / hello / hey ...) is dropped, on every line and at the start of any sentence.
-  var GREET=/^(?:hi|hello|hey|hiya|howdy|good\s+(?:morning|afternoon|evening))\b(?:\s+there)?[\s,!.:\-]*/i;
+  var GREET=/^(?:hi|hello|hey|hiya|howdy|good\s+(?:morning|afternoon|evening))(?![A-Za-z0-9\-])(?:\s+there(?![A-Za-z0-9\-]))?[\s,!.:]*/i;
   var QSTART=/^(?:would|will|can|could|should|is|are|am|do|does|did|have|has|what|when|where|who|why|how|which)\b/i;
   var lines=t.split(/\n+/).map(function(line){
     line=line.replace(/\s+/g,' ').trim(); if(!line) return '';
@@ -14290,7 +14290,7 @@ function cleanNote(t){
       sn=sn.trim().replace(GREET,'').trim(); if(!sn) return '';
       var end=sn.match(/[.!?]+$/); var core=sn.replace(/[.!?]+$/,'').trim(); if(!core) return '';
       core=core.charAt(0).toUpperCase()+core.slice(1);
-      var mark=(end&&/[?!]/.test(end[0]))?end[0].charAt(0):(QSTART.test(core)?'?':'.');
+      var mark=(end&&/[?!]/.test(end[0]))?end[0].charAt(0):((QSTART.test(core)||/(?:^|,\s*)(?:would|will|can|could|should|is|are|do|does|did|what|when|where|who|why|how)\s.*$/i.test(core))?'?':'.');
       return core+mark;
     }).filter(Boolean);
     return sents.join(' ');
