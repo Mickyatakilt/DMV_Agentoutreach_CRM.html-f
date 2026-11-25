@@ -9863,7 +9863,7 @@ function d4dMunaRowHTML(item,inBox){
   +'</tr>';
 }
 var d4dMunaOpen={};
-function d4dMunaToggleBox(d){ d4dMunaOpen[d]=!d4dMunaOpen[d]; d4dRefreshTab(); }
+function d4dMunaToggleBox(d){ var was=!!d4dMunaOpen[d]; d4dMunaOpen={}; if(!was) d4dMunaOpen[d]=true; d4dRefreshTab(); }
 function d4dMunaLocalDate(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function d4dMunaFmtDate(iso){ var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/); if(!m) return iso||''; return new Date(+m[1],+m[2]-1,+m[3]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'}); }
 function d4dMunaAllItems(){
@@ -9937,18 +9937,28 @@ function renderD4DMunaTabHTML(){
       +'</tbody></table></div></div>';
   var groups={}; sent.forEach(function(it){ (groups[it.l.munaSentAt]=groups[it.l.munaSentAt]||[]).push(it); });
   var days=Object.keys(groups).sort().reverse();
-  var boxes = days.map(function(d){
+  var tiles = days.map(function(d){
     var arr=groups[d], open=!!d4dMunaOpen[d];
-    return '<div style="border:1px solid #fdba74;border-left:5px solid #c2410c;border-radius:12px;background:var(--surface,#fff);margin:12px 0;overflow:hidden">'
-      +'<div onclick="d4dMunaToggleBox(\''+d+'\')" style="cursor:pointer;display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff7ed">'
-        +'<span style="color:#c2410c">'+(open?'&#9662;':'&#9656;')+'</span>'
-        +'<span style="font-weight:800;font-size:14px;color:#7c2d12">&#128232; Sent '+esc(d4dMunaFmtDate(d))+'</span>'
-        +'<span style="margin-left:auto;font-weight:800;font-size:13px;color:#c2410c;background:#fff;border:1px solid #fdba74;border-radius:99px;padding:2px 12px">'+arr.length+' lead'+(arr.length!==1?'s':'')+'</span>'
-      +'</div>'
-      +(open?'<div class="table-container"><div class="table-wrap"><table><thead><tr><th>Property</th><th>Owner</th><th>City</th><th>State</th><th>Zip</th><th></th></tr></thead><tbody>'
-        +arr.map(function(it){ return d4dMunaRowHTML(it,true); }).join('')+'</tbody></table></div></div>':'')
+    return '<div class="pb-tile pb-traced'+(open?' pb-open':'')+'" onclick="d4dMunaToggleBox(\''+d+'\')">'
+      +'<div class="pb-tile-top"><span class="pb-bt-scrape" style="background:#ffedd5;color:#9a3412">Sent to Muna</span></div>'
+      +'<div class="pb-tile-title">'+esc(ltFmtDate(d))+'</div>'
+      +'<div class="pb-tile-sub">'+esc(d4dMunaFmtDate(d))+'</div>'
+      +'<div class="pb-tile-count"><span class="n">'+arr.length.toLocaleString()+'</span> lead'+(arr.length!==1?'s':'')+'</div>'
+      +'<div class="pb-tile-foot"><span>&#128232; emailed to Muna</span><span class="pb-tile-open">'+(open?'Open &#9662;':'Open &#9656;')+'</span></div>'
     +'</div>';
   }).join('');
+  var detail = days.filter(function(d){ return !!d4dMunaOpen[d]; }).map(function(d){
+    var arr=groups[d];
+    return '<div class="pb-detail">'
+      +'<div class="pb-detail-h"><span class="nm">'+esc(ltFmtDate(d))+'</span><span class="pb-bt-date">'+esc(d4dMunaFmtDate(d))+'</span>'
+        +'<span class="pb-bt-cnt">'+arr.length.toLocaleString()+' lead'+(arr.length!==1?'s':'')+'</span>'
+        +'<span class="pb-bt-scrape" style="background:#ffedd5;color:#9a3412">Sent to Muna</span>'
+        +'<span class="pb-detail-close" onclick="d4dMunaToggleBox(\''+d+'\')">&#10005; Close</span></div>'
+      +'<div class="table-container"><div class="table-wrap"><table><thead><tr><th>Property</th><th>Owner</th><th>City</th><th>State</th><th>Zip</th><th></th></tr></thead><tbody>'
+        +arr.map(function(it){ return d4dMunaRowHTML(it,true); }).join('')+'</tbody></table></div></div>'
+    +'</div>';
+  }).join('');
+  var boxes = tiles ? '<div class="pb-tilegrid">'+tiles+'</div>'+detail : '';
   var sentHead = sent.length ? '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#7c2d12;margin:22px 0 4px">Sent to Muna &middot; '+sent.length+' lead'+(sent.length!==1?'s':'')+' in '+days.length+' box'+(days.length!==1?'es':'')+'</div>' : '';
   var pendHTML='';
   if(d4dMunaPending && d4dMunaPending.items && d4dMunaPending.items.length){
