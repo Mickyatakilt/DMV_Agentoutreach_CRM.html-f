@@ -9895,14 +9895,26 @@ function d4dMunaSendCsv(){
   var body='Hi Muna,\n\nCan you work on these leads? Thank you.';
   showToast('CSV saved to Downloads: '+fname+' \u2014 drag it into the Gmail email, then press Send','info');
   window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(body),'_blank');
-  setTimeout(function(){
-    if(!confirm('Did you attach '+fname+' and press Send in Gmail?\n\nOK = file these '+sel.length+' leads in a box for '+d4dMunaFmtDate(day)+'.\nCancel = leave them in the list.')){ showToast('Not filed as sent','info'); return; }
-    sel.forEach(function(it){ it.l.munaSentAt=day; });
-    d4dMunaOpen[day]=true;
-    save(); saveJV(); rvClearSel(); d4dRefreshTab();
-    sel.forEach(function(it){ d4dMailSaveFn(it.kind)(it.l); });
-    showToast('Filed '+sel.length+' lead'+(sel.length!==1?'s':'')+' under '+d4dMunaFmtDate(day),'success');
-  },1500);
+  // Gmail opens in front, so a pop-up here would be hidden. Keep a visible banner on this tab instead.
+  var pend={day:day,fname:fname,items:sel.map(function(it){ return {kind:it.kind,id:it.l.id}; })};
+  d4dMunaPending=pend; try{ localStorage.setItem('munaPending',JSON.stringify(pend)); }catch(e){}
+  rvClearSel(); d4dRefreshTab();
+}
+var d4dMunaPending=null;
+try{ d4dMunaPending=JSON.parse(localStorage.getItem('munaPending')||'null'); }catch(e){}
+function d4dMunaPendingClear(){ d4dMunaPending=null; try{ localStorage.removeItem('munaPending'); }catch(e){} }
+function d4dMunaPendingNo(){ d4dMunaPendingClear(); d4dRefreshTab(); showToast('Left in the Ready list','info'); }
+function d4dMunaPendingYes(){
+  var pend=d4dMunaPending; if(!pend) return;
+  var moved=[];
+  pend.items.forEach(function(r){
+    var l=d4dMailArr(r.kind).find(function(x){ return x.id===r.id; });
+    if(l && l.d4dStatus==='muna' && !l.munaSentAt){ l.munaSentAt=pend.day; moved.push({kind:r.kind,l:l}); }
+  });
+  d4dMunaOpen[pend.day]=true; d4dMunaPendingClear();
+  save(); saveJV(); d4dRefreshTab();
+  moved.forEach(function(it){ d4dMailSaveFn(it.kind)(it.l); });
+  showToast('Filed '+moved.length+' lead'+(moved.length!==1?'s':'')+' under '+d4dMunaFmtDate(pend.day),'success');
 }
 function renderD4DMunaTabHTML(){
   var all=d4dMunaAllItems();
@@ -9938,7 +9950,15 @@ function renderD4DMunaTabHTML(){
     +'</div>';
   }).join('');
   var sentHead = sent.length ? '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#7c2d12;margin:22px 0 4px">Sent to Muna &middot; '+sent.length+' lead'+(sent.length!==1?'s':'')+' in '+days.length+' box'+(days.length!==1?'es':'')+'</div>' : '';
-  return intro+bar+readyHTML+sentHead+boxes;
+  var pendHTML='';
+  if(d4dMunaPending && d4dMunaPending.items && d4dMunaPending.items.length){
+    var pn=d4dMunaPending.items.length;
+    pendHTML='<div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:10px;padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+      +'<span style="font-weight:800;color:#92400e">&#128232; Did you attach '+esc(d4dMunaPending.fname)+' and press Send in Gmail?</span>'
+      +'<button class="btn btn-sm" onclick="d4dMunaPendingYes()" style="font-weight:700;background:#16a34a;color:#fff;border:1px solid #16a34a">&#9989; Yes, sent &mdash; file these '+pn+'</button>'
+      +'<button class="btn btn-secondary btn-sm" onclick="d4dMunaPendingNo()">Not sent</button></div>';
+  }
+  return intro+pendHTML+bar+readyHTML+sentHead+boxes;
 }
 // Download the selected properties as a mail-merge-ready CSV (Name/Street/City/State/Zip) for an
 // outside mail house or postcard service. "Current Resident" is used whenever no owner name is on
