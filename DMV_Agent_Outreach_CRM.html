@@ -9892,7 +9892,8 @@ function d4dMunaSendCsv(){
   var a=document.createElement('a'); a.href=url; a.download=fname; a.style.display='none'; document.body.appendChild(a); a.click();
   setTimeout(function(){ URL.revokeObjectURL(url); document.body.removeChild(a); },1500);
   var su='D4D leads - '+sel.length+' propert'+(sel.length!==1?'ies':'y')+' - '+d4dMunaFmtDate(day);
-  var body='Hi Muna,\n\nAttached is today\u2019s list: '+sel.length+' propert'+(sel.length!==1?'ies':'y')+' (Full Name, Full Address).\n\nThank you.\n\n(Attach file: '+fname+')';
+  var body='Hi Muna,\n\nCan you work on these leads? Thank you.';
+  showToast('CSV saved to Downloads: '+fname+' \u2014 drag it into the Gmail email, then press Send','info');
   window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(body),'_blank');
   setTimeout(function(){
     if(!confirm('Did you attach '+fname+' and press Send in Gmail?\n\nOK = file these '+sel.length+' leads in a box for '+d4dMunaFmtDate(day)+'.\nCancel = leave them in the list.')){ showToast('Not filed as sent','info'); return; }
