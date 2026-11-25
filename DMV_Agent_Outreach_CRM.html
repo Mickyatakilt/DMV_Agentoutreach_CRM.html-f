@@ -1751,7 +1751,7 @@ function toRow(l) {
     recipient_notes: l.recipientNotes||[],
     beds: l.beds||'', baths: l.baths||'', sqft: l.sqft||'',
     review_sent_by: l.reviewSentBy||'', review_sent_at: l.reviewSentAt||'', review_note: l.reviewNote||'',
-    d4d_hot: l.d4dHot||false, d4d_status: l.d4dStatus||'',
+    d4d_hot: l.d4dHot||false, d4d_status: l.d4dStatus||'', muna_sent_at: l.munaSentAt||null,
     shared: l.shared||false, shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
     deleted: l.deleted||false, deleted_at: l.deletedAt||'',
     assigned_to: l.assignedTo||'', assigned_by: l.assignedBy||'', assigned_at: l.assignedAt||'',
@@ -1782,7 +1782,7 @@ function fromRow(r) {
     dealAnalyses: r.deal_analyses||{}, dealAnalysisKey: r.deal_analysis_key||'',
     beds: r.beds||'', baths: r.baths||'', sqft: r.sqft||'',
     reviewSentBy: r.review_sent_by||'', reviewSentAt: r.review_sent_at||'', reviewNote: r.review_note||'',
-    d4dHot: r.d4d_hot||false, d4dStatus: r.d4d_status||'',
+    d4dHot: r.d4d_hot||false, d4dStatus: r.d4d_status||'', munaSentAt: r.muna_sent_at||'',
     shared: r.shared||false, sharedAt: r.shared_at||'', sharedWith: r.shared_with||'',
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
     recipientFollowUpDate: r.recipient_follow_up_date||'',
@@ -1879,6 +1879,7 @@ function toJVRow(l) {
     shared: l.shared||false,
     shared_at: l.sharedAt||'', shared_with: l.sharedWith||'',
     d4d_status: l.d4dStatus||'',
+    muna_sent_at: l.munaSentAt||null,
     deleted: l.deleted||false, deleted_at: l.deletedAt||''
   };
 }
@@ -1900,6 +1901,7 @@ function fromJVRow(r) {
     agreementStatus: r.agreement_status||'', agreementAcceptedAt: r.agreement_accepted_at||'',
     recipientFollowUpDate: r.recipient_follow_up_date||'',
     d4dStatus: r.d4d_status||'',
+    munaSentAt: r.muna_sent_at||'',
     deleted: r.deleted||false, deletedAt: r.deleted_at||''
   };
 }
@@ -9433,7 +9435,7 @@ function rvRowHTML(it){
   var ownerLine = hasRealOwner
     ? '<div style="font-weight:700;font-size:13px;color:var(--text1)">'+esc(ownerNmRaw)+'</div>' : '';
   return '<tr id="rrow-'+kind+'-'+l.id+'"'+(isHot?' class="hot-row"':(isSentRev?' class="sent-row"':''))+'>'
-    +'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>'
+    +(inBox?'':'<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="rv-cb" data-kind="'+kind+'" data-id="'+l.id+'"'+(reviewSel.has(rvKey(kind,l.id))?' checked':'')+' onclick="rvToggle(\''+kind+'\','+l.id+',this.checked)"></td>')
     +'<td onclick="'+openFn+'" style="cursor:pointer">'+ownerLine+'<div style="display:flex;align-items:center;gap:4px"><div class="address-cell">'+typeTag+titleHtml+'</div>'+pwIcon(kind==='task'?(l.location||l.address||''):(l.address||''))+'</div></td>'
     +'<td style="font-size:13px">'+phoneHtml+'</td>'
     +'<td style="font-size:12px;font-weight:600">'+sentBy+'</td>'
@@ -9511,8 +9513,8 @@ function renderD4DSection(){
   var host=document.getElementById('section-main'); if(!host) return;
   var mailN = leads.filter(function(l){ return !l.deleted && l.d4dStatus==='mail_queued'; }).length
     + jvLeads.filter(function(l){ return !l.deleted && l.d4dStatus==='mail_queued'; }).length;
-  var munaN = leads.filter(function(l){ return !l.deleted && l.d4dStatus==='muna'; }).length
-    + jvLeads.filter(function(l){ return !l.deleted && l.d4dStatus==='muna'; }).length;
+  var munaN = leads.filter(function(l){ return !l.deleted && l.d4dStatus==='muna' && !l.munaSentAt; }).length
+    + jvLeads.filter(function(l){ return !l.deleted && l.d4dStatus==='muna' && !l.munaSentAt; }).length;
   var hotLeads = d4dHotList();
   var hotN = hotLeads.length;
   var hotOver = hotLeads.filter(function(l){ return l.followUpDate && getFUStatus(l.followUpDate)==='overdue'; }).length;
@@ -9756,7 +9758,7 @@ async function d4dUnmarkMailSent(kind,id){
 async function d4dRemoveFromMailQueue(kind,id){
   var l=d4dMailArr(kind).find(function(x){return x.id===id;});
   if(!l) return;
-  l.d4dStatus='';
+  l.d4dStatus=''; l.munaSentAt='';
   d4dMailLocalSave(kind); d4dRefreshTab();
   var ok=await d4dMailSaveFn(kind)(l);
   if(!ok) showToast('Cloud sync failed -- check your connection','error');
@@ -9799,7 +9801,7 @@ async function d4dQueueForMuna(kind,id){
   if(typeof id==='undefined'){ id=kind; kind='lead'; }
   var l=d4dMailArr(kind).find(function(x){return x.id===id;});
   if(!l){ showToast('Lead not found','error'); return; }
-  l.d4dStatus='muna';
+  l.d4dStatus='muna'; l.munaSentAt='';
   var tag='Sent to Muna — '+new Date().toLocaleDateString();
   l.notes=l.notes?(l.notes+'\n'+tag):tag;
   d4dMailLocalSave(kind); render();
@@ -9816,7 +9818,7 @@ function d4dMunaSendSelected(){
   if(!sel.length){ showToast('Select at least one first','error'); return; }
   var stamp=new Date().toLocaleDateString();
   sel.forEach(function(item){
-    item.l.d4dStatus='muna';
+    item.l.d4dStatus='muna'; item.l.munaSentAt='';
     var tag='Sent to Muna — '+stamp;
     item.l.notes=item.l.notes?(item.l.notes+'\n'+tag):tag;
   });
@@ -9836,12 +9838,12 @@ function d4dMunaRemoveSelected(){
   var sel=d4dMailSelectedLeads();
   if(!sel.length){ showToast('Select at least one first','error'); return; }
   if(!confirm('Take '+sel.length+' propert'+(sel.length===1?'y':'ies')+' back out of Send to Muna?')) return;
-  sel.forEach(function(item){ item.l.d4dStatus=''; });
+  sel.forEach(function(item){ item.l.d4dStatus=''; item.l.munaSentAt=''; });
   save(); saveJV(); rvClearSel(); d4dRefreshTab();
   sel.forEach(function(item){ d4dMailSaveFn(item.kind)(item.l); });
   showToast('Removed '+sel.length+' from Send to Muna','success');
 }
-function d4dMunaRowHTML(item){
+function d4dMunaRowHTML(item,inBox){
   var kind=item.kind, l=item.l;
   var addr = (kind==='task' ? l.location : l.address) || l.name || 'Untitled';
   var mapHref = (l.webLink && /^https?:/i.test(l.webLink)) ? l.webLink : 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(addr);
@@ -9860,23 +9862,82 @@ function d4dMunaRowHTML(item){
     +'<td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn btn-danger btn-sm" onclick="d4dRemoveFromMuna(\''+kind+'\','+l.id+')" title="Take this back out of Send to Muna">Remove</button></td>'
   +'</tr>';
 }
-function renderD4DMunaTabHTML(){
-  var items = leads.filter(function(l){ return !l.deleted && l.d4dStatus==='muna'; }).map(function(l){ return {kind:'lead', l:l}; })
+var d4dMunaOpen={};
+function d4dMunaToggleBox(d){ d4dMunaOpen[d]=!d4dMunaOpen[d]; d4dRefreshTab(); }
+function d4dMunaLocalDate(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function d4dMunaFmtDate(iso){ var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/); if(!m) return iso||''; return new Date(+m[1],+m[2]-1,+m[3]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'}); }
+function d4dMunaAllItems(){
+  return leads.filter(function(l){ return !l.deleted && l.d4dStatus==='muna'; }).map(function(l){ return {kind:'lead', l:l}; })
     .concat(jvLeads.filter(function(l){ return !l.deleted && l.d4dStatus==='muna'; }).map(function(l){ return {kind:'task', l:l}; }));
-  var intro='<p style="font-size:12px;color:var(--text3);margin:-4px 0 12px">Properties sent to Muna from a D4D lead, task, or the &#9993; Send Mail tab. They live only here until you click <b>Remove</b>, which puts them back where they came from.</p>';
-  var bar = items.length===0 ? '' :
+}
+function d4dMunaFullAddr(item){ var l=item.l; return String((item.kind==='task'?l.location:l.address)||'').replace(/\s+/g,' ').trim(); }
+function d4dMunaFullName(item){ var nm=(item.l.name||'').trim(); return (!nm || /^(D4D Lead \u2014|Name Not Available)/i.test(nm) || nm===d4dMunaFullAddr(item)) ? '' : nm; }
+// Send the SELECTED, not-yet-sent leads to Muna: download a CSV (Full Name, Full Address), open a Gmail
+// draft addressed to Muna, then -- after the user confirms they pressed Send -- stamp them with today's date
+// so they move into that day's box.
+function d4dMunaSendCsv(){
+  var sel=d4dMailSelectedLeads().filter(function(it){ return !it.l.munaSentAt && it.l.d4dStatus==='muna'; });
+  if(!sel.length){ showToast('Select at least one lead that has not been sent yet','error'); return; }
+  var email='';
+  try{ email=localStorage.getItem('munaEmail')||''; }catch(e){}
+  if(!email){
+    email=(prompt('Muna\u2019s email address (saved on this computer so you only type it once):','')||'').trim();
+    if(email){ try{ localStorage.setItem('munaEmail',email); }catch(e){} }
+  }
+  if(!confirm('Send '+sel.length+' lead'+(sel.length!==1?'s':'')+' to Muna'+(email?' ('+email+')':'')+'?\n\n1) A CSV (Full Name + Full Address) downloads.\n2) Gmail opens a draft to Muna \u2014 attach the CSV and press Send.\n3) Then the CRM files these leads in a box for today.')) return;
+  function cell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+  var csv='Full Name,Full Address\r\n'+sel.map(function(it){ return cell(d4dMunaFullName(it))+','+cell(d4dMunaFullAddr(it)); }).join('\r\n')+'\r\n';
+  var day=d4dMunaLocalDate(), fname='d4d-muna-'+day+'-'+sel.length+'-leads.csv';
+  var blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'}), url=URL.createObjectURL(blob);
+  var a=document.createElement('a'); a.href=url; a.download=fname; a.style.display='none'; document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); document.body.removeChild(a); },1500);
+  var su='D4D leads - '+sel.length+' propert'+(sel.length!==1?'ies':'y')+' - '+d4dMunaFmtDate(day);
+  var body='Hi Muna,\n\nAttached is today\u2019s list: '+sel.length+' propert'+(sel.length!==1?'ies':'y')+' (Full Name, Full Address).\n\nThank you.\n\n(Attach file: '+fname+')';
+  window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(body),'_blank');
+  setTimeout(function(){
+    if(!confirm('Did you attach '+fname+' and press Send in Gmail?\n\nOK = file these '+sel.length+' leads in a box for '+d4dMunaFmtDate(day)+'.\nCancel = leave them in the list.')){ showToast('Not filed as sent','info'); return; }
+    sel.forEach(function(it){ it.l.munaSentAt=day; });
+    d4dMunaOpen[day]=true;
+    save(); saveJV(); rvClearSel(); d4dRefreshTab();
+    sel.forEach(function(it){ d4dMailSaveFn(it.kind)(it.l); });
+    showToast('Filed '+sel.length+' lead'+(sel.length!==1?'s':'')+' under '+d4dMunaFmtDate(day),'success');
+  },1500);
+}
+function renderD4DMunaTabHTML(){
+  var all=d4dMunaAllItems();
+  var ready=all.filter(function(it){ return !it.l.munaSentAt; });
+  var sent=all.filter(function(it){ return !!it.l.munaSentAt; });
+  var intro='<p style="font-size:12px;color:var(--text3);margin:-4px 0 12px">Tick the leads you want to send, then click <b>Send to Muna</b>: it downloads a CSV (Full Name + Full Address) and opens a Gmail draft. Leads you have sent are filed below in one box per day. <b>Remove</b> puts a lead back where it came from.</p>';
+  var bar = ready.length===0 ? '' :
     '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:10px 14px;margin-bottom:12px">'
       +'<span id="rv-bulk-count" style="font-size:13px;font-weight:600;color:var(--text2)">0 selected</span>'
+      +'<button id="d4d-muna-csv-btn" class="btn btn-sm" onclick="d4dMunaSendCsv()" disabled style="font-weight:700;background:#c2410c;color:#fff;border:1px solid #c2410c">&#128232; Send to Muna (CSV + Gmail)</button>'
       +'<button id="d4d-muna-remove-btn" class="btn btn-danger btn-sm" onclick="d4dMunaRemoveSelected()" disabled style="font-weight:700">&#128465; Remove selected</button>'
       +'<button class="btn btn-secondary btn-sm" onclick="rvClearSel()">Clear</button>'
     +'</div>';
-  var table = items.length===0
-    ? '<div class="empty"><div class="empty-icon">&#10145;&#65039;</div><h3>Nothing sent to Muna yet &mdash; click Send to Muna on a D4D lead or in the Send Mail tab</h3></div>'
-    : '<div class="table-container"><div class="table-wrap"><table>'
+  var readyHTML = ready.length===0
+    ? '<div class="empty"><div class="empty-icon">&#10145;&#65039;</div><h3>No leads waiting &mdash; click Send to Muna on a D4D lead or in the Send Mail tab to add some</h3></div>'
+    : '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#c2410c;margin:4px 0 8px">Ready to send &middot; '+ready.length+'</div>'
+      +'<div class="table-container"><div class="table-wrap"><table>'
       +'<thead><tr><th style="width:30px;text-align:center"><input type="checkbox" title="Select all" onclick="rvToggleAll(this.checked)"></th><th>Property</th><th>Owner</th><th>City</th><th>State</th><th>Zip</th><th></th></tr></thead><tbody>'
-      + items.map(d4dMunaRowHTML).join('')
+      + ready.map(function(it){ return d4dMunaRowHTML(it,false); }).join('')
       +'</tbody></table></div></div>';
-  return intro+bar+table;
+  var groups={}; sent.forEach(function(it){ (groups[it.l.munaSentAt]=groups[it.l.munaSentAt]||[]).push(it); });
+  var days=Object.keys(groups).sort().reverse();
+  var boxes = days.map(function(d){
+    var arr=groups[d], open=!!d4dMunaOpen[d];
+    return '<div style="border:1px solid #fdba74;border-left:5px solid #c2410c;border-radius:12px;background:var(--surface,#fff);margin:12px 0;overflow:hidden">'
+      +'<div onclick="d4dMunaToggleBox(\''+d+'\')" style="cursor:pointer;display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff7ed">'
+        +'<span style="color:#c2410c">'+(open?'&#9662;':'&#9656;')+'</span>'
+        +'<span style="font-weight:800;font-size:14px;color:#7c2d12">&#128232; Sent '+esc(d4dMunaFmtDate(d))+'</span>'
+        +'<span style="margin-left:auto;font-weight:800;font-size:13px;color:#c2410c;background:#fff;border:1px solid #fdba74;border-radius:99px;padding:2px 12px">'+arr.length+' lead'+(arr.length!==1?'s':'')+'</span>'
+      +'</div>'
+      +(open?'<div class="table-container"><div class="table-wrap"><table><thead><tr><th>Property</th><th>Owner</th><th>City</th><th>State</th><th>Zip</th><th></th></tr></thead><tbody>'
+        +arr.map(function(it){ return d4dMunaRowHTML(it,true); }).join('')+'</tbody></table></div></div>':'')
+    +'</div>';
+  }).join('');
+  var sentHead = sent.length ? '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#7c2d12;margin:22px 0 4px">Sent to Muna &middot; '+sent.length+' lead'+(sent.length!==1?'s':'')+' in '+days.length+' box'+(days.length!==1?'es':'')+'</div>' : '';
+  return intro+bar+readyHTML+sentHead+boxes;
 }
 // Download the selected properties as a mail-merge-ready CSV (Name/Street/City/State/Zip) for an
 // outside mail house or postcard service. "Current Resident" is used whenever no owner name is on
@@ -10906,6 +10967,7 @@ function rvUpdateBar(){
   var mr=document.getElementById('d4d-mail-remove-btn'); if(mr) mr.disabled=(n===0);
   var mu=document.getElementById('d4d-muna-btn'); if(mu) mu.disabled=(n===0);
   var mur=document.getElementById('d4d-muna-remove-btn'); if(mur) mur.disabled=(n===0);
+  var mcs=document.getElementById('d4d-muna-csv-btn'); if(mcs) mcs.disabled=(n===0);
 }
 // Bulk-remove every selected Review/D4D row in one go (soft-delete, same as the
 // single-lead Delete button, with an undo toast). Works across leads + tasks.
