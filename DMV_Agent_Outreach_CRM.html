@@ -3619,12 +3619,12 @@ function dcwRes(d){
   var j=dcwDone(d), r=j?(j.result_json||null):null, st=d.dealState, m=st&&st.mls;
   if(!m||!m.length) return r;
   // MLS comps pasted by the team replace the web-search comps (they are real closed sales). Subject info + active list still come from the search.
-  var o=Object.assign({},r||{}), sq=dcNum(d.sqft)||(r&&r.subject&&+r.subject.sqft)||0;
+  var o=Object.assign({},r||{}), sq=(r&&r.subject&&+r.subject.sqft_public_record)||dcNum(d.sqft)||(r&&r.subject&&+r.subject.sqft)||0;
   var ppsf=m.filter(function(c){ return c.sold_price&&c.sqft; }).map(function(c){ return c.sold_price/c.sqft; }).sort(function(a,b){return a-b;});
   var v=null;
   if(ppsf.length&&sq){ var k=Math.floor(ppsf.length/2), md=ppsf.length%2?ppsf[k]:(ppsf[k-1]+ppsf[k])/2; v=Math.round(md*sq/1000)*1000; }
   else { var pr=m.map(function(c){return c.sold_price;}).sort(function(a,b){return a-b;}); if(pr.length){ var k2=Math.floor(pr.length/2); v=Math.round((pr.length%2?pr[k2]:(pr[k2-1]+pr[k2])/2)/1000)*1000; } }
-  o.comps=m; o.arv={value:v,reason:'Median of '+m.length+' MLS closed sales pasted by the team'+(ppsf.length&&sq?' ($/total sqft x '+sq+' sqft)':' (plain median price)')+'.'};
+  o.comps=m; o.arv={value:v,reason:'Median of '+m.length+' MLS closed sales pasted by the team'+(ppsf.length&&sq?' ($/above-grade sqft x '+sq+' sqft)':' (plain median price)')+'.'};
   o.quality={level:'high',usable:m.length,radius_mi:Math.max.apply(null,m.map(function(c){return +c.distance_mi||0;}))||0.5,source:'mls',dropped:[]};
   o.notes='Comps pasted from MLS.';
   return o;
@@ -3639,11 +3639,11 @@ function dcwParseMls(text){
     var c=cells(l), low=c.map(function(x){return x.toLowerCase();});
     if(low.indexOf('address')>=0&&(low.indexOf('price')>=0||low.indexOf('date')>=0)){ cols={}; low.forEach(function(h,i){ if(h&&cols[h]==null) cols[h]=i; }); return; }
     var g=function(n){ return cols&&cols[n]!=null?c[cols[n]]:null; };
-    var price=null,date=null,addr=null,dist=null,city=null,zip=null,state='',sqft=null,beds=null,baths=null,struct='',status='';
+    var sqftTotal=null,price=null,date=null,addr=null,dist=null,city=null,zip=null,state='',sqft=null,beds=null,baths=null,struct='',status='';
     if(cols){
       price=num(g('price')); date=iso(g('date')); addr=g('address'); dist=num(g('distance')); city=g('city'); zip=g('zip code')||g('zip');
       var cty=g('county')||''; var sm=cty.match(/,\s*([A-Z]{2})\s*$/); if(sm) state=sm[1];
-      sqft=num(g('total sqft'))||num(g('above gr'))||num(g('sqft')); beds=num(g('beds')); var bs=String(g('baths')||''); var bm=bs.match(/(\d+)\s*\/\s*(\d+)/); baths=bm?(+bm[1]+0.5*(+bm[2])):num(bs);
+      sqft=num(g('above gr'))||num(g('above grade'))||num(g('total sqft'))||num(g('sqft')); sqftTotal=num(g('total sqft')); beds=num(g('beds')); var bs=String(g('baths')||''); var bm=bs.match(/(\d+)\s*\/\s*(\d+)/); baths=bm?(+bm[1]+0.5*(+bm[2])):num(bs);
       struct=(g('structure type')||'').toLowerCase(); status=(g('status')||'').toUpperCase();
     } else {
       var pm=l.match(/\$\s?([\d,]{5,})/); price=pm?num(pm[1]):null; date=iso(l);
@@ -3653,7 +3653,7 @@ function dcwParseMls(text){
     if(!addr||!price||!date){ if(/\d/.test(l)&&!cols) bad++; else if(cols) bad++; return; }
     if(status&&status!=='CLS'&&status!=='CLOSED'&&status!=='SOLD') return;
     var ht=/detach/i.test(struct)?'sfh_detached':(/semi/i.test(struct)?'semi_detached':(/\bend\b/i.test(struct)?'townhouse_end':(/town|row|attach/i.test(struct)?'townhouse_interior':null)));
-    out.push({address:addr+(city?', '+city:'')+(state?', '+state:'')+(zip?' '+zip:''),sold_price:price,sold_date:date,beds:beds,baths:baths,sqft:sqft,distance_mi:dist,dist_src:'mls',condition:null,url:null,verified:true,house_type:ht,listing_status:'sold',source:'mls'});
+    out.push({address:addr+(city?', '+city:'')+(state?', '+state:'')+(zip?' '+zip:''),sold_price:price,sold_date:date,beds:beds,baths:baths,sqft:sqft,sqft_total:sqftTotal,distance_mi:dist,dist_src:'mls',condition:null,url:null,verified:true,house_type:ht,listing_status:'sold',source:'mls'});
   });
   return {rows:out,bad:bad};
 }
@@ -3819,7 +3819,7 @@ function dcwQualityHTML(res){
   if(!q) return '<div class="dcw-warn">'+base+' <b>Older result: comps were not distance-checked. Press Re-run.</b></div>';
   if(q.source==='mls') return '<div class="dcw-warn" style="background:#dcfce7;color:#166534"><b>MLS comps:</b> '+(+q.usable)+' closed sales pasted by the team. Distances and sizes are from MLS.</div>';
   var lv=q.level, col=lv==='high'?'#166534':(lv==='medium'?'#92400e':'#991b1b'), bg=lv==='high'?'#dcfce7':(lv==='medium'?'#fef3c7':'#fee2e2');
-  var h='<div class="dcw-warn" style="background:'+bg+';color:'+col+'"><b>'+(lv==='high'?'Good comps':(lv==='medium'?'Okay comps':'Weak comps'))+':</b> '+(+q.usable||0)+' usable, all within '+(+q.radius_mi).toFixed(1)+' mi'+(q.widened?' (widened to '+esc(q.widened)+' because too few were closer)':'')+'. '+base+'</div>';
+  var h='<div class="dcw-warn" style="background:'+bg+';color:'+col+'"><b>'+(lv==='high'?'Good comps':(lv==='medium'?'Okay comps':'Weak comps'))+':</b> '+(+q.usable||0)+' usable, all within '+(+q.radius_mi).toFixed(1)+' mi'+(q.widened?' (widened to '+esc(q.widened)+' because too few were closer)':'')+'. '+base+' <b>For the most accurate comps use Paste MLS comps.</b></div>';
   if(q.sqft_conflict) h+='<div class="dcw-warn" style="margin-top:6px">&#9888; '+esc(q.sqft_conflict)+'</div>';
   if(q.dropped&&q.dropped.length) h+='<details style="margin-top:6px;font-size:12px;color:var(--text3)"><summary>'+q.dropped.length+' search result(s) removed by the checker</summary><ul style="margin:4px 0 0 18px;padding:0">'+q.dropped.map(function(x){ return '<li>'+esc(x.address||'')+': '+esc(x.why||'')+'</li>'; }).join('')+'</ul></details>';
   return h;
