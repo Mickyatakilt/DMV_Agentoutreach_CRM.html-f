@@ -3821,6 +3821,13 @@ function dcwQualityHTML(res){
   if(q.source==='redfin') base='Real sold records (Redfin/MLS) with measured distances. Spot-check a couple on Zillow.';
   var lv=q.level, col=lv==='high'?'#166534':(lv==='medium'?'#92400e':'#991b1b'), bg=lv==='high'?'#dcfce7':(lv==='medium'?'#fef3c7':'#fee2e2');
   var h='<div class="dcw-warn" style="background:'+bg+';color:'+col+'"><b>'+(lv==='high'?'Good comps':(lv==='medium'?'Okay comps':'Weak comps'))+':</b> '+(+q.usable||0)+' usable, all within '+(+q.radius_mi).toFixed(1)+' mi'+(q.widened?' (widened to '+esc(q.widened)+' because too few were closer)':'')+'. '+base+(q.source==='redfin'?'':' <b>For the most accurate comps use Paste MLS comps.</b>')+'</div>';
+  var ck=q.check;
+  if(ck&&ck.verdict&&ck.verdict!=='unavailable'&&ck.verdict!=='skipped'){
+    var cc=ck.verdict==='agree'?'#166534':(ck.verdict==='mixed'?'#92400e':'#991b1b'), cb=ck.verdict==='agree'?'#dcfce7':(ck.verdict==='mixed'?'#fef3c7':'#fee2e2');
+    h+='<div class="dcw-warn" style="margin-top:6px;background:'+cb+';color:'+cc+'"><b>Second check (OpenAI): '+(ck.verdict==='agree'?'agrees':(ck.verdict==='mixed'?'partly agrees':'disagrees'))+'.</b>'+(ck.own_arv?' Its own ARV: <b>'+dcMoney(ck.own_arv)+'</b>'+(ck.gap_pct!=null?' ('+ck.gap_pct+'% from ours)':'')+'.':'')
+      +((ck.concerns&&ck.concerns.length)?'<ul style="margin:4px 0 0 18px;padding:0;font-weight:500">'+ck.concerns.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join('')+'</ul>':'')
+      +((ck.doubtful&&ck.doubtful.length)?'<div style="margin-top:4px;font-weight:500">Doubts: '+ck.doubtful.map(function(x){ return esc((x.address||'').split(',')[0])+' ('+esc(x.reason||'')+')'; }).join('; ')+'</div>':'')+'</div>';
+  } else if(ck&&ck.verdict==='unavailable') h+='<div style="margin-top:6px;font-size:12px;color:var(--text4)">Second check (OpenAI) was unavailable this time.</div>';
   if(q.sqft_conflict) h+='<div class="dcw-warn" style="margin-top:6px">&#9888; '+esc(q.sqft_conflict)+'</div>';
   if(q.dropped&&q.dropped.length) h+='<details style="margin-top:6px;font-size:12px;color:var(--text3)"><summary>'+q.dropped.length+' search result(s) removed by the checker</summary><ul style="margin:4px 0 0 18px;padding:0">'+q.dropped.map(function(x){ return '<li>'+esc(x.address||'')+': '+esc(x.why||'')+'</li>'; }).join('')+'</ul></details>';
   return h;
