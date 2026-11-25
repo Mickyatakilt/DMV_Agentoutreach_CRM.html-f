@@ -6822,7 +6822,7 @@ function twTick(){
   }
 }
 function twStartTimer(){ if(twTimer) clearInterval(twTimer); twTimer=setInterval(twTick,1000); twTick(); }
-function workClockCardHTML(){
+function workClockCardHTML_web(){
   var open = (myClock||[]).find(function(c){return !c.clockOut;});
   var td = twLocalDay(new Date());
   var todayRows = (myClock||[]).filter(function(c){ return twLocalDay(c.clockIn)===td; });
@@ -6860,6 +6860,11 @@ function workClockCardHTML(){
   }
   return '<div style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;padding:16px;margin-top:14px">'
     + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><div style="font-size:15px;font-weight:800">&#9201;&#65039; Time Clock</div>'+badge+'</div>'+body+'</div>';
+}
+// Clock in/out now happens in the Team Tracker app (it records screenshots + activity and writes to this same time clock).
+function workClockCardHTML(){
+  var h = workClockCardHTML_web().replace(/<button[^>]*onclick="work(?:ClockIn|ClockOut|BreakStart|BreakEnd)\(\)"[^>]*>[\s\S]*?<\/button>/g,'');
+  return h.replace(/<\/div>$/, '<div style="margin-top:12px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;padding:10px 12px;font-size:13px">&#128187; <b>Clock in and out with the Team Tracker app</b> on your computer &mdash; your hours here update automatically. Need the app? <a href="https://team-tracker.mickyatakilt.workers.dev/download.html" target="_blank" rel="noopener" style="color:#1d4ed8;font-weight:700">Download it here</a>.</div></div>');
 }
 var myCorrections = [];
 async function workLoadCorrections(){
@@ -7441,7 +7446,7 @@ async function renderTeamWork(keepData){
       +'<div style="flex:1;min-width:300px"><div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Clock in / out</div><button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="twOpenClockAdd(\''+r.id+'\')">+ Add day</button></div>'+logRows+'</div>'
       +'<div style="flex:1.4;min-width:340px"><div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Tasks &mdash; status &amp; finish date</div>'+(r.done?'<button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;color:#dc2626" onclick="ttDeleteCompleted(\''+r.id+'\')">&#128465; Delete completed ('+r.done+')</button>':'')+'</div>'+ttRowsHTML(vis)+'</div>'
       +'</div></td></tr>';
-    return main+detail+twActivityRowHTML(r.id);
+    return main+detail+twShotsRowHTML(r.id)+twActivityRowHTML(r.id);
   }).join('') : '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4);font-size:13px">No staff accounts or activity yet.</td></tr>';
   host.innerHTML =
     twCorrectionsCardHTML()
@@ -7463,6 +7468,7 @@ async function renderTeamWork(keepData){
         + '<th style="'+th+'">Person</th><th style="'+th+'">Status</th><th style="'+th+'">Today</th><th style="'+th+'">'+twDays+'-day hours</th><th style="'+th+'">Tasks</th><th style="'+th+'">Due</th>'
       + '</tr></thead><tbody>'+body+'</tbody></table></div>'
     + '</div>';
+  twHydrateShots();
 }
 function twCorrectionsCardHTML(){
   var pend=(teamCorrections||[]).filter(function(c){return c.status==='pending';});
@@ -7562,6 +7568,71 @@ function sbItems(){
   return (authProfile.role==='recipient'?[]:[{k:'mywork',ic:'&#128202;',lb:'Dashboard',sl:'Dashboard',soon:false}]).concat(SB_ITEMS.filter(function(it){ return allowed.indexOf(it.k)>=0; }));
 }
 function sbSectionAllowed(k){ return sbItems().some(function(it){return it.k===k;}); }
+
+// =================== Team Tracker screenshots (stored on Cloudflare, NOT in Supabase) ===================
+var TT_WORKER = 'https://team-tracker.mickyatakilt.workers.dev';
+var twShotDay = twLocalDay(new Date());
+var twShotPeople = null;
+var TW_IVALS = [[null,'Team default'],[0,'Off'],[1,'Every 1 min'],[2,'Every 2 min'],[3,'Every 3 min'],[5,'Every 5 min'],[10,'Every 10 min'],[15,'Every 15 min'],[30,'Every 30 min'],[60,'Every 60 min']];
+async function twWorkerFetch(path, opt){
+  try{ await authRefreshIfNeeded(); }catch(e){}
+  opt = opt || {}; opt.headers = Object.assign({'Authorization':'Bearer '+sbAuthToken()}, opt.headers||{});
+  return fetch(TT_WORKER + path, opt);
+}
+function twShotsRowHTML(uid){
+  return '<tr><td colspan="6" style="padding:4px 16px 16px 28px;border-bottom:1px solid var(--border,#e5e7eb);background:var(--bg2,#f8fafc)"><div class="tw-shots" data-uid="'+esc(uid)+'"><div style="color:var(--text4);font-size:13px;padding:8px 0">Loading screenshots&hellip;</div></div></td></tr>';
+}
+function twHydrateShots(){ document.querySelectorAll('.tw-shots').forEach(function(el){ twLoadShots(el.getAttribute('data-uid'), el); }); }
+async function twLoadShots(uid, el){
+  var head = '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin:6px 0 4px">Screenshots &amp; activity (Team Tracker app)</div>';
+  try{
+    if(!twShotPeople){ var pr = await twWorkerFetch('/api/crm/people'); if(!pr.ok) throw new Error(pr.status===403?'Owner login required':'Server error '+pr.status); twShotPeople = (await pr.json()).people||[]; }
+    var me = twShotPeople.find(function(x){return x.user_id===uid;});
+    var from = new Date(twShotDay+'T00:00:00').getTime(), to = from+864e5;
+    var rr = await twWorkerFetch('/api/crm/report?user='+encodeURIComponent(uid)+'&from='+from+'&to='+to);
+    var rep = await rr.json(); var A=rep.activity||[], S=rep.screenshots||[];
+    var act=0, idle=0, apps={};
+    A.forEach(function(a){ var on=!a.idle && (a.mv+a.c+a.k)>0; if(on) act++; if(a.idle) idle++; var n=a.app||'(unknown)'; apps[n]=apps[n]||{m:0,a:0}; apps[n].m++; if(on) apps[n].a++; });
+    var top=Object.keys(apps).sort(function(x,y){return apps[y].m-apps[x].m;}).slice(0,6);
+    var iv = me ? me.interval_min : null;
+    var sel = '<select class="form-select" style="font-size:12px;width:auto;display:inline-block" onchange="twSetInterval(\''+esc(uid)+'\',this.value)">'+TW_IVALS.map(function(o){ return '<option value="'+(o[0]===null?'':o[0])+'"'+((iv==null&&o[0]===null)||iv===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select>';
+    var seen = me && me.last_seen ? 'last signal '+new Date(me.last_seen).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) : 'app never connected';
+    var bar = '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:2px 0 8px;font-size:13px">'
+      + '<input type="date" class="form-input" style="font-size:12px;width:auto" value="'+twShotDay+'" onchange="twShotDay=this.value;twShotPeople=null;twHydrateShots()">'
+      + '<span>Screenshots: '+sel+'</span><span style="color:var(--text4)">'+seen+'</span></div>';
+    var stats = A.length ? '<div style="font-size:13px;margin-bottom:6px">Tracked <b>'+twFmtDur(A.length*6e4)+'</b> &middot; Active <b>'+twFmtDur(act*6e4)+'</b> ('+Math.round(act/A.length*100)+'%) &middot; Idle <b>'+twFmtDur(idle*6e4)+'</b></div>'
+      + top.map(function(k){ return '<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:2px 0"><span style="width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(k)+'</span><div style="flex:1;max-width:220px;height:7px;background:var(--border,#e5e7eb);border-radius:4px"><div style="width:'+Math.round(apps[k].m/A.length*100)+'%;height:7px;background:#2563eb;border-radius:4px"></div></div><span>'+twFmtDur(apps[k].m*6e4)+'</span></div>'; }).join('') : '<div style="color:var(--text4);font-size:13px">No activity recorded on this day.</div>';
+    var grid = S.length ? '<div style="font-size:12px;color:var(--text3);margin:10px 0 4px">'+S.length+' screenshots &mdash; click one to enlarge</div><div class="tw-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px">'
+      + S.map(function(x,i){ return '<div class="tw-shot" data-id="'+x.id+'" data-i="'+i+'" style="background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;overflow:hidden;cursor:pointer"><div style="aspect-ratio:16/10;background:#e5e7eb"><img style="width:100%;height:100%;object-fit:cover;display:block" alt=""></div><div style="padding:4px 6px;font-size:11px"><b>'+new Date(x.ts).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})+'</b> '+esc(x.app)+'<div style="color:var(--text4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(x.title)+'</div></div></div>'; }).join('')+'</div>' : '';
+    el.innerHTML = head + bar + stats + grid;
+    el._shots = S;
+    twLazyThumbs(el);
+  }catch(e){ el.innerHTML = head + '<div style="color:#dc2626;font-size:13px">Could not load screenshots: '+esc(e.message||e)+'</div>'; }
+}
+function twLazyThumbs(el){
+  var io = new IntersectionObserver(function(ents){ ents.forEach(async function(en){
+    if(!en.isIntersecting) return; var card=en.target; io.unobserve(card);
+    try{ var r=await twWorkerFetch('/api/crm/shot/'+card.getAttribute('data-id')); if(r.ok){ card.querySelector('img').src=URL.createObjectURL(await r.blob()); } }catch(e){}
+  }); }, {rootMargin:'200px'});
+  el.querySelectorAll('.tw-shot').forEach(function(c){ io.observe(c); c.onclick=function(){ twOpenShot(el, +c.getAttribute('data-i')); }; });
+}
+async function twOpenShot(el, i){
+  var S=el._shots||[]; var x=S[i]; if(!x) return;
+  var ov=document.getElementById('tw-shot-ov');
+  if(!ov){ ov=document.createElement('div'); ov.id='tw-shot-ov'; ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px';
+    ov.innerHTML='<img style="max-width:96vw;max-height:80vh;border-radius:8px"><div style="color:#fff;margin:10px 0 6px;text-align:center;font-size:13px"></div><div><button class="btn btn-secondary btn-sm" data-a="p">&larr;</button> <button class="btn btn-secondary btn-sm" data-a="n">&rarr;</button> <button class="btn btn-secondary btn-sm" data-a="x">Close</button></div>'; document.body.appendChild(ov); }
+  ov.style.display='flex'; ov.querySelector('div').textContent='Loading…';
+  ov.querySelectorAll('button').forEach(function(b){ b.onclick=function(){ var a=b.getAttribute('data-a'); if(a==='x') ov.style.display='none'; else twOpenShot(el, i+(a==='n'?1:-1)); }; });
+  ov.querySelector('img').src='';
+  try{ var r=await twWorkerFetch('/api/crm/shot/'+x.id); if(r.ok) ov.querySelector('img').src=URL.createObjectURL(await r.blob()); }catch(e){}
+  ov.querySelector('div').textContent=new Date(x.ts).toLocaleTimeString()+' · '+(x.app||'')+' · '+(x.title||'');
+}
+async function twSetInterval(uid, v){
+  try{ var r=await twWorkerFetch('/api/crm/interval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:uid,interval_min:v===''?null:+v})});
+    if(!r.ok) throw new Error('Server error '+r.status); var me=(twShotPeople||[]).find(function(x){return x.user_id===uid;}); if(me) me.interval_min=(v===''?null:+v);
+    showToast('Screenshot timing saved (the app picks it up within ~5 minutes)','success'); }catch(e){ showToast('Could not save: '+(e.message||e),'error'); }
+}
+// =================== end Team Tracker screenshots ===================
 // =================== end Team Work ===================
 
 // =================== Dashboard (KPIs + Follow-up Hub) ===================
