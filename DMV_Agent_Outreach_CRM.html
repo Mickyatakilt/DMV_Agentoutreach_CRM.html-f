@@ -14275,13 +14275,25 @@ function sendEmailOffer(kind, id){
 function cleanNote(t){
   t=String(t||'').replace(/\r/g,'').trim(); if(!t) return '';
   var fix={dont:"don\u2019t",cant:"can\u2019t",wont:"won\u2019t",doesnt:"doesn\u2019t",didnt:"didn\u2019t",isnt:"isn\u2019t",im:"I\u2019m",ive:"I\u2019ve",ill:"I\u2019ll",thx:"thanks",pls:"please",plz:"please",flexable:"flexible",flexibile:"flexible",intrested:"interested",interessted:"interested",availible:"available",avaliable:"available",pictuers:"pictures",picutres:"pictures",pitures:"pictures",proprety:"property",propery:"property",recieve:"receive",definately:"definitely",seperate:"separate",teh:"the",adn:"and",wich:"which",wether:"whether",thier:"their",becuase:"because",alot:"a lot",apprieciate:"appreciate",appreciat:"appreciate",aggreed:"agreed",offfer:"offer",pirce:"price",prise:"price",kitchne:"kitchen",bathrom:"bathroom",bedrom:"bedroom"};
+  // The email already opens with "Hello," so a greeting typed in the note (hi / hello / hey ...) is dropped, on every line and at the start of any sentence.
+  var GREET=/^(?:hi|hello|hey|hiya|howdy|good\s+(?:morning|afternoon|evening))\b(?:\s+there)?[\s,!.:\-]*/i;
+  var QSTART=/^(?:would|will|can|could|should|is|are|am|do|does|did|have|has|what|when|where|who|why|how|which)\b/i;
   var lines=t.split(/\n+/).map(function(line){
     line=line.replace(/\s+/g,' ').trim(); if(!line) return '';
     line=line.replace(/\b[A-Za-z']+\b/g,function(w){ var k=w.toLowerCase(); if(k==='i') return 'I'; return fix.hasOwnProperty(k)?fix[k]:w; });
     line=line.replace(/\s+([,.!?;:])/g,'$1').replace(/([,.!?;:])(?=[A-Za-z])/g,'$1 ');
-    line=line.replace(/(^|[.!?]\s+)([a-z])/g,function(m,a,b){return a+b.toUpperCase();});
-    if(!/[.!?]$/.test(line)) line+='.';
-    return line;
+    // common slips: "and lower offer" -> "a lower offer", "would seller" -> "would the seller"
+    line=line.replace(/\b(?:and|an)\s+lower\s+offer\b/gi,'a lower offer').replace(/\b(would|will|can|could|does|did|is|are)\s+(seller|owner|buyer)\b/gi,function(m,a,b){return a+' the '+b;});
+    // "... close when" / "closing when" = ask for the closing timeline, as its own question
+    line=line.replace(/[\s,]*(?:and\s+)?\b(?:close|closing)\s+when\b\??/gi,'. When would the seller like to close?');
+    var sents=line.split(/(?<=[.!?])\s+/).map(function(sn){
+      sn=sn.trim().replace(GREET,'').trim(); if(!sn) return '';
+      var end=sn.match(/[.!?]+$/); var core=sn.replace(/[.!?]+$/,'').trim(); if(!core) return '';
+      core=core.charAt(0).toUpperCase()+core.slice(1);
+      var mark=(end&&/[?!]/.test(end[0]))?end[0].charAt(0):(QSTART.test(core)?'?':'.');
+      return core+mark;
+    }).filter(Boolean);
+    return sents.join(' ');
   }).filter(Boolean);
   return lines.join('\n');
 }
