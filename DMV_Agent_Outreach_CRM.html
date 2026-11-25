@@ -5641,7 +5641,7 @@ function pbSelSendable(){ return (crmProbate||[]).filter(function(p){ return pbS
 function pbSelBtns(){
   var n=pbSelSendable().length;
   return '<button class="btn btn-secondary btn-sm" onclick="pbDownloadSelectedCSV()">&#8681; Download CSV</button>'
-    + '<button class="btn btn-primary btn-sm" onclick="pbSendSkiptrace()" '+(n?'':'disabled ')+'title="Email the ticked leads (Full Name + Address) to the skip tracer">&#128232; Send '+n+' to skip tracer</button>';
+    + '<button class="btn btn-primary btn-sm" onclick="pbSendSkiptrace()" '+(n?'':'disabled ')+'title="Downloads a Full Name + Address CSV and opens a Gmail draft to the skip tracer">&#128232; Send '+n+' to skip tracer</button>';
 }
 // Checkbox on a batch tile: ticks/unticks every sendable lead in that batch.
 function pbTileChk(arr){
@@ -5658,21 +5658,31 @@ function pbSentTileChip(arr){
 async function pbSendSkiptrace(){
   var rows=pbSelSendable(), ticked=pbSel.size;
   if(!rows.length){ showToast('None of the ticked leads can be sent (already skip-traced or already sent)','error'); return; }
-  if(rows.length>5000){ showToast('Max 5,000 leads per send — you ticked '+rows.length.toLocaleString()+'. Untick some and send in two rounds.','error'); return; }
   var skipped=ticked-rows.length;
-  var msg='Email '+rows.length.toLocaleString()+' lead'+(rows.length!==1?'s':'')+' to the skip tracer ('+SKIPTRACE_MAIL_TO+')?\n\nThe file has two columns: Full Name and Address (the PR’s mailing/absentee address when there is one, otherwise the property address).'
+  var msg='Prepare '+rows.length.toLocaleString()+' lead'+(rows.length!==1?'s':'')+' for the skip tracer?\n\n1) A CSV (Full Name + Address) downloads to your computer.\n2) Gmail opens a new email to '+SKIPTRACE_MAIL_TO+' — attach the CSV and press Send.\n\nAddress = the PR’s mailing/absentee address when there is one, otherwise the property address.'
     + (skipped>0?'\n\n'+skipped+' ticked lead'+(skipped!==1?'s are':' is')+' left out (already skip-traced, already sent, or missing a name/address).':'');
   if(!confirm(msg)) return;
-  showToast('Sending '+rows.length.toLocaleString()+' lead'+(rows.length!==1?'s':'')+'…','info');
-  try{
-    var r=await fetch(SKIPTRACE_MAIL_URL,{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':'application/json'},body:JSON.stringify({ids:rows.map(function(p){return +p.id;})})});
-    var d=await r.json().catch(function(){return {};});
-    if(!d.ok){ showToast('Not sent: '+(d.reason==='nothing_to_send'?'nothing eligible (already skip-traced/sent)':(d.reason||d.error||('error '+r.status))),'error'); return; }
-    var sentSet={}; (d.ids||[]).forEach(function(i){ sentSet[+i]=1; });
-    (crmProbate||[]).forEach(function(p){ if(sentSet[+p.id]){ p.skiptraceSentAt=d.sentAt; p.skiptraceSentTo=d.to; pbSel.delete(+p.id); } });
-    showToast('Sent '+d.sent.toLocaleString()+' lead'+(d.sent!==1?'s':'')+' to '+d.to,'success');
-    pbRenderArea();
-  }catch(e){ showToast('Send failed — check connection and try again','error'); }
+  function cell(v){ v=(v==null?'':String(v)).replace(/\s+/g,' ').trim(); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+  var csv='Full Name,Address\n'+rows.map(function(p){ return cell(pbSkipName(p))+','+cell(pbSkipAddr(p)); }).join('\n')+'\n';
+  var fname='skiptrace-'+today()+'-'+rows.length+'-leads.csv';
+  var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob);
+  var a=document.createElement('a'); a.href=url; a.download=fname; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); },2000);
+  var su='Skip trace list - '+rows.length+' record'+(rows.length!==1?'s':'')+' - '+today();
+  var body='Hi,\n\nAttached is a skip trace list: '+rows.length+' record'+(rows.length!==1?'s':'')+' (Full Name, Address). Please send back the phone numbers you find, keeping the same name and address on each row.\n\nThank you.\n\n(Attach file: '+fname+')';
+  window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(SKIPTRACE_MAIL_TO)+'&su='+encodeURIComponent(su)+'&body='+encodeURIComponent(body),'_blank');
+  // Only mark as sent after the user confirms they actually sent it from Gmail.
+  setTimeout(async function(){
+    if(!confirm('Did you attach '+fname+' and press Send in Gmail?\n\nOK = mark these '+rows.length.toLocaleString()+' leads "Sent to skip tracer".\nCancel = leave them unmarked.')){ showToast('Not marked as sent','info'); return; }
+    var now=new Date().toISOString(), ids=rows.map(function(p){return +p.id;});
+    try{
+      for(var i=0;i<ids.length;i+=150){ await sbFetch(PB_PATH+'?id=in.('+ids.slice(i,i+150).join(',')+')','PATCH',{skiptrace_sent_at:now,skiptrace_sent_to:SKIPTRACE_MAIL_TO}); }
+      var set={}; ids.forEach(function(i){ set[i]=1; });
+      (crmProbate||[]).forEach(function(p){ if(set[+p.id]){ p.skiptraceSentAt=now; p.skiptraceSentTo=SKIPTRACE_MAIL_TO; pbSel.delete(+p.id); } });
+      showToast('Marked '+ids.length.toLocaleString()+' lead'+(ids.length!==1?'s':'')+' as sent to the skip tracer','success');
+      pbRenderArea();
+    }catch(e){ showToast('Could not save the sent mark — try again','error'); }
+  },1500);
 }
 function pbToggleOpen(k){ var wasOpen=!!pbOpen[k]; pbOpen={}; if(!wasOpen) pbOpen[k]=true; pbRenderArea(); } // one batch open at a time
 function pbToggleGroup(ids,c){ ids.forEach(function(id){ if(c)pbSel.add(+id); else pbSel.delete(+id); }); pbRenderArea(); }
