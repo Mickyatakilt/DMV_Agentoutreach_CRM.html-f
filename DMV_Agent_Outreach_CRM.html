@@ -9509,13 +9509,14 @@ function renderReviewTab(){
 function d4dSetTab(t){ d4dTab=t; reviewSel.clear(); renderD4DSection(); }
 // Manual "+ Add Lead" in the D4D section: same form as DMV Leads, but tagged D4D so it lands in D4D Leads (never DMV Leads).
 function openAddD4D(){ openAdd(); modalLead.leadSource='D4D Auto-Scan'; modalLead.nationwide=''; modalLead.needsReview=true; renderEditModal(); }
-// ---- D4D scrape history: last scrape banner + 15-day box grid (data from the d4d_scrape_history() database function) ----
-// Per Eastern-time day: fresh leads scraped (count, first/last time, areas), texts the bot sent (first + follow-up).
-var d4dHist=null, d4dHistAt=0, d4dHistLoading=false, d4dHistErr='', d4dHistOpen=true, d4dHistSel='';
+// ---- D4D scrape history: filter bar (range buttons + From/To) + last-scrape line + daily list ----
+// Data comes from the d4d_scrape_history() database function. Per Eastern-time day: new D4D leads (count, first/last time,
+// areas) and texts the bot sent. "Leads" = D4D leads that landed in the CRM that day; time = when each was created.
+var d4dHist=null, d4dHistAt=0, d4dHistLoading=false, d4dHistErr='', d4dHistPreset='7', d4dHistFrom='', d4dHistTo='';
 async function d4dHistLoad(){
   if(d4dHistLoading) return; d4dHistLoading=true;
   try{
-    var r=await fetch(SUPABASE_URL+'/rest/v1/rpc/d4d_scrape_history',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':'application/json'},body:JSON.stringify({p_days:15})});
+    var r=await fetch(SUPABASE_URL+'/rest/v1/rpc/d4d_scrape_history',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':'application/json'},body:JSON.stringify({p_days:62})});
     if(!r.ok) throw new Error('HTTP '+r.status);
     d4dHist=await r.json(); d4dHistErr='';
   }catch(e){ d4dHistErr=String(e.message||e); }
@@ -9524,54 +9525,64 @@ async function d4dHistLoad(){
 }
 function d4dHistTime(iso){ return iso ? new Date(iso).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit'}) : ''; }
 function d4dHistDay(iso,opts){ var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/); if(!m) return iso||''; return new Date(+m[1],+m[2]-1,+m[3]).toLocaleDateString('en-US',opts); }
-function d4dHistToggle(){ d4dHistOpen=!d4dHistOpen; renderD4DSection(); }
-function d4dHistPick(d){ d4dHistSel=(d4dHistSel===d)?'':d; renderD4DSection(); }
+function d4dHistTodayET(){ return new Date().toLocaleDateString('en-CA',{timeZone:'America/New_York'}); }
+function d4dHistAddDays(iso,n){ var m=iso.split('-'); var d=new Date(+m[0],+m[1]-1,+m[2]+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function d4dHistRange(){
+  var t=d4dHistTodayET();
+  if(d4dHistPreset==='custom' && d4dHistFrom && d4dHistTo) return {from:d4dHistFrom,to:d4dHistTo};
+  if(d4dHistPreset==='today') return {from:t,to:t};
+  if(d4dHistPreset==='15') return {from:d4dHistAddDays(t,-14),to:t};
+  if(d4dHistPreset==='30') return {from:d4dHistAddDays(t,-29),to:t};
+  if(d4dHistPreset==='month') return {from:t.slice(0,8)+'01',to:t};
+  return {from:d4dHistAddDays(t,-6),to:t};
+}
+function d4dHistSetPreset(k){ d4dHistPreset=k; d4dHistFrom=''; d4dHistTo=''; renderD4DSection(); }
+function d4dHistSetDate(which,v){ var r=d4dHistRange(); d4dHistFrom=(which==='from'?v:r.from); d4dHistTo=(which==='to'?v:r.to); if(d4dHistFrom&&d4dHistTo&&d4dHistFrom>d4dHistTo){ var x=d4dHistFrom; d4dHistFrom=d4dHistTo; d4dHistTo=x; } d4dHistPreset='custom'; renderD4DSection(); }
 function d4dHistReload(){ d4dHistAt=0; d4dHist=null; d4dHistLoad(); renderD4DSection(); }
 function d4dHistHTML(){
   if(!d4dHist && !d4dHistLoading && Date.now()-d4dHistAt>60000) d4dHistLoad();
   else if(d4dHist && !d4dHistLoading && Date.now()-d4dHistAt>300000) d4dHistLoad();
+  var card='background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:12px;';
   if(!d4dHist){
-    return '<div style="background:var(--bg2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:11px 14px;margin-bottom:12px;font-size:12.5px;color:var(--text3)">'
+    return '<div style="'+card+'padding:11px 14px;margin-bottom:12px;font-size:12.5px;color:var(--text3)">'
       +(d4dHistErr?'Could not load scrape history ('+esc(d4dHistErr)+') <button class="btn btn-secondary btn-sm" onclick="d4dHistReload()">Retry</button>':'Loading scrape history&hellip;')+'</div>';
   }
   var days=d4dHist.days||[];
-  var last=days.filter(function(d){ return d.scraped>0; })[0];
-  var bn;
-  if(last){
-    var ago=d4dTimeAgo(d4dHist.last_scrape_at);
-    bn='<div style="font-weight:800;font-size:13.5px;color:#14532d">&#128663; Last scrape: '+esc(d4dHistDay(last.day,{weekday:'short',month:'short',day:'numeric'}))+' &middot; '+esc(d4dHistTime(last.first_at))+(d4dHistTime(last.last_at)!==d4dHistTime(last.first_at)?' &ndash; '+esc(d4dHistTime(last.last_at)):'')+' ET'+(ago?' <span style="font-weight:600;color:#15803d">('+esc(ago)+')</span>':'')+'</div>'
-      +'<div style="font-size:12.5px;color:#166534;margin-top:3px"><b>'+last.scraped+'</b> fresh lead'+(last.scraped!==1?'s':'')+' scraped &middot; <b>'+last.texts+'</b> text'+(last.texts!==1?'s':'')+' sent that day'
-      +(last.areas&&last.areas.length?' &middot; '+last.areas.map(function(a){ return esc(a.area)+' ('+a.n+')'; }).join(', '):'')+'</div>';
-  } else bn='<div style="font-weight:800;font-size:13.5px;color:#14532d">No scrapes in the last 15 days</div>';
-  var tot=days.reduce(function(t,d){ t.s+=d.scraped; t.x+=d.texts; return t; },{s:0,x:0});
-  var head='<div style="display:flex;align-items:flex-start;gap:12px;background:#f0fdf4;border:1px solid #86efac;border-left:4px solid #16a34a;border-radius:10px;padding:11px 14px;margin-bottom:10px">'
-    +'<div style="flex:1;min-width:0">'+bn+'</div>'
-    +'<button class="btn btn-secondary btn-sm" onclick="d4dHistReload()" title="Refresh">&#8635;</button>'
-    +'<button class="btn btn-secondary btn-sm" onclick="d4dHistToggle()">'+(d4dHistOpen?'Hide':'Show')+' last 15 days</button></div>';
-  if(!d4dHistOpen) return head;
-  var tiles=days.map(function(d){
-    var open=(d4dHistSel===d.day), none=(d.scraped===0&&d.texts===0);
-    var t1=d4dHistTime(d.first_at), t2=d4dHistTime(d.last_at);
-    return '<div class="pb-tile'+(d.scraped>0?' pb-traced':'')+(open?' pb-open':'')+'" onclick="d4dHistPick(\''+d.day+'\')" style="min-height:0;gap:5px;padding:11px 13px;'+(none?'opacity:.55':'')+'">'
-      +'<div class="pb-tile-title" style="font-size:14px">'+esc(d4dHistDay(d.day,{weekday:'short',month:'short',day:'numeric'}))+'</div>'
-      +'<div style="font-size:12.5px;color:var(--text2)"><b style="font-size:20px;color:var(--text)">'+d.scraped+'</b> scraped'+(d.scraped>0?'<div style="font-size:11px;color:var(--text3);font-weight:600">&#128339; '+esc(t1)+(t2!==t1?' &ndash; '+esc(t2):'')+' ET</div>':'<div style="font-size:11px;color:var(--text4)">no scrape</div>')+'</div>'
-      +'<div style="font-size:12px;color:var(--text3);border-top:1px solid var(--border);padding-top:5px">&#128172; <b>'+d.texts+'</b> text'+(d.texts!==1?'s':'')+' sent</div>'
-    +'</div>';
+  var rg=d4dHistRange();
+  var presets=[['today','Today'],['7','7 days'],['15','15 days'],['30','30 days'],['month','This month']];
+  var pills=presets.map(function(p){
+    var on=(d4dHistPreset===p[0]);
+    return '<button onclick="d4dHistSetPreset(\''+p[0]+'\')" style="border:none;border-radius:9px;padding:8px 15px;font-size:14px;font-weight:700;cursor:pointer;'+(on?'background:#1e40af;color:#fff':'background:transparent;color:#64748b')+'">'+p[1]+'</button>';
   }).join('');
-  var det='';
-  var sel=days.filter(function(d){ return d.day===d4dHistSel; })[0];
-  if(sel){
-    det='<div class="pb-detail"><div class="pb-detail-h"><span class="nm">'+esc(d4dHistDay(sel.day,{weekday:'long',month:'long',day:'numeric',year:'numeric'}))+'</span>'
-      +'<span class="pb-bt-cnt">'+sel.scraped+' scraped</span><span class="pb-bt-cnt" style="background:#dbeafe;color:#1e40af">'+sel.texts+' texts sent</span>'
-      +'<span class="pb-detail-close" onclick="d4dHistPick(\''+sel.day+'\')">&#10005; Close</span></div>'
-      +'<div class="pb-wf-panel" style="font-size:13px;line-height:1.7">'
-        +'<div><b>Scraped at:</b> '+(sel.scraped>0?esc(d4dHistTime(sel.first_at))+(d4dHistTime(sel.last_at)!==d4dHistTime(sel.first_at)?' to '+esc(d4dHistTime(sel.last_at)):'')+' ET':'no scrape this day')+'</div>'
-        +'<div><b>Areas:</b> '+(sel.areas&&sel.areas.length?sel.areas.map(function(a){ return esc(a.area)+' <span style="color:var(--text3)">('+a.n+')</span>'; }).join(' &middot; '):'&mdash;')+'</div>'
-        +'<div><b>Texts sent:</b> '+sel.texts+' ('+sel.texts_first+' first text'+(sel.texts_first!==1?'s':'')+', '+sel.texts_followup+' follow-up'+(sel.texts_followup!==1?'s':'')+')</div>'
-      +'</div></div>';
-  }
-  return head+'<div style="font-size:11.5px;color:var(--text3);margin:0 2px 6px">Last 15 days: <b>'+tot.s+'</b> fresh leads scraped &middot; <b>'+tot.x+'</b> texts sent. Times are Eastern. Click a day for its areas.</div>'
-    +'<div class="pb-tilegrid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">'+tiles+'</div>'+det+'<div style="height:6px"></div>';
+  var bar='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
+    +'<div style="'+card+'padding:4px;display:flex;gap:2px">'+pills+'</div>'
+    +'<div style="'+card+'padding:5px 12px;display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:700;color:#334155">From '
+      +'<input type="date" value="'+rg.from+'" onchange="d4dHistSetDate(\'from\',this.value)" style="border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:5px 8px;font-size:13.5px">'
+      +' To <input type="date" value="'+rg.to+'" onchange="d4dHistSetDate(\'to\',this.value)" style="border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:5px 8px;font-size:13.5px">'
+    +'</div>'
+    +'<button class="btn btn-secondary btn-sm" onclick="d4dHistReload()" title="Refresh">&#8635;</button></div>';
+  var last=days.filter(function(d){ return d.scraped>0; })[0];
+  var inRange=days.filter(function(d){ return d.day>=rg.from && d.day<=rg.to; });
+  var tl=inRange.reduce(function(a,d){ return a+d.scraped; },0), tx=inRange.reduce(function(a,d){ return a+d.texts; },0);
+  var ago=(last&&d4dHist.last_scrape_at)?d4dTimeAgo(d4dHist.last_scrape_at):'';
+  var sum='<div style="'+card+'display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:10px 16px;margin-bottom:10px;font-size:13.5px">'
+    +(last?'<span style="color:#64748b">Last scrape</span><span style="font-weight:800">'+esc(d4dHistDay(last.day,{weekday:'short',month:'short',day:'numeric'}))+' &middot; '+esc(d4dHistTime(d4dHist.last_scrape_at))+' ET</span>'+(ago?'<span style="color:#94a3b8">'+esc(ago)+'</span>':''):'<span style="font-weight:800">No scrapes in the last 62 days</span>')
+    +'<span style="margin-left:auto"><b>'+tl+'</b> new lead'+(tl!==1?'s':'')+'</span><span><b>'+tx+'</b> text'+(tx!==1?'s':'')+' sent</span></div>';
+  var rows=inRange.map(function(d){
+    var none=(d.scraped===0&&d.texts===0), t1=d4dHistTime(d.first_at), t2=d4dHistTime(d.last_at);
+    var ar=(d.areas||[]), shown=ar.slice(0,3).map(function(a){ return esc(a.area)+' ('+a.n+')'; }).join(', ')+(ar.length>3?' +'+(ar.length-3)+' more':'');
+    var full=ar.map(function(a){ return a.area+' ('+a.n+')'; }).join(', ');
+    return '<tr style="border-top:1px solid var(--border,#e2e8f0);'+(none?'color:#94a3b8':'')+'">'
+      +'<td style="padding:9px 8px;white-space:nowrap;font-weight:600">'+esc(d4dHistDay(d.day,{weekday:'short',month:'short',day:'numeric'}))+'</td>'
+      +'<td style="padding:9px 8px">'+(none?'&ndash;':d.scraped)+'</td>'
+      +'<td style="padding:9px 8px;white-space:nowrap">'+(d.scraped>0?esc(t1)+(t2!==t1?' &ndash; '+esc(t2):''):'&ndash;')+'</td>'
+      +'<td style="padding:9px 8px">'+(none?'&ndash;':d.texts+(d.texts?' <span style="color:#94a3b8;font-size:11.5px" title="first texts / follow-ups">('+d.texts_first+'/'+d.texts_followup+')</span>':''))+'</td>'
+      +'<td style="padding:9px 8px;color:#475569" title="'+esc(full)+'">'+(shown||(none?'no scrape':'&ndash;'))+'</td></tr>';
+  }).join('');
+  var table='<div style="'+card+'padding:4px 10px;margin-bottom:14px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+    +'<thead><tr style="text-align:left;color:#64748b"><th style="padding:8px;font-weight:600">Day</th><th style="padding:8px;font-weight:600">Leads</th><th style="padding:8px;font-weight:600">Time (ET)</th><th style="padding:8px;font-weight:600">Texts <span style="font-weight:400;font-size:11px">(first/follow-up)</span></th><th style="padding:8px;font-weight:600">Areas</th></tr></thead><tbody>'
+    +(rows||'<tr><td colspan="5" style="padding:14px 8px;color:#94a3b8">No days in this range.</td></tr>')+'</tbody></table></div>';
+  return bar+sum+table;
 }
 function renderD4DSection(){
   var host=document.getElementById('section-main'); if(!host) return;
