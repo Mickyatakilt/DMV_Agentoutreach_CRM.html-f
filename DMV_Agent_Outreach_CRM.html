@@ -9440,6 +9440,7 @@ function d4dOrigin(l){
 
 // Shared row builder for the Review + D4D tables (identical layout, different item sets).
 function rvRowHTML(it){
+  var inBox=false; // main Review/D4D table rows always show the select checkbox (fixes 'inBox is not defined' blank D4D tab)
   var l=it.l, kind=it.kind;
   var openFn = kind==='task' ? 'openJVDetail('+l.id+')' : 'openDetail('+l.id+')';
   var title = kind==='task' ? (l.location||l.name||'Untitled') : (l.address||l.name||'Untitled');
