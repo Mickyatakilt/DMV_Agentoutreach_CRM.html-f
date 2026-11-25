@@ -9509,6 +9509,70 @@ function renderReviewTab(){
 function d4dSetTab(t){ d4dTab=t; reviewSel.clear(); renderD4DSection(); }
 // Manual "+ Add Lead" in the D4D section: same form as DMV Leads, but tagged D4D so it lands in D4D Leads (never DMV Leads).
 function openAddD4D(){ openAdd(); modalLead.leadSource='D4D Auto-Scan'; modalLead.nationwide=''; modalLead.needsReview=true; renderEditModal(); }
+// ---- D4D scrape history: last scrape banner + 15-day box grid (data from the d4d_scrape_history() database function) ----
+// Per Eastern-time day: fresh leads scraped (count, first/last time, areas), texts the bot sent (first + follow-up).
+var d4dHist=null, d4dHistAt=0, d4dHistLoading=false, d4dHistErr='', d4dHistOpen=true, d4dHistSel='';
+async function d4dHistLoad(){
+  if(d4dHistLoading) return; d4dHistLoading=true;
+  try{
+    var r=await fetch(SUPABASE_URL+'/rest/v1/rpc/d4d_scrape_history',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+sbAuthToken(),'Content-Type':'application/json'},body:JSON.stringify({p_days:15})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    d4dHist=await r.json(); d4dHistErr='';
+  }catch(e){ d4dHistErr=String(e.message||e); }
+  d4dHistAt=Date.now(); d4dHistLoading=false;
+  if(activeSection==='d4d') renderD4DSection();
+}
+function d4dHistTime(iso){ return iso ? new Date(iso).toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit'}) : ''; }
+function d4dHistDay(iso,opts){ var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/); if(!m) return iso||''; return new Date(+m[1],+m[2]-1,+m[3]).toLocaleDateString('en-US',opts); }
+function d4dHistToggle(){ d4dHistOpen=!d4dHistOpen; renderD4DSection(); }
+function d4dHistPick(d){ d4dHistSel=(d4dHistSel===d)?'':d; renderD4DSection(); }
+function d4dHistReload(){ d4dHistAt=0; d4dHist=null; d4dHistLoad(); renderD4DSection(); }
+function d4dHistHTML(){
+  if(!d4dHist && !d4dHistLoading && Date.now()-d4dHistAt>60000) d4dHistLoad();
+  else if(d4dHist && !d4dHistLoading && Date.now()-d4dHistAt>300000) d4dHistLoad();
+  if(!d4dHist){
+    return '<div style="background:var(--bg2,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:11px 14px;margin-bottom:12px;font-size:12.5px;color:var(--text3)">'
+      +(d4dHistErr?'Could not load scrape history ('+esc(d4dHistErr)+') <button class="btn btn-secondary btn-sm" onclick="d4dHistReload()">Retry</button>':'Loading scrape history&hellip;')+'</div>';
+  }
+  var days=d4dHist.days||[];
+  var last=days.filter(function(d){ return d.scraped>0; })[0];
+  var bn;
+  if(last){
+    var ago=d4dTimeAgo(d4dHist.last_scrape_at);
+    bn='<div style="font-weight:800;font-size:13.5px;color:#14532d">&#128663; Last scrape: '+esc(d4dHistDay(last.day,{weekday:'short',month:'short',day:'numeric'}))+' &middot; '+esc(d4dHistTime(last.first_at))+(d4dHistTime(last.last_at)!==d4dHistTime(last.first_at)?' &ndash; '+esc(d4dHistTime(last.last_at)):'')+' ET'+(ago?' <span style="font-weight:600;color:#15803d">('+esc(ago)+')</span>':'')+'</div>'
+      +'<div style="font-size:12.5px;color:#166534;margin-top:3px"><b>'+last.scraped+'</b> fresh lead'+(last.scraped!==1?'s':'')+' scraped &middot; <b>'+last.texts+'</b> text'+(last.texts!==1?'s':'')+' sent that day'
+      +(last.areas&&last.areas.length?' &middot; '+last.areas.map(function(a){ return esc(a.area)+' ('+a.n+')'; }).join(', '):'')+'</div>';
+  } else bn='<div style="font-weight:800;font-size:13.5px;color:#14532d">No scrapes in the last 15 days</div>';
+  var tot=days.reduce(function(t,d){ t.s+=d.scraped; t.x+=d.texts; return t; },{s:0,x:0});
+  var head='<div style="display:flex;align-items:flex-start;gap:12px;background:#f0fdf4;border:1px solid #86efac;border-left:4px solid #16a34a;border-radius:10px;padding:11px 14px;margin-bottom:10px">'
+    +'<div style="flex:1;min-width:0">'+bn+'</div>'
+    +'<button class="btn btn-secondary btn-sm" onclick="d4dHistReload()" title="Refresh">&#8635;</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="d4dHistToggle()">'+(d4dHistOpen?'Hide':'Show')+' last 15 days</button></div>';
+  if(!d4dHistOpen) return head;
+  var tiles=days.map(function(d){
+    var open=(d4dHistSel===d.day), none=(d.scraped===0&&d.texts===0);
+    var t1=d4dHistTime(d.first_at), t2=d4dHistTime(d.last_at);
+    return '<div class="pb-tile'+(d.scraped>0?' pb-traced':'')+(open?' pb-open':'')+'" onclick="d4dHistPick(\''+d.day+'\')" style="min-height:0;gap:5px;padding:11px 13px;'+(none?'opacity:.55':'')+'">'
+      +'<div class="pb-tile-title" style="font-size:14px">'+esc(d4dHistDay(d.day,{weekday:'short',month:'short',day:'numeric'}))+'</div>'
+      +'<div style="font-size:12.5px;color:var(--text2)"><b style="font-size:20px;color:var(--text)">'+d.scraped+'</b> scraped'+(d.scraped>0?'<div style="font-size:11px;color:var(--text3);font-weight:600">&#128339; '+esc(t1)+(t2!==t1?' &ndash; '+esc(t2):'')+' ET</div>':'<div style="font-size:11px;color:var(--text4)">no scrape</div>')+'</div>'
+      +'<div style="font-size:12px;color:var(--text3);border-top:1px solid var(--border);padding-top:5px">&#128172; <b>'+d.texts+'</b> text'+(d.texts!==1?'s':'')+' sent</div>'
+    +'</div>';
+  }).join('');
+  var det='';
+  var sel=days.filter(function(d){ return d.day===d4dHistSel; })[0];
+  if(sel){
+    det='<div class="pb-detail"><div class="pb-detail-h"><span class="nm">'+esc(d4dHistDay(sel.day,{weekday:'long',month:'long',day:'numeric',year:'numeric'}))+'</span>'
+      +'<span class="pb-bt-cnt">'+sel.scraped+' scraped</span><span class="pb-bt-cnt" style="background:#dbeafe;color:#1e40af">'+sel.texts+' texts sent</span>'
+      +'<span class="pb-detail-close" onclick="d4dHistPick(\''+sel.day+'\')">&#10005; Close</span></div>'
+      +'<div class="pb-wf-panel" style="font-size:13px;line-height:1.7">'
+        +'<div><b>Scraped at:</b> '+(sel.scraped>0?esc(d4dHistTime(sel.first_at))+(d4dHistTime(sel.last_at)!==d4dHistTime(sel.first_at)?' to '+esc(d4dHistTime(sel.last_at)):'')+' ET':'no scrape this day')+'</div>'
+        +'<div><b>Areas:</b> '+(sel.areas&&sel.areas.length?sel.areas.map(function(a){ return esc(a.area)+' <span style="color:var(--text3)">('+a.n+')</span>'; }).join(' &middot; '):'&mdash;')+'</div>'
+        +'<div><b>Texts sent:</b> '+sel.texts+' ('+sel.texts_first+' first text'+(sel.texts_first!==1?'s':'')+', '+sel.texts_followup+' follow-up'+(sel.texts_followup!==1?'s':'')+')</div>'
+      +'</div></div>';
+  }
+  return head+'<div style="font-size:11.5px;color:var(--text3);margin:0 2px 6px">Last 15 days: <b>'+tot.s+'</b> fresh leads scraped &middot; <b>'+tot.x+'</b> texts sent. Times are Eastern. Click a day for its areas.</div>'
+    +'<div class="pb-tilegrid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">'+tiles+'</div>'+det+'<div style="height:6px"></div>';
+}
 function renderD4DSection(){
   var host=document.getElementById('section-main'); if(!host) return;
   var mailN = leads.filter(function(l){ return !l.deleted && l.d4dStatus==='mail_queued'; }).length
@@ -9522,7 +9586,7 @@ function renderD4DSection(){
     +'<div class="lt-head"><div><h2>&#128663; Driving for Dollars</h2>'
     +'<p>Distress leads found automatically by the Driving-for-Dollars robot (facade graded from Street View). Click &#9889; Scan Now to find more &mdash; new hot leads land here in ~5-10 minutes. Address links open the exact graded Street View. Use &#128100; Find Owner (Propwire) where the owner name is blank, or &#9993; Send Mail to queue a property for a direct-mail postcard/letter — it moves to the Send Mail tab and off your other lists.</p></div>'
     +'<div class="lt-actions"><button class="btn btn-primary btn-sm" onclick="openAddD4D()">+ Add Lead</button> '+d4dScanBtnHTML()+'</div></div>'
-    +d4dScanBannerHTML()+d4dLimitBannerHTML()
+    +d4dScanBannerHTML()+d4dLimitBannerHTML()+d4dHistHTML()
     +'<div class="tabs" style="position:static;margin:0 0 14px;padding:0">'
       +'<div class="tab '+(d4dTab==='leads'?'active':'')+'" onclick="d4dSetTab(\'leads\')">&#128663; Leads</div>'
       +'<div class="tab '+(d4dTab==='hot'?'active':'')+'" onclick="d4dSetTab(\'hot\')">&#128293; Hot Leads'
