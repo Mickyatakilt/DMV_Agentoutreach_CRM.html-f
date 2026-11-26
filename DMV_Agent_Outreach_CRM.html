@@ -4738,21 +4738,46 @@ function jvAgsRenderList(){
     else if(a.status==='failed') stage='Delivery failed'+(a.fail_reason?(' — '+esc(a.fail_reason)):'');
     else if(a.created_at) stage='Sent '+jvFmt(a.created_at);
     var acts='';
+    var cleanPdf=JV_SIGN_URL.replace(/\/$/,'')+'/pdf/'+encodeURIComponent(a.share_token);
     if(a.status==='completed'){
-      acts='<button class="btn btn-secondary btn-sm" onclick="window.open(\''+(a.pdf_url||link+'&pdf=1')+'\',\'_blank\')">&#128196; Signed PDF</button>';
+      acts='<button class="btn btn-secondary btn-sm" onclick="window.open(\''+cleanPdf+'\',\'_blank\')">&#128196; Signed PDF</button>'
+        + '<button class="btn btn-secondary btn-sm" onclick="jvDelete('+a.id+')" title="Delete this agreement">&#128465;</button>';
+    } else if(a.status==='void'){
+      acts='<button class="btn btn-secondary btn-sm" onclick="jvDelete('+a.id+')" title="Delete this agreement">&#128465;</button>';
     } else if(a.status!=='void'){
       acts='<button class="btn btn-primary btn-sm" onclick="jvCopyLink('+a.id+')">&#128203; Copy link</button>'
         + '<button class="btn btn-secondary btn-sm" onclick="window.open(\''+link+'\',\'_blank\')" title="Open signing page">&#8599; Open</button>'
         + '<button class="btn btn-secondary btn-sm" onclick="jvOpenModal('+a.id+')" title="Edit &amp; resend">&#9998; Edit</button>'
         + '<button class="btn btn-secondary btn-sm" onclick="jvVoid('+a.id+')" title="Void">&#128465;</button>';
     }
+    var openedLine='';
+    if(a.status!=='void' && (a.open_count>0 || a.opened_at)){
+      openedLine='<div class="dp-deal-meta" style="margin-top:2px;color:#92400e">&#128064; Opened '+jvFmt(a.last_opened_at||a.opened_at)+' &middot; '+(a.open_count||1)+' time'+((a.open_count||1)===1?'':'s')+'</div>';
+    } else if(a.status!=='void' && a.status!=='completed' && a.status!=='failed'){
+      openedLine='<div class="dp-deal-meta" style="margin-top:2px;color:var(--text4)">Not opened yet</div>';
+    }
+    var remLine='';
+    if(a.status!=='void' && a.status!=='completed' && (a.reminder1_at||a.reminder2_at||a.handoff_at)){
+      remLine='<div class="dp-deal-meta" style="margin-top:2px;color:var(--text4)">&#9200; Reminders: '+(a.reminder1_at?'24h sent '+jvFmt(a.reminder1_at):'24h pending')+' &middot; '+(a.reminder2_at?'48h sent '+jvFmt(a.reminder2_at):'48h pending')+(a.handoff_at?' &middot; Zablon notified':'')+'</div>';
+    }
     return '<div class="dp-deal" style="grid-template-columns:1fr"><div class="dp-deal-body" style="padding:14px 16px">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="dp-deal-addr" style="flex:1;min-width:120px">'+esc(a.party_b_name||'(no name)')+'</div>'+jvStatusChip(a.status)+'</div>'
       +'<div class="dp-deal-meta" style="margin-top:4px">'+esc(a.property_address||'')+(split?(' &middot; '+split+' split'):'')+'</div>'
       +'<div class="dp-deal-meta" style="margin-top:2px;color:var(--text4)">'+esc(a.party_b_email||'')+(stage?(' &middot; '+stage):'')+'</div>'
+      +openedLine+remLine
       +'<div class="dp-deal-acts" style="margin-top:10px">'+acts+'</div>'
       +'</div></div>';
   }).join('')+'</div>';
+}
+function jvDelete(id){
+  var a=(jvAgs||[]).find(function(x){return +x.id===+id;});
+  var what=(a&&a.status==='completed')?'Delete this SIGNED agreement? This also deletes the signed PDF and cannot be undone.':'Delete this agreement? This cannot be undone.';
+  if(!confirm(what)) return;
+  fetch(JV_ESIGN_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sbAuthToken()},body:JSON.stringify({action:'delete',id:id})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d&&d.ok){ showToast('Agreement deleted'); jvAgs=null; jvAgsRenderList(); }
+      else { showToast((d&&d.error)||'Could not delete'); }
+    }).catch(function(){ showToast('Network error. Please try again.'); });
 }
 function jvCopyLink(id){
   var a=(jvAgs||[]).find(function(x){return +x.id===+id;}); if(!a) return;
