@@ -7448,6 +7448,41 @@ async function twLoadData(){
 }
 function twToggle(){ twOpen=!twOpen; renderTeamWork(true); }
 var twOpenRows = {};
+// Live presence from the Team Tracker app (heartbeat every 30 s while clocked in): idle / app silent / Mac permission missing.
+var twPresence = {people:{}, skew:0, idleSec:180};
+async function twPresenceLoad(){
+  try{
+    var pr = await twWorkerFetch('/api/crm/people'); if(!pr.ok) return;
+    var j = await pr.json();
+    twPresence.people = {}; (j.people||[]).forEach(function(p){ twPresence.people[p.user_id]=p; });
+    twPresence.skew = (j.now||Date.now())-Date.now();
+    twPresence.idleSec = (j.settings&&j.settings.idle_sec)||180;
+    twPresencePaint();
+  }catch(e){}
+}
+function twPresencePaint(){
+  var now = Date.now()+(twPresence.skew||0);
+  document.querySelectorAll('.tw-pres').forEach(function(el){
+    var uid = el.getAttribute('data-uid'), p = twPresence.people[uid];
+    var live = (teamAllClock||[]).some(function(c){ return c.userId===uid && !c.clockOut; });
+    if(!live || !p){ el.innerHTML=''; return; }
+    var silentMin = p.last_seen ? (now-p.last_seen)/60000 : null, m;
+    if(silentMin===null || silentMin>2.5) m=['#dc2626','&#9888; Tracker app silent '+(silentMin===null?'(never connected)':Math.max(1,Math.round(silentMin))+' min')+' &mdash; nothing is being recorded'];
+    else if(p.perm_ok===0) m=['#dc2626','&#9888; Mac permission missing &mdash; recording blank screens'];
+    else if(p.idle_for!=null && (p.idle_for+(now-(p.idle_at||now))/1000)>=twPresence.idleSec) m=['#d97706','&#9208; No mouse or keyboard for '+Math.round((p.idle_for+(now-(p.idle_at||now))/1000)/60)+' min'];
+    else m=['#16a34a','&#10003; Active'];
+    el.style.color=m[0]; el.innerHTML=m[1];
+  });
+}
+setInterval(function(){ if(!document.hidden && document.querySelector('.tw-pres')) twPresenceLoad(); }, 30000);
+var twTasksOpen = {};   // per person: is the Tasks list expanded (collapsed by default so screenshots show first)
+function twToggleTasks(id){
+  twTasksOpen[id]=!twTasksOpen[id];
+  var b=document.getElementById('twtk-'+id), a=document.getElementById('twtka-'+id);
+  if(b) b.style.display=twTasksOpen[id]?'block':'none';
+  if(a) a.innerHTML=twTasksOpen[id]?'&#9662;':'&#9656;';
+  var h=a&&a.parentNode&&a.parentNode.lastElementChild; if(h) h.textContent='(click to '+(twTasksOpen[id]?'collapse':'expand')+')';
+}
 function twToggleRow(id){ twOpenRows[id]=!twOpenRows[id]; renderTeamWork(true); }
 // Screen activity (from the Time Clock app; only recorded while the person is clocked in).
 function twActivityRowHTML(uid){
@@ -7507,7 +7542,7 @@ async function renderTeamWork(keepData){
     var dueCell = (r.overdue?'<span style="color:#dc2626;font-weight:700">'+r.overdue+' overdue</span>':'') + (r.overdue&&r.dueToday?' &middot; ':'') + (r.dueToday?'<span style="color:#d97706;font-weight:700">'+r.dueToday+' due today</span>':'') || '<span style="color:var(--text4)">&mdash;</span>';
     var main='<tr style="cursor:pointer'+(open?';background:var(--bg2,#f8fafc)':'')+'" onclick="twToggleRow(\''+r.id+'\')">'
       +'<td style="'+td_+';font-weight:800">'+(open?'&#9662;':'&#9656;')+' '+esc(r.name)+'</td>'
-      +'<td style="'+td_+'">'+status+'</td>'
+      +'<td style="'+td_+'">'+status+'<div class="tw-pres" data-uid="'+esc(r.id)+'" style="font-size:11px;font-weight:700;margin-top:2px"></div></td>'
       +'<td style="'+td_+';font-weight:700">'+twFmtDur(r.todayMs)+'</td>'
       +'<td style="'+td_+';font-weight:700">'+twFmtDur(r.totalMs)+'</td>'
       +'<td style="'+td_+'">'+tasksCell+'</td>'
@@ -7526,9 +7561,9 @@ async function renderTeamWork(keepData){
     var detail='<tr><td colspan="6" style="padding:4px 16px 16px 28px;border-bottom:1px solid var(--border,#e5e7eb);background:var(--bg2,#f8fafc)">'
       +'<div style="display:flex;gap:24px;flex-wrap:wrap">'
       +'<div style="flex:1;min-width:300px"><div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Clock in / out</div><button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px" onclick="twOpenClockAdd(\''+r.id+'\')">+ Add day</button></div>'+logRows+'</div>'
-      +'<div style="flex:1.4;min-width:340px"><div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3)">Tasks &mdash; status &amp; finish date</div>'+(r.done?'<button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;color:#dc2626" onclick="ttDeleteCompleted(\''+r.id+'\')">&#128465; Delete completed ('+r.done+')</button>':'')+'</div>'+ttRowsHTML(vis)+'</div>'
+      +'<div style="flex:1.4;min-width:340px"><div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 2px"><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);cursor:pointer" onclick="twToggleTasks(\''+r.id+'\')"><span id="twtka-'+r.id+'">'+(twTasksOpen[r.id]?'&#9662;':'&#9656;')+'</span> Tasks ('+vis.length+') &mdash; status &amp; finish date <span style="font-weight:600;text-transform:none;letter-spacing:0">(click to '+(twTasksOpen[r.id]?'collapse':'expand')+')</span></div>'+(r.done?'<button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;color:#dc2626" onclick="ttDeleteCompleted(\''+r.id+'\')">&#128465; Delete completed ('+r.done+')</button>':'')+'</div><div id="twtk-'+r.id+'" style="display:'+(twTasksOpen[r.id]?'block':'none')+'">'+ttRowsHTML(vis)+'</div></div>'
       +'</div></td></tr>';
-    return main+detail+twShotsRowHTML(r.id)+twActivityRowHTML(r.id);
+    return main+twShotsRowHTML(r.id)+twActivityRowHTML(r.id)+detail;
   }).join('') : '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text4);font-size:13px">No staff accounts or activity yet.</td></tr>';
   host.innerHTML =
     twCorrectionsCardHTML()
@@ -7551,6 +7586,7 @@ async function renderTeamWork(keepData){
       + '</tr></thead><tbody>'+body+'</tbody></table></div>'
     + '</div>';
   twHydrateShots();
+  twPresenceLoad();
 }
 function twCorrectionsCardHTML(){
   var pend=(teamCorrections||[]).filter(function(c){return c.status==='pending';});
