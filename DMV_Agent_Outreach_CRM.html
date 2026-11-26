@@ -7457,7 +7457,7 @@ async function twPresenceLoad(){
     twPresence.people = {}; (j.people||[]).forEach(function(p){ twPresence.people[p.user_id]=p; });
     twPresence.skew = (j.now||Date.now())-Date.now();
     twPresence.idleSec = (j.settings&&j.settings.idle_sec)||180;
-    twPresencePaint();
+    twPresencePaint(); twLivePaint();
   }catch(e){}
 }
 function twPresencePaint(){
@@ -7474,7 +7474,40 @@ function twPresencePaint(){
     el.style.color=m[0]; el.innerHTML=m[1];
   });
 }
-setInterval(function(){ if(!document.hidden && document.querySelector('.tw-pres')) twPresenceLoad(); }, 30000);
+// "Live activity" panel: everyone on the clock, worst problems first, with how long since the last mouse/keyboard movement.
+function twLiveState(p, now){
+  if(!p) return {rank:2,color:'#dc2626',bg:'#fee2e2',icon:'&#9888;',label:'Tracker app not connected',detail:'Nothing is being recorded'};
+  var silentMin = p.last_seen ? (now-p.last_seen)/60000 : null;
+  if(silentMin===null || silentMin>2.5) return {rank:0,color:'#dc2626',bg:'#fee2e2',icon:'&#9888;',label:'Tracker app silent',detail:(silentMin===null?'never connected':Math.max(1,Math.round(silentMin))+' min with no signal')+' - nothing is being recorded'};
+  if(p.perm_ok===0) return {rank:1,color:'#dc2626',bg:'#fee2e2',icon:'&#9888;',label:'Mac permission missing',detail:'Screenshots and activity are not being recorded properly'};
+  var idle = p.idle_for!=null ? p.idle_for+(now-(p.idle_at||now))/1000 : 0;
+  if(idle>=twPresence.idleSec) return {rank:3,color:'#b45309',bg:'#fef3c7',icon:'&#9208;',label:'Mouse and keyboard still',detail:'No movement for '+Math.max(1,Math.round(idle/60))+' min'};
+  return {rank:4,color:'#15803d',bg:'#dcfce7',icon:'&#10003;',label:'Active',detail:idle<10?'Moving right now':'Last movement '+Math.max(0,Math.round(idle))+' s ago'};
+}
+function twLivePaint(){
+  var el=document.getElementById('tw-live'); if(!el) return;
+  var now = Date.now()+(twPresence.skew||0), names={};
+  (teamPeople||[]).forEach(function(p){ names[p.id]=p.name; });
+  (teamAllClock||[]).forEach(function(c){ if(c.userId && !names[c.userId]) names[c.userId]=c.userName||'(unknown)'; });
+  var live={}; (teamAllClock||[]).forEach(function(c){ if(!c.clockOut) live[c.userId]=1; });
+  var list=Object.keys(live).map(function(id){ return {id:id,name:names[id]||'(unknown)',st:twLiveState(twPresence.people[id],now)}; });
+  list.sort(function(a,b){ return a.st.rank-b.st.rank || a.name.localeCompare(b.name); });
+  var bad=list.filter(function(x){ return x.st.rank<4; }).length;
+  var head = !list.length ? 'Nobody is on the clock right now' : (bad? bad+' of '+list.length+' on the clock need attention' : 'All '+list.length+' on the clock are active');
+  var hc = !list.length ? 'var(--text4)' : (bad?'#dc2626':'#15803d');
+  el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:'+(list.length?8:0)+'px">'
+    +'<div style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.4px">Live activity</div>'
+    +'<div style="font-size:13px;font-weight:800;color:'+hc+'">'+head+'</div></div>'
+    + list.map(function(x){
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-top:6px;border-radius:10px;background:'+x.st.bg+'">'
+        +'<span style="font-size:16px;color:'+x.st.color+'">'+x.st.icon+'</span>'
+        +'<span style="font-weight:800;min-width:90px">'+esc(x.name)+'</span>'
+        +'<span style="font-weight:700;color:'+x.st.color+'">'+x.st.label+'</span>'
+        +'<span style="color:var(--text3);font-size:12px;flex:1;text-align:right">'+x.st.detail+'</span></div>';
+    }).join('');
+}
+setInterval(function(){ if(!document.hidden && document.querySelector('.tw-pres,#tw-live')) twPresenceLoad(); }, 15000);
+setInterval(function(){ if(!document.hidden) twLivePaint(); }, 5000);
 var twTasksOpen = {};   // per person: is the Tasks list expanded (collapsed by default so screenshots show first)
 function twToggleTasks(id){
   twTasksOpen[id]=!twTasksOpen[id];
@@ -7568,6 +7601,7 @@ async function renderTeamWork(keepData){
   host.innerHTML =
     twCorrectionsCardHTML()
     + ttCommentsCardHTML()
+    + '<div id="tw-live" style="'+card+'margin-top:10px;padding:12px 14px"></div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">'
       + stat(on.length?on.map(function(r){return esc(r.name);}).join(', '):'Nobody','On the clock now',on.length?'#16a34a':'')
       + stat(twFmtDur(sum.ms),'Team hours ('+twDays+'d)')
@@ -7586,6 +7620,7 @@ async function renderTeamWork(keepData){
       + '</tr></thead><tbody>'+body+'</tbody></table></div>'
     + '</div>';
   twHydrateShots();
+  twLivePaint();
   twPresenceLoad();
 }
 function twCorrectionsCardHTML(){
