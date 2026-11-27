@@ -14550,8 +14550,10 @@ function kpiPaintAdvice(){
   if(a.ideas) h+='<div style="margin-top:10px;font-weight:600;font-size:12px;color:var(--text4)">Latest ideas ('+esc(when(a.ideas.created_at))+')</div>'+txt(a.ideas.answer);
   h+='<div style="margin-top:12px;display:flex;gap:6px"><input id="kpi-q" maxlength="400" placeholder="Ask about your numbers, e.g. why are so few sellers replying?" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:inherit" onkeydown="if(event.key===\'Enter\')kpiAsk()"><button class="btn btn-sm btn-white" '+(kpiAdvBusy?'disabled':'')+' onclick="kpiAsk()">'+(kpiAdvBusy==='ask'?'Thinking…':'Ask')+'</button></div>';
   (a.asks||[]).forEach(function(q){ h+='<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px"><div style="font-size:12px;color:var(--text4)">Q: '+esc(q.question||'')+' <span>('+esc(when(q.created_at))+')</span></div>'+txt(q.answer)+'</div>'; });
-  if(a.weekly_report) h+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px"><div style="font-weight:600;font-size:12px;color:var(--text4)">Latest Friday report (week ending '+esc(String(a.weekly_report.week_end))+')</div>'+txt(a.weekly_report.analysis)+'</div>';
-  else h+='<div style="margin-top:12px;font-size:12px;color:var(--text4)">The first Friday report will appear here after it runs.</div>';
+  var fmtD=function(ts){ try{ return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'America/New_York'}); }catch(e){ return ''; } };
+  if(a.live) h+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px"><div style="font-weight:600;font-size:12px;color:var(--text4)">Live numbers: last 7 days ('+esc(fmtD(a.live.start))+' to '+esc(fmtD(a.live.end))+'), updated '+esc(when(a.live.updated_at))+'</div>'+txt(a.live.scoreboard)+'</div>';
+  if(a.weekly_report) h+='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px"><div style="font-weight:600;font-size:12px;color:var(--text4)">AI report written '+esc(when(a.weekly_report.created_at))+' (refreshes every day)</div>'+txt(a.weekly_report.analysis)+'</div>';
+  else h+='<div style="margin-top:12px;font-size:12px;color:var(--text4)">The first daily report will appear here after it runs.</div>';
   el.innerHTML=h+'</div>';
 }
 async function kpiAdvRun(body, kind){
